@@ -2,6 +2,10 @@
 
 > AI-native desktop workspace for planning, coding, and automation.
 
+[![CI](https://github.com/f4tumnigrum/Tanzo/actions/workflows/ci.yml/badge.svg)](https://github.com/f4tumnigrum/Tanzo/actions/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
+[![Release](https://img.shields.io/github/v/tag/f4tumnigrum/Tanzo?label=release&sort=semver)](https://github.com/f4tumnigrum/Tanzo/releases)
+
 Tanzo is an Electron + React desktop application that combines local project context, multi-provider
 AI configuration, chat-driven workflows, sandboxed tool execution, and desktop-focused controls in a
 single packaged app. It runs an autonomous agent loop locally against your real workspace: reading and
