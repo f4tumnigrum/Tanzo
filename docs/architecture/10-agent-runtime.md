@@ -120,7 +120,7 @@ service.run
 
 ### 6.1 状态机层
 
-有状态的领域逻辑统一为「纯转移核心（functional core）+ 副作用解释器（imperative shell）」，规范与基座见 `runtime/machine/`（`Machine`/`Transition`/`createInterpreter`）。约定：状态/事件/副作用均为判别联合；`transition` 纯函数，非法转移即 no-op（不抛异常）；时钟、随机、UUID 经事件载荷传入。完整设计见 [`docs/state-machine-unification.md`](../state-machine-unification.md)。
+有状态的领域逻辑统一为「纯转移核心（functional core）+ 副作用解释器（imperative shell）」，规范与基座见 `runtime/machine/`（`Machine`/`Transition`/`createInterpreter`）。约定：状态/事件/副作用均为判别联合；`transition` 纯函数，非法转移即 no-op（不抛异常）；时钟、随机、UUID 经事件载荷传入。
 
 | 机器 | 纯核心 | 解释器/shell | 要点 |
 |---|---|---|---|

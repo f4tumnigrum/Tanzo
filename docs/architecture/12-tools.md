@@ -112,7 +112,7 @@ builtinTools(def, deps)          // fileRead/fileEdit/multiEdit/fileWrite/glob/g
 
 **状态与广播**：进度/结果变化经 `broadcastTasks` 在 `taskEventChannel(rootChatId)` 上以 `data-task` / `data-taskApproval` 广播（`task-service.ts:96-118`）。`reconcileOrphans` 在重启后把遗留运行置为失败。
 
-**审批**：`approval-utils.ts` 的 `extractPendingApprovals`/`applyApprovalResponse` 把子代理工具审批路由到 root；`listApprovals`/`respondApproval` 把决策应用到子 transcript 并可按 `session`/`forever` 记入策略。详见 `docs/subagent-redesign.md`。
+**审批**：`approval-utils.ts` 的 `extractPendingApprovals`/`applyApprovalResponse` 把子代理工具审批路由到 root；`listApprovals`/`respondApproval` 把决策应用到子 transcript 并可按 `session`/`forever` 记入策略。
 
 ## 7. 工具系统不变量
 
