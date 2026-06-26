@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url'
 import { BrowserWindow, screen, shell, type BrowserWindowConstructorOptions } from 'electron'
 import { is } from '@electron-toolkit/utils'
 import { detectNativeWindowEffect } from '@shared/system'
-import icon from '../../resources/icon.png?asset'
+import icon from '../../resources/Tanzo.png?asset'
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
