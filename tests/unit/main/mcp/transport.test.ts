@@ -95,7 +95,10 @@ describe('main/mcp/transport', () => {
       const binDir = mkdtempSync(join(tmpdir(), 'tanzo-mcp-transport-'))
       tempDirs.push(binDir)
       writeFileSync(join(binDir, command), '#!/bin/sh\n')
-      writeFileSync(join(binDir, `${command}.cmd`), '@echo off\r\n')
+      // Use the uppercase extension from PATHEXT so the lookup matches on
+      // case-sensitive filesystems (Linux CI), mirroring Windows' behavior of
+      // locating the shim via PATHEXT rather than the on-disk casing.
+      writeFileSync(join(binDir, `${command}.CMD`), '@echo off\r\n')
 
       const launch = resolveStdioLaunchCommand(
         command,
@@ -112,7 +115,7 @@ describe('main/mcp/transport', () => {
       expect(launch.args).toEqual([
         '/d',
         '/c',
-        expect.stringMatching(new RegExp(`${command}\\.cmd$`, 'i')),
+        expect.stringMatching(new RegExp(`${command}\\.CMD$`, 'i')),
         '--version'
       ])
     }
