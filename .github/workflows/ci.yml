@@ -48,17 +48,4 @@ jobs:
         run: pnpm lint
 
       - name: Test
-        run: |
-          set +e
-          pnpm test > test-out.txt 2>&1
-          status=$?
-          sed 's/\x1b\[[0-9;]*m//g' test-out.txt
-          if [ $status -ne 0 ]; then
-            sed 's/\x1b\[[0-9;]*m//g' test-out.txt > clean.txt
-            # Emit the whole "Failed Suites/Tests" detail region as one annotation block
-            awk '/Failed (Suites|Tests)/{f=1} f{print}' clean.txt | head -120 > detail.txt
-            if [ ! -s detail.txt ]; then tail -120 clean.txt > detail.txt; fi
-            body=$(sed 's/%/%25/g; s/\r//g' detail.txt | awk '{printf "%s%%0A", $0}')
-            echo "::error::$body"
-          fi
-          exit $status
+        run: pnpm test

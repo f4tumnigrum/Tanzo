@@ -13,6 +13,7 @@ export default defineConfig({
   test: {
     include: ['tests/unit/**/*.{test,spec}.?(c|m)[jt]s?(x)'],
     environment: 'node',
+    setupFiles: ['tests/setup/electron-stub.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],
