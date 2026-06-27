@@ -1,3 +1,4 @@
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 
 const io = vi.hoisted(() => ({
@@ -25,8 +26,8 @@ describe('agent/context/deps', () => {
   it('reads global and project Tanzo instructions, skills, git status, and model metadata', async () => {
     const { createContextEngineDeps } = await import('@main/agent/context/deps')
     io.files.clear()
-    io.files.set('/app/agent/TANZO.md', '  Use global rules.  ')
-    io.files.set('/workspace/.claude/CLAUDE.md', '  Use local rules.  ')
+    io.files.set(join('/app/agent', 'TANZO.md'), '  Use global rules.  ')
+    io.files.set(join('/workspace', '.claude/CLAUDE.md'), '  Use local rules.  ')
     io.git.mockImplementation((_cmd: string, args: string[]) => {
       if (args[0] === 'rev-parse' && args.includes('origin/HEAD')) return 'origin/main\n'
       if (args[0] === 'rev-parse') return 'feature/test\n'

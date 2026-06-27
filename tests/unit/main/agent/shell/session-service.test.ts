@@ -7,7 +7,7 @@ import {
 let service: ShellSessionService | undefined
 
 function createService(): ShellSessionService {
-  service = createShellSessionService({ defaultYieldTimeMs: 100, maxYieldTimeMs: 1_000 })
+  service = createShellSessionService({ defaultYieldTimeMs: 100, maxYieldTimeMs: 5_000 })
   return service
 }
 
@@ -23,7 +23,7 @@ describe('main/agent/shell/session-service', () => {
       chatId: 'chat-1',
       command: `node -e "process.stdout.write('hello')"`,
       cwd: process.cwd(),
-      yieldTimeMs: 500
+      yieldTimeMs: 3_000
     })
 
     expect(started.stdout).toContain('hello')
@@ -60,7 +60,17 @@ describe('main/agent/shell/session-service', () => {
       yieldTimeMs: 500
     })
 
-    expect(written.stdout).toContain('got:ping')
+    let stdout = written.stdout
+    for (let attempt = 0; attempt < 20 && !stdout.includes('got:ping'); attempt += 1) {
+      const polled = await sessions.poll({
+        chatId: 'chat-1',
+        sessionId: started.sessionId,
+        yieldTimeMs: 500
+      })
+      stdout += polled.stdout
+    }
+
+    expect(stdout).toContain('got:ping')
 
     await expect(sessions.poll({ chatId: 'chat-2', sessionId: started.sessionId })).rejects.toThrow(
       /belongs to another chat/

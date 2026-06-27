@@ -102,12 +102,28 @@ describe('main/agent/fs/workspace-fs', () => {
     await expect(fs.read(envPath)).rejects.toThrow(TanzoValidationError)
   })
 
-  it('rejects symlinks that resolve outside the workspace for reads and writes', async () => {
+  it('rejects symlinks that resolve outside the workspace for reads and writes', async ({
+    skip
+  }) => {
     const root = await tempRoot()
     const outside = await tempRoot()
     const fs = createWorkspaceFs(root)
     await writeFile(join(outside, 'secret.txt'), 'secret')
-    await symlink(join(outside, 'secret.txt'), join(root, 'link.txt'))
+    try {
+      await symlink(join(outside, 'secret.txt'), join(root, 'link.txt'))
+    } catch (error) {
+      // Creating symlinks on Windows requires Developer Mode or elevation.
+      // Skip when the OS denies it rather than failing the suite.
+      if (
+        error instanceof Error &&
+        'code' in error &&
+        (error.code === 'EPERM' || error.code === 'EACCES')
+      ) {
+        skip()
+        return
+      }
+      throw error
+    }
 
     await expect(fs.read('link.txt')).rejects.toThrow(TanzoValidationError)
 

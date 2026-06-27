@@ -1,3 +1,4 @@
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { chatEventChannel } from '@shared/chat'
 
@@ -200,7 +201,7 @@ describe('agent/module', () => {
     )
     expect(mocks.createSkillsStore).toHaveBeenCalledWith({
       workspaceRoot: '/workspace/root',
-      userDir: '/user-data/agent',
+      userDir: join('/user-data', 'agent'),
       logger: mocks.logger,
       db
     })
@@ -229,7 +230,7 @@ describe('agent/module', () => {
       '/workspace/root'
     )
     expect(mocks.createContextEngineDeps).toHaveBeenCalledWith({
-      userDir: '/user-data/agent',
+      userDir: join('/user-data', 'agent'),
       skills: mocks.skills,
       providerService,
       goal: {

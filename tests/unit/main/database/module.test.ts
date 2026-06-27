@@ -1,3 +1,4 @@
+import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { TanzoConfigurationError } from '@shared/errors'
 
@@ -38,11 +39,11 @@ describe('database/module', () => {
     })
 
     expect(mocks.openDatabase).toHaveBeenCalledWith({
-      databasePath: '/tmp/tanzo/custom.sqlite'
+      databasePath: path.join('/tmp/tanzo', 'custom.sqlite')
     })
     expect(mocks.runMigrations).toHaveBeenCalledWith(mocks.db, migrations)
     expect(mocks.logger.info).toHaveBeenCalledWith('initialized', {
-      databasePath: '/tmp/tanzo/custom.sqlite',
+      databasePath: path.join('/tmp/tanzo', 'custom.sqlite'),
       modules: ['agent']
     })
     expect(module.db).toBe(mocks.db)
@@ -62,7 +63,7 @@ describe('database/module', () => {
     const module = createDatabaseModule({ userDataPath: '/tmp/defaults', migrations: [] })
 
     expect(mocks.openDatabase).toHaveBeenLastCalledWith({
-      databasePath: '/tmp/defaults/tanzo.sqlite'
+      databasePath: path.join('/tmp/defaults', 'tanzo.sqlite')
     })
     await expect(module.backupTo('/tmp/fail.sqlite')).rejects.toThrow(TanzoConfigurationError)
   })

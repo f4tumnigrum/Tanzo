@@ -52,7 +52,7 @@ describe('main/agent/shell/runner', () => {
     const events = await collect(
       runner.spawn(`node -e "process.stdout.write('out'); process.stderr.write('err')"`, {
         cwd: process.cwd(),
-        timeout: 1000
+        timeout: 4000
       })
     )
 

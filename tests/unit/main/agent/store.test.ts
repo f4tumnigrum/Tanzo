@@ -1,6 +1,6 @@
 import { mkdtemp, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TanzoUIMessage } from '@shared/agent-message'
 import type { AgentDefinition, AgentIdentity } from '@main/agent/agents/types'
@@ -83,7 +83,7 @@ describe('main/agent/store', () => {
 
     expect(parent.cwd).toBe(root)
     expect(parent.workspaceId).toMatch(/^ws_[a-f0-9]{24}$/)
-    expect(parent.workspaceName).toBe(root.split('/').pop())
+    expect(parent.workspaceName).toBe(basename(root))
     expect(store.listConversations()).toEqual([expect.objectContaining({ id: parent.id })])
     expect(store.listChildren(parent.id)).toEqual([expect.objectContaining({ id: child.id })])
     expect(store.listChildren(parent.id, 'subagent')).toEqual([
