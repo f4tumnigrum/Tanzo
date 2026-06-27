@@ -27,7 +27,7 @@
 │  index.ts 引导: 单实例锁 → 协议注册 → whenReady → 模块工厂链               │
 │                                                                            │
 │  agent/      createAgentModule  ← 系统核心                                 │
-│    service(邮箱/入口) · runtime/(RunEngine, TurnLoop, ToolLoopAgent, 流)    │
+│    service(邮箱/入口) · runtime/(RunEngine, TurnLoop, streamText, 流)      │
 │    context/(Section×Provider, 压缩) · tools/(内置+MCP+provider 合并)        │
 │    policy+hooks/(审批前附加门) · subagent/ · skills/ · goal/ · presence/   │
 │    telemetry/ · store(repositories) · ipc/                                 │
@@ -69,9 +69,9 @@ createXxxModule(deps) → { service?, registerIpc(ipcMain): void, close?(): void
    → service.run → mailbox.enqueue → TurnLoop.run (≤10 次续航): 解析 def → 保存消息
         → changeSet.captureBeforeRun → compaction.prepareMessages(可能压缩历史)
         → RunEngine.run / startChatRun:
-             buildTools → prepareStep(注入上下文 + 排空 steering + hooks context)
-             → buildAgent = new ToolLoopAgent({ model, tools, toolApproval })
-             → createUIMessageStream({ execute: w.merge(agent.stream().toUIMessageStream()),
+             buildTools → buildAgentCall({ model, tools, toolApproval, stopWhen })
+             → createUIMessageStream({ execute: w.merge(toUIMessageStream({ stream:
+                 streamText({ ...agentCall, prepareStep → contextEngine.build }).stream })),
                                        onStepFinish/onFinish → 持久化 })
              → for await chunk: send(chatId, chunk)
 ─────────────────────────────────────────────────────────── IPC ──────────
@@ -90,7 +90,7 @@ createXxxModule(deps) → { service?, registerIpc(ipcMain): void, close?(): void
 | 关注点 | 选型 | 位置 |
 |---|---|---|
 | 桌面壳 | Electron 41 + electron-vite 5 | `electron.vite.config.ts` |
-| Agent 基底 | `ai@7` `ToolLoopAgent` / `tool()` / `UIMessage` | `src/main/agent/` |
+| Agent 基底 | `ai@7` `streamText` / `tool()` / `UIMessage` | `src/main/agent/` |
 | 模型供应商 | `@ai-sdk/{anthropic,openai,openai-compatible,google,deepseek,mcp}` | `src/main/provider/`、`src/main/mcp/` |
 | 持久化 | `better-sqlite3`（WAL） | `src/main/database/` |
 | 代码检索 | `@vscode/ripgrep` | `src/main/agent/search/`、`src/main/file-mention/` |

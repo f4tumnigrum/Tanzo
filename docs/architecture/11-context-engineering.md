@@ -38,7 +38,7 @@ ai-sdk 的 `PrepareStepFunction` 包装在 runtime 层（`runtime/stream-runner.
 
 runtime 的 `prepareStep` 还在 `build` 前后追加：排空 steering、对 transcript 规整、对产出消息再次规整、按激活技能过滤工具、记录诊断（`stream-runner.ts:291-319`）。
 
-**缓存不变量**：volatile 前缀 + 尾部 user section 只在 `stepNumber === 0` 发出（`index.ts:55-61`）。后续步骤只复用 `leadingUser + history`，让缓存前缀稳定。
+**缓存不变量**：volatile 前缀 + 尾部 user section 只在 `stepNumber === 0` 发出（`promptMessages`，`index.ts:64-70`）。后续步骤只复用 `leadingUser + history`，让缓存前缀稳定。
 
 ## 3. Section → CompiledContext（`context/compile.ts`）
 
@@ -86,8 +86,8 @@ interface ContextSection {
 ```ts
 interface ProviderContextStrategy {
   cacheKind: 'ephemeral' | 'auto' | 'unsupported'
-  applyPromptLayout?(plan, helpers): void
-  applyCaching(plan): void
+  applyPromptLayout?(plan, helpers): CompiledContext
+  applyCaching(plan): CompiledContext   // 引擎 reassign plan = strategy.applyCaching(plan)（index.ts:155）
 }
 ```
 
@@ -120,10 +120,10 @@ retainedRecentSteps = 6
 
 - `prepareMessages`：非 `force` 时查 `engine.shouldCompact`；超阈则压缩。
 - `planCompaction(messages, retainedRecentSteps)`（`compact/compact.ts:30`）：按助手 step 边界切分（`findCut`/`partitionAtCut`，`segments.ts`），`findCut` 保留固定的 `retainedRecentSteps` 步数（非 char/4 token 估算）。返回 `head`（待摘要）、`tail`（保留）、`archivedIds`、`sourceMessages`。
-- `runCompactionFork`（`compact/fork-agent.ts:126`）：一步 `streamText`，`toolChoice: 'none'`、`stopWhen: isStepCount(1)`，输入 `[...head, {role:'user', content: COMPACT_PROMPT}]`，流式产出摘要并上报用量。
+- `runCompactionFork`（`compact/fork-agent.ts:137`）：一步 `streamText`，`toolChoice: 'none'`、`stopWhen: [isStepCount(1)]`，输入 `[...head, {role:'user', content: COMPACT_PROMPT}]`，流式产出摘要并上报用量。
 - `COMPACT_PROMPT`（`compact/prompt.ts`）：先私有 `<analysis>` 草稿，再 9 段 `<summary>`；`stripAnalysis` 只留摘要。
-- `buildCompactionResult`（`compact/compact.ts:70`）：构造一条合成 `assistant` 摘要消息（标 `data-compaction`；数据形状为 `summaryId/summary/usage`，**无** `metadata.compaction.isSummary`），前置到保留的 tail。
-- `store.finalizeCompaction` 用 `expectedActiveIds` 守卫；底层以 overlay 形式落库（`message_log_compaction_overlays`，`message-repo.ts:366`），冲突抛 `CHAT_COMPACTION_STALE` 并优雅跳过。
+- `buildCompactionResult`（`compact/compact.ts:80`）：构造一条合成 `assistant` 摘要消息（标 `data-compaction`；数据形状为 `summaryId/summary/usage`，**无** `metadata.compaction.isSummary`），前置到保留的 tail。
+- `store.finalizeCompaction` 用 `expectedActiveIds` 守卫；底层以 overlay 形式落库（`compaction_overlays` 表；`finalizeCompaction` 在 `message-repo.ts:366`，`expectedActiveIds` 守卫在 `message-repo.ts:307-320`），冲突抛 `CHAT_COMPACTION_STALE` 并优雅跳过。
 
 **子代理自动续接**：流在压缩触发处中途停止时，协调器以 `forceCompaction` 重入，上限 `MAX_CONTEXT_CONTINUATION_PASSES = 10`。
 

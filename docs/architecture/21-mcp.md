@@ -15,8 +15,8 @@
 
 `McpClient` 是按服务器 **name** 键的有状态管理器：
 
-- `syncServers(servers)`（`client.ts:196`）协调配置：移除消失的、断开禁用的、（重）连配置变化（经 `normalizeConnectionConfig` 比较）或未连接的。所有变更经 `#withServerOperation`（每 name 一个 promise 队列）串行——重要并发不变量。
-- `#connect`（`client.ts:491`）：建传输 → `createMCPClient`（`capabilities: { elicitation: {} }` + `onUncaughtError` 丢连接并排程重连）。包 `withTimeout`（连接默认 120s）；迟到解析的 client 被关闭防泄漏。
+- `syncServers(servers)`（`client.ts:197`）协调配置：移除消失的、断开禁用的、（重）连配置变化（经 `normalizeConnectionConfig` 比较）或未连接的。所有变更经 `#withServerOperation`（每 name 一个 promise 队列）串行——重要并发不变量。
+- `#connect`（`client.ts:496`）：建传输 → `createMCPClient`（`capabilities: { elicitation: {} }` + `onUncaughtError` 丢连接并排程重连）。包 `withTimeout`（连接默认 120s）；迟到解析的 client 被关闭防泄漏。
 - **重连不变量**：指数退避（`1s → 30s`），最多 5 次，**仅远程传输**（`isRemoteTransport`）。stdio 不自动重连。
 - 连接状态经监听器广播（`onConnectionStatesChanged`）；`McpConnectionState` 带 `status`/`toolCount`/`serverInfo`/`instructions`/`error`。
 - 分页安全：tools/resources/prompts 列举上限 100 页 / 10000 项，检测重复游标 → `MCP_PAGINATION_*`。
@@ -29,7 +29,7 @@
 
 ## 5. 工具暴露给 Agent
 
-`toolsForServer(serverName)`（`client.ts:323`）列出工具定义后返回 `client.toolsFromDefinitions(...)`——一个 ai-sdk `ToolSet`。这是 MCP 与 agent 工具循环的桥。agent 侧 `tools/mcp.ts` 把它们命名为 `mcp__<server>__<tool>` 并映射注解到 `kind`（[12 工具系统](./12-tools.md) §2.1）。
+`toolsForServer(serverName)`（`client.ts:325`）列出工具定义后返回 `client.toolsFromDefinitions(...)`——一个 ai-sdk `ToolSet`。这是 MCP 与 agent 工具循环的桥。agent 侧 `tools/mcp.ts` 把它们命名为 `mcp__<server>__<tool>` 并映射注解到 `kind`（[12 工具系统](./12-tools.md) §2.1）。
 
 UI 用的原始内省：`listTools`/`listResources`/`listPrompts`/`getPrompt`/`readResource`/`listResourceTemplates`，返回共享 `Mcp*Result` 形状。
 
@@ -38,7 +38,7 @@ UI 用的原始内省：`listTools`/`listResources`/`listPrompts`/`getPrompt`/`r
 MCP 服务器向用户索要结构化输入的往返：
 
 ```
-1. 连接时注册 client.onElicitationRequest(...)（client.ts:533）→ handleElicitationRequest
+1. 连接时注册 client.onElicitationRequest(...)（client.ts:540）→ handleElicitationRequest
 2. module.ts:85 handleElicitationRequest 生成 randomUUID requestId，存 resolver 进
    pendingElicitations，推 mcp:elicitation-requested 给主窗口
    { requestId, serverName, message, requestedSchema }；无窗口则 resolve {action:'cancel'}

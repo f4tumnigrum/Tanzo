@@ -76,7 +76,7 @@ DB 最后关（所有人依赖它）；agent/mcp 异步拆解需 `await`。`agen
 - 平台 chrome：macOS `titleBarStyle: 'hiddenInset'` + `transparent` + `vibrancy: 'under-window'`；Windows `frame: false` + 亚克力/实色。无边框自定义标题栏。
 - 加载 dev 的 `ELECTRON_RENDERER_URL` 或 prod 的 `../renderer/index.html`。
 
-### 4.2 Pet 窗口（`pet-window.ts:138-204`）
+### 4.2 Pet 窗口（`pet-window.ts:148-214`）
 
 - 浮动、透明、无边框覆盖层：`alwaysOnTop`、`skipTaskbar`（非 mac）、不可缩放/移动/全屏。
 - 置顶层级 mac `'screen-saver'`、其它 `'pop-up-menu'`；mac 上 `setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })`。

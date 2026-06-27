@@ -7,16 +7,16 @@
 所有内置工具都是 ai-sdk 的 `tool({...})`（`import { tool } from 'ai'`），每个携带：
 
 - `description`、`inputSchema`（Zod，集中在 `tools/tool-schemas.ts`）。
-- `providerMetadata.tanzo`：`{ kind, component, fingerprintFields? }`。
+- `metadata.tanzo`：`{ kind, component, fingerprintFields? }`。
   - `kind ∈ read | search | edit | exec` —— 驱动策略判定（[13 策略与审批](./13-policy-and-approval.md)）。
   - `component` —— renderer 渲染卡片的提示（[30 渲染层](./30-renderer.md)）。
   - `fingerprintFields` —— 审批记忆的指纹范围。
 - `toModelOutput`（多数为 `toolResultToModelOutput`，`tools/model-output.ts:13`）：把结构化输出转成 text/json/error-text。
 - `execute`（部分为异步生成器以支持流式，如 `shell`、`subagent`）。
 
-## 2. ToolSet 合并：`createBuildTools`（`tools/registry.ts:86`）
+## 2. ToolSet 合并：`createBuildTools`（`tools/registry.ts:88`）
 
-返回的 `BuildTools` 每次运行按 `{def, chatId, depth, mode}` 调用，合并顺序（`registry.ts:96`）：
+返回的 `BuildTools` 每次运行按 `{def, chatId, depth, mode}` 调用，合并顺序（`registry.ts:101`）：
 
 ```
 builtinTools(def, deps)          // fileRead/fileEdit/multiEdit/fileWrite/glob/grep/shell
@@ -33,7 +33,7 @@ builtinTools(def, deps)          // fileRead/fileEdit/multiEdit/fileWrite/glob/g
 
 随后按 `def.allowedTools` 模式过滤（`null` = 全部）。`toolKeyMatchesPattern`（`registry.ts:27`）支持精确、`*` 通配、`mcp__server` 前缀匹配。
 
-- **计划模式不变量**：可委派的子代理类型被过滤为只读子代理（`isSafeReadOnlySubagent`，`registry.ts:53`；`registry.ts:63-74`）。委派工具的 `kind` 是逐个静态的：`spawn`/`steer`/`cancel` 为 `exec`，`await`/`tasks` 为 `read`（`tools/subagent.ts`）。
+- **计划模式不变量**：可委派的子代理类型被过滤为只读子代理（`isSafeReadOnlySubagent`，`registry.ts:54`；`subagentTypesForMode`，`registry.ts:63-75`）。委派工具的 `kind` 是逐个静态的：`spawn`/`steer`/`cancel` 为 `exec`，`await`/`tasks` 为 `read`（`tools/subagent.ts`）。
 - `maxSubagentDepth` 默认 `3`。
 
 ### 2.1 MCP 合并（`tools/mcp.ts:74`）
@@ -99,7 +99,7 @@ builtinTools(def, deps)          // fileRead/fileEdit/multiEdit/fileWrite/glob/g
 ### 5.2 渐进披露
 
 - **索引（常驻）**：`skills-index` section 只列已启用技能的 `name: description`（[11](./11-context-engineering.md) §4）。
-- **按需全文**：`skill` 工具（`tools/skill.ts:10`）返回完整 `body`、`skillDir`、`args`、`allowedTools`，并调 `deps.fs.registerReadRoot(skillDir)` 让 agent 读技能附带文件。
+- **按需全文**：`skill` 工具（`tools/skill.ts:10`）返回完整 `instructions`（映自 `resolved.body`）、`skillDir`、`args`、`allowedTools`，并调 `deps.fs.registerReadRoot(skillDir)` 让 agent 读技能附带文件。
 - 技能返回的 `allowedTools` 会被 `stream-runner.ts` 从 `skill` 工具结果中收集，并在后续 `prepareStep` 通过 `activeTools` 缩窄本步可用工具集。
 
 ## 6. 子代理（`subagent/task-service.ts`、`task.machine.ts`、`approval-utils.ts`）

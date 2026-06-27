@@ -47,7 +47,7 @@
 
 共享路径安全常量在 `src/main/agent/security/path-safety.ts`，fs/search/policy 三处复用——单一真源、防御性深度。
 
-**新增网络暴露面须显式审查**：当前 Tanzo 不开本地端口（对话走 IPC，[ADR-0004](./adr/0004-ipc-as-the-only-seam.md)）；新增任何监听服务都应评估认证与访问控制。
+**新增网络暴露面须显式审查**：当前 Tanzo 不开本地端口（对话走 IPC，见 [04 跨进程契约](./04-ipc-and-contracts.md)）；新增任何监听服务都应评估认证与访问控制。
 
 ## 5. i18n
 

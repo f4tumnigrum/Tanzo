@@ -37,6 +37,7 @@ src/main/agent/hooks/
   output-parser.ts     按事件解释 stdout/stderr/exitCode
   pending-context.ts   per-chat 待注入上下文缓冲
   context-section.ts   把 pending context 暴露给 ContextEngine
+  tool-aliases.ts      Tanzo↔Codex/Claude 工具名静态别名（见 §7）
   service.ts           HookService 对运行时与 UI 的统一入口
 ```
 

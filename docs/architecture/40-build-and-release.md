@@ -41,7 +41,7 @@ input: {
 - `appId: com.luminstudio.tanzo`（与 `setAppUserModelId` 一致），`productName: Tanzo`。
 - `asarUnpack: resources/**`——资源从 asar 解包，这是 `pet/module.ts` 能探测 `app.asar.unpacked/resources/pets` 的原因。
 - `npmRebuild: false`（原生依赖经 postinstall 的 `install-app-deps` 处理）。
-- mac：entitlements `build/entitlements.mac.plist`，声明 camera/mic/Documents/Downloads 用途字符串，`notarize: false`。
+- mac：`entitlementsInherit: build/entitlements.mac.plist`；camera/mic/Documents/Downloads 用途字符串在 `extendInfo` 下，`notarize: false`。
 - 目标：mac dmg、win nsis（可选安装目录，非 one-click）、linux AppImage/snap/deb。
 
 ## 4. 测试

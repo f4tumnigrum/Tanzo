@@ -4,7 +4,7 @@
 
 ## 1. 模块结构
 
-`module.ts`：`createProviderStore(db)` + `createProviderService(store, createSecretCodec())` → `registerProviderIpc(ipcMain, service)`。service 内部构造 `ProviderRuntime`（`runtime.ts`）并委派给按供应商分的适配器（`adapter.ts`）。
+`module.ts`：`createProviderStore(db)` + `createProviderService(store, createSecretCodec())` → `registerProviderIpc(ipcMain, service)`。service 内部构造 `ProviderRuntime`（`runtime.ts`）并委派给按供应商分的适配器：注册表在 `adapter.ts`（`ADAPTERS`/`getAdapter`），五家实现在 `adapters/<provider>.ts`。
 
 ## 2. ProviderRuntime（`runtime.ts:7`）
 
@@ -19,7 +19,7 @@ createProviderRuntime(deps: { loadCredentials(providerId, keyId?): Credentials }
 ### 2.1 模型解析管线（config → ai-sdk LanguageModel）
 
 1. `modelRef` 是规范字符串 `"<providerId>:<modelId>"`（如 `anthropic:claude-...`）。`parseModelRef`（`runtime.ts:27`）校验前缀属于 `PROVIDER_IDS` 且 modelId 非空，否则 `PROVIDER_MODEL_REF_INVALID`。
-2. service 入口 `resolveLanguageModel`（`service.ts:915`）先 `ensureUsableLanguageModel`：模型须存在于 `provider_models`（family `language`）且 `enabled`，否则 `PROVIDER_MODEL_NOT_FOUND` / `PROVIDER_MODEL_DISABLED`。
+2. service 入口 `resolveLanguageModel`（`service.ts:912`）先 `ensureUsableLanguageModel`（调用点 `service.ts:921`，定义 `service.ts:623`）：模型须存在于 `provider_models`（family `language`）且 `enabled`，否则 `PROVIDER_MODEL_NOT_FOUND` / `PROVIDER_MODEL_DISABLED`。
 3. runtime 调 `loadCredentials(providerId)` → `getAdapter(providerId).createLanguageModel(modelId, credentials)`。
 4. 结果经 `wrapLanguageModel({ model, middleware: MIDDLEWARE })`（当前 `MIDDLEWARE` 为空）。
 5. **缓存不变量**：LRU 键 `[providerId, modelId, credentialFingerprint]`（`\u001f` 连接）。`credentialFingerprint` 是凭证条目排序后的 sha256。上限 32 条。`invalidate(providerId?)` 按前缀或全量清除——key 变更/删除/激活时由 service 调用。

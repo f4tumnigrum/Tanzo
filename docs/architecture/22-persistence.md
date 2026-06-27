@@ -20,7 +20,7 @@ type Migration = { version: number; name: string; up(db): void }
 type ModuleMigrations = { moduleName: string; files: readonly Migration[] }
 ```
 
-当前唯一注册模块 `tanzoMigrations`，**1 个版本**。v1（`INITIAL_SCHEMA`）一次建出全部表/索引/触发器。框架仍支持多版本增量迁移，后续 schema 变更追加新版本即可。
+当前唯一注册模块 `tanzoMigrations`，**1 个版本**（`tanzoMigrations`/`INITIAL_SCHEMA` 定义在 `database/schema.ts:381`/`:3`）。v1（`INITIAL_SCHEMA`）一次建出全部表/索引/触发器。框架仍支持多版本增量迁移，后续 schema 变更追加新版本即可。
 
 ## 4. 表与归属
 
@@ -37,6 +37,7 @@ type ModuleMigrations = { moduleName: string; files: readonly Migration[] }
 | `conversations`                                      | chat                       | 自引 parent，`parent_relation` fork/subagent，`model_ref`/`subagent_model_ref`         |
 | `messages` / `message_revisions`                     | chat                       | PK `(conversation_id,id)`；`seq` 是会话内历史顺序；revisions 记录消息 payload 变更快照 |
 | `compaction_overlays`                                | chat                       | 压缩摘要与覆盖的 `seq` 区间，独立于消息日志                                            |
+| `subagent_tasks`                                     | agent runtime (subagent)   | PK `(root_chat_id,id)`；UNIQUE `chat_id` 与 `(root_chat_id,seq)`；status pending/running/blocked/done/failed/cancelled |
 | `quarantined_messages`                               | chat                       | 畸形消息隔离                                                                           |
 | `queued_messages`                                    | chat                       | 持久化消息队列                                                                         |
 | `runs` / `run_steps` / `prompt_diagnostics`          | agent runtime / telemetry  | token 用量、finish 原因、prompt 缓存诊断                                               |
@@ -47,13 +48,14 @@ type ModuleMigrations = { moduleName: string; files: readonly Migration[] }
 
 ## 5. AgentStore（`agent/store.ts` + `repositories/*`）
 
-`AgentStore`（`store-types.ts`）由六个 repository 组成，各自基于 `SqlDatabase`（同步预编译语句 + `db.transaction`）：
+`AgentStore`（`store-types.ts`）由七个 repository 组成，各自基于 `SqlDatabase`（同步预编译语句 + `db.transaction`）：
 
 - **conversation-repo**：会话 CRUD；`depthOf`/`rootOf` 沿 parent 链走（上限 64）。
 - **message-repo**：消息 payload 存为版本化 `{ v: 1, message }` JSON。`messages` 是按 `seq` 排序的历史锚点；`message_revisions` 追加 payload 修订并作为读取最新内容的投影来源；压缩结果写入 `compaction_overlays`，摘要不落成真实消息行。
 - **queued-message-repo**：持久化消息队列。
 - **prompt-diagnostic-repo**：`runs`/`run_steps`/`prompt_diagnostics`，run 状态 `running`→`finished`/`failed`。
 - **tool-execution-repo**：每工具调用成功/时长/错误，由 DB 遥测 sink 写。
+- **subagent-task-repo**：子代理任务（`subagent_tasks`），按 `root_chat_id` 归属，状态机 pending/running/blocked/done/failed/cancelled，暴露为 `store.tasks`。
 - **activity-repo**：聚合上述表供 Usage 面板。
 
 `store.ts` 编排 repository，负责 cwd 规整（`realpathSync` 且须为目录）、agent-id 校验、标题派生、fork 逻辑、事务边界。

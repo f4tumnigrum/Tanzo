@@ -2,7 +2,7 @@
 
 > 适用范围：App Shell、ChatSession、流传输、Part 渲染注册表、状态分层、特性模块、设计系统。最后核对：`src/renderer/src/*`。
 
-> **重要纠正**：Tanzo 的对话流**不使用** ai-sdk 的 `useChat` hook。它实现了自研的 `ChatSession`（外部存储 + `useSyncExternalStore`），只借用 ai-sdk 的 `UIMessage` part 类型与 `readUIMessageStream` 流读取器（[ADR-0005](./adr/0005-custom-chatsession.md)）。
+> **重要纠正**：Tanzo 的对话流**不使用** ai-sdk 的 `useChat` hook。它实现了自研的 `ChatSession`（外部存储 + `useSyncExternalStore`），只借用 ai-sdk 的 `UIMessage` part 类型与 `readUIMessageStream` 流读取器。
 
 ## 1. App Shell
 
@@ -40,11 +40,11 @@ QueryClientProvider
 
 `model/conversation/chat-session.ts` 是核心：**按 chatId 引用计数的单例外部存储**（非 React、非 zustand），存在模块级 `Map<string, ChatSession>`，经 `getChatSession(chatId)` 取。
 
-`ChatSessionState`（`chat-session.ts:27`）：`messages`、`isLoadingHistory`、`isStreaming`、`transientStatus`、`contextStatus`、`recentCompaction`、`runNotice`、`queuedMessages`、`goal`、`subagentApprovals`。
+`ChatSessionState`（`chat-session.ts:29`）：`messages`、`isLoadingHistory`、`isStreaming`、`transientStatus`、`contextStatus`、`recentCompaction`、`compactionInProgress`、`activeRunKind`、`runNotice`、`queuedMessages`、`goal`、`subagentApprovals`、`tasks`。
 
 `useChatSession(chatId)` 桥接 React：effect 内 `session.retain()`（引用计数），再 `useSyncExternalStore(session.subscribe, session.getState)`。最后一个订阅者释放后 `TEARDOWN_DELAY_MS = 1000` ms 自销。
 
-生命周期 `open()`（`chat-session.ts:236`）：`onEvent` 监听 → `loadHistory()` → 并行 `loadSidecars()`（队列/审批/目标）→ `attachRun()` 连活跃流。
+生命周期 `open()`（`chat-session.ts:371`）：`onEvent` 监听 → `loadHistory()` → 并行 `loadSidecars()`（队列/审批/目标）→ `attachRun()` 连活跃流。
 
 ### 2.2 流传输（`platform/electron/run-stream.ts`）
 
@@ -59,7 +59,7 @@ QueryClientProvider
 
 ### 2.3 数据 part 路由（`model/conversation/data-part-router.ts`）
 
-`routeDataPart` 是对流式 `data-*` 的类型化 switch → 会话状态变更：`data-status`/`data-steering` → transientStatus；`data-context` → contextStatus；`data-compaction` → upsert 合成压缩消息；`data-subagentApproval` → 审批列表；`data-queued` → 队列；`data-goal` → 目标；`data-telemetry`(scope chat) → `reduceRunNotice`。
+`routeDataPart` 是对流式 `data-*` 的类型化 switch → 会话状态变更：`data-status`/`data-steering` → transientStatus；`data-context` → contextStatus；`data-compaction` → upsert 合成压缩消息；`data-task` → `setTasks`；`data-taskApproval` → 审批列表（`setTaskApprovals`）；`data-queued` → 队列；`data-goal` → 目标；`data-telemetry`(scope chat) → `reduceRunNotice`。
 
 ### 2.4 消息渲染管线（`ui/message/`）
 
@@ -120,7 +120,7 @@ QueryClientProvider
 ## 6. 设计系统
 
 - **components/ui/**：shadcn/Radix 风格原语库（button/dialog/sheet/popover/select/command/tabs/table/chart/sidebar/resizable/...）。**components/layout/**：page-layout/header/scaffold/pill-tabs。
-- **主题**（`common/theme/` + `theme-provider.tsx`）：`ThemeProvider` 据 `themeMode` 对系统方案解析，切 `.dark` 与 `color-scheme`；`ThemeInitializer` 把设计令牌作为 CSS 变量应用到 `:root`（色板/圆角/密度/字号预设）。所有主题态落 preferences，故持久在 main。`WallpaperLayer` 在有壁纸时注入表面透明度令牌覆盖。
+- **主题**（`components/theme/theme-provider.tsx` + `common/theme/`）：`ThemeProvider` 据 `themeMode` 对系统方案解析，切 `.dark` 与 `color-scheme`；`ThemeInitializer` 把设计令牌作为 CSS 变量应用到 `:root`（色板/圆角/密度/字号预设）。所有主题态落 preferences，故持久在 main。`WallpaperLayer` 在有壁纸时注入表面透明度令牌覆盖。
 - **i18n**（`i18n.ts` + `locales/en.ts`、`zh-CN.ts`）：两套资源，启动据系统偏好解析语言，`I18nLanguageSync` 保持同步。
 
 ## 7. 渲染层不变量

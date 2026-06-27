@@ -27,7 +27,7 @@
 
 | # | 文档 | 内容 |
 |---|---|---|
-| 10 | [Agent 运行时](./architecture/10-agent-runtime.md) | 模块工厂、`AgentService`/`RunEngine`/`TurnLoop` 分层、`ToolLoopAgent` 内层循环、并发与持久化 |
+| 10 | [Agent 运行时](./architecture/10-agent-runtime.md) | 模块工厂、`AgentService`/`RunEngine`/`TurnLoop` 分层、`streamText` 内层循环、并发与持久化 |
 | 11 | [上下文工程](./architecture/11-context-engineering.md) | Section × Provider 模型、缓存前沿、预算、压缩与 fork、工具记录规整 |
 | 12 | [工具系统](./architecture/12-tools.md) | 三来源合并、内置工具目录、fs/git/search/shell 沙箱、技能、子代理 |
 | 13 | [策略与审批](./architecture/13-policy-and-approval.md) | `toolApproval` 决策函数、规则优先级、权限模式、内置护栏、审批记忆 |

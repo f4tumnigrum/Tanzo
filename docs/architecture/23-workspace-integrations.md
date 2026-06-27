@@ -72,7 +72,7 @@ Pet 有两个层次：
 - **窗口层**：`pet-window.ts` 创建透明、置顶、点击穿透的第二 BrowserWindow，使用同一 preload，加载 `pet.html → pet.tsx → PetApp`。
 - **资源层**：`pet/module.ts` 从 `~/.tanzo/pets`、`~/.codex/pets`、app resources、asar-unpacked resources 扫描 `pet.json + spritesheet.webp`，只接受安全 id。
 
-状态来源是 `presence/aggregator.ts`：Agent chunk sink 观察 text、telemetry、approval、change preview 等事件，推导 thinking/running-tool/waiting-approval/review/done/error 等状态，再广播 `pet:presence-changed`。Pet renderer 可设置 active chat、命中矩形与拖拽状态，但不持有 Agent 真源。
+状态来源是 `agent/presence/aggregator.ts`：Agent chunk sink 观察 text、telemetry、approval、change preview 等事件，推导 thinking/running-tool/waiting-approval/review/done/error 等状态，再广播 `pet:presence-changed`。Pet renderer 可设置 active chat、命中矩形与拖拽状态，但不持有 Agent 真源。
 
 ## 8. 集成不变量
 

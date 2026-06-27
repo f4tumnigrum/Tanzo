@@ -8,7 +8,7 @@ Agent 运行时由三层组成：
 
 - **入口层 = `AgentService` + `ChatMailbox`**：`service.ts` 暴露 `run`/`submitMessage`/`respondApprovals`/`compact`/`enqueue` 等公共能力，并用 `ChatMailbox` 保证每个 chatId 串行执行。
 - **生命周期层 = `RunEngine` + `TurnLoop`**：`RunEngine` 管 run 代次、取消、preparing/inflight 状态、stream start/finish；`TurnLoop` 管变更捕获、压缩、续航、计划模式补救、终结化。
-- **内层循环 = ai-sdk `ToolLoopAgent`**：一次 `agent.stream()` 内自动跑「调模型 → 执行工具 → 回灌 → 再调」，Tanzo 不手写模型工具循环（[ADR-0001](./adr/0001-use-ai-sdk-toolloopagent.md)）。
+- **内层循环 = ai-sdk `streamText`**：`streamText<ToolSet>(...)`（`runtime/stream-runner.ts:278`，参数由 `buildAgentCall` 组装，`runtime/build-agent.ts:73`）靠 `stopWhen` + `prepareStep` 自动跑「调模型 → 执行工具 → 回灌 → 再调」，Tanzo 不手写模型工具循环。`buildAgentCall` 返回的是一个 `AgentCall` 配置对象，不是 Agent 实例。
 
 审批状态仍活在消息里，不在 main 的闭包状态中（[13 策略与审批](./13-policy-and-approval.md)）。main 在跨调用上承载正确性的状态是 `RunEngine` 的 `AbortController`、epoch、preparing/inflight map 与 active run 集合。
 
@@ -49,7 +49,7 @@ chat:submit → ipc/chat.ts(zod 校验) → service.submitMessage
   → mailbox.enqueue(chatId, ...)
   → ChatInbox.submitMessage
       → hooks SessionStart/UserPromptSubmit（可能阻断或追加上下文）
-      → 有 parentConversationId? 子代理后台驱动 : service.run
+      → conversation.parentRelation === 'subagent'? 子代理后台驱动 : service.run
 
 service.run
   → mailbox.enqueue(chatId, () => runWithStopHook)
@@ -59,15 +59,14 @@ service.run
       → loop pass ≤ 10:
           resolveAgentDefinition
           store.save(incoming)
-          compaction.prepareMessages(force = pass > 0)
+          compaction.prepareMessages(force = 上一 pass 命中压缩触发时才 true)
           RunEngine.run(kind='chat')
             → streams.start + runPersistence.start
             → startAgentStream
               → buildTools(def, chatId, depth, mode)
-              → contextEngine.prepareStep(...)
-              → buildAgent(... new ToolLoopAgent)
-              → agent.stream(...)
-              → writer.merge(result.toUIMessageStream())
+              → buildAgentCall(...)
+              → streamText({ ...agentCall, prepareStep 回调 → contextEngine.build(...) })
+              → writer.merge(toUIMessageStream({ stream: result.stream }))
             → onFinally: turnFinalizer + markRunOutcome + persistence finish
       → changeSet.captureAfterRun + 写入 data-changePreview
       → streams.finish
@@ -86,7 +85,7 @@ service.run
 | `preparing` | `RunEngine` | 流启动前的准备阶段（压缩/变更捕获/解析） |
 | `epochs` | `RunEngine` | 单调代次，检测 run 是否被取代 |
 | `cancelGenerations` | `RunEngine` | 目标续接调度用，取消后旧调度失效 |
-| `activeRuns` | `RunEngine` | `settleRuns(timeout)` 优雅关停 |
+| `activeRuns` | `RunEngine` | `settle(timeoutMs)` 优雅关停（`AgentService.settleRuns` 是其包装） |
 | `steerQueue` | `AgentService` | 中途转向文本，在 `prepareStep` 排空 |
 | `messageQueue` | `AgentService` | 排队用户消息，持久化到 `queued_messages` 并启动恢复 |
 | `mailbox` | `AgentService` | 每对话串行执行器 |
@@ -108,7 +107,7 @@ service.run
 
 ## 6. 压缩、停止条件、续航
 
-**停止条件**：`buildStopWhen(def, contextEngine)` = `isStepCount(def.maxSteps)`（若设）+ `overCompactionTrigger`。当上报 token 超过 `contextEngine.compactionTriggerTokens(def)` 且模型还在发工具调用时，内层循环停下，把控制权交回外层。
+**停止条件**：`stopWhen` 在 `buildAgentCall`（`build-agent.ts:75-80`）内联组装：`overCompactionTrigger(compactionTriggerTokens)` + （若设）`isStepCount(def.maxSteps)` + `() => shouldStop()`（PostToolUse 钩子请求停止，`stream-runner.ts:375` 设 `hookRequestedStop`）。当上报 token 超过 `contextEngine.compactionTriggerTokens(def)` 且模型还在发工具调用时，内层循环停下，把控制权交回外层。
 
 `TurnLoop.run` 的续航逻辑：
 
@@ -124,19 +123,18 @@ service.run
 
 | 机器 | 纯核心 | 解释器/shell | 要点 |
 |---|---|---|---|
-| TurnLoop 决策 | `runtime/turn-loop.machine.ts`（`decideTurnOutcome`） | `runtime/turn-loop.ts` | 四条续跑路径（plan-exit / compaction-retry / post-compact / finalize）的优先级级联；可不 mock 流而表驱动测试；`finalize.deferredDispatch` 消除了旧的「改标志再调一次 finalizer」 |
+| TurnLoop 决策 | `runtime/turn-loop.machine.ts`（`decideTurnOutcome`） | `runtime/turn-loop.ts` | 四条续跑路径（plan-exit / compaction-retry / post-compact / finalize）的优先级级联；可不 mock 流而表驱动测试；`finalize` 决策 + shell 侧 `deferTerminal` 标志（`turn-loop.ts:217`）保证终结只 dispatch 一次，消除了旧的「改标志再调一次 finalizer」 |
 | Goal | `goal/goal.machine.ts`（`goalTransition`） | `goal/service.ts` | 6 态转移表，集中 `pendingInjection` 与「非 active 即 no-op」守卫 |
 | SubagentTask | `subagent/task.machine.ts`（`taskTransition`） | `subagent/task-service.ts` | 收敛 10+ 处散落的 `{...task,status}`+`delete block`+`persist`+`notify`；`isTaskTerminal` 单一来源 |
 
-`RunEngine` / `ChatMailbox` / `RunPersistenceRegistry` 是并发原语与累加器，**不** FSM 化（见设计文档 §2.3）。
+`RunEngine` / `ChatMailbox` / `RunPersistenceRegistry` 是并发原语与累加器，**不** FSM 化。
 
 ## 7. 终结化
 
 `runtime/turn-finalizer.ts` 在流结束后：
 
-- owner run 清空 steering；abort 或压缩触发时提前返回。
-- 子代理场景排空待处理的父运行。
-- main agent 且当前无 inflight 时，评估目标续接；若有排队消息，排队消息优先于目标续接。
+- owner run 清空 steering（`reconcile`，`turn-finalizer.ts:46-58`）；abort 或压缩触发时提前返回。
+- main agent 且当前无 inflight 时，`dispatch`（`turn-finalizer.ts:60-102`）评估目标续接；若有排队消息，排队消息优先于目标续接。（子代理→父运行的恢复不在这里，而在 `subagent/task-service.ts`。）
 - 目标续接由 `startGoalContinuationQueued` 重新进入 mailbox，并用 cancel generation 防止取消后的旧调度启动。
 
 ## 8. 子系统职责速览
@@ -161,7 +159,7 @@ service.run
 
 - [ ] 每对话串行（`ChatMailbox`），跨对话并发。
 - [ ] 单活跃 run/对话（`RunEngine` inflight + epoch），新 run 取代前驱。
-- [ ] `ToolLoopAgent` 是内层；`TurnLoop` 是外层压缩/续航/终结化。
+- [ ] ai-sdk `streamText` 是内层；`TurnLoop` 是外层压缩/续航/终结化。
 - [ ] `canPersist()` 守卫：abort/取代/删除的 run 不写消息。
 - [ ] 压缩用 `expectedActiveIds` 乐观并发；冲突 → 可恢复 `CHAT_COMPACTION_STALE` 且 no-op。
 - [ ] 启动 `sweepInterruptedRuns` 把残留 run 标 `failed`，排队消息从 `queued_messages` 恢复。
