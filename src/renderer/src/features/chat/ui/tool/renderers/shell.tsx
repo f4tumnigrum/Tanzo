@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { AlertTriangle, FolderOpen, SquareTerminal } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
@@ -77,25 +78,39 @@ function isShellStopOutput(output: unknown): output is { stopped: true; sessionI
   )
 }
 
-function shellExitLabel(
+type TFn = ReturnType<typeof useTranslation>['t']
+
+function shellExitInfo(
   sessionOutput: ShellSessionOutput | undefined,
-  foregroundOutput: ShellOutput | undefined
-): string {
-  if (sessionOutput?.status === 'running') return 'running'
-  if (sessionOutput?.status === 'stopped') return 'stopped'
-  if (sessionOutput?.status === 'failed') return 'failed'
+  foregroundOutput: ShellOutput | undefined,
+  t: TFn
+): { text: string; running: boolean } | null {
+  if (sessionOutput?.status === 'running') {
+    return { text: t('chat.tool.shell.exit.running'), running: true }
+  }
+  if (sessionOutput?.status === 'stopped') {
+    return { text: t('chat.tool.shell.exit.stopped'), running: false }
+  }
+  if (sessionOutput?.status === 'failed') {
+    return { text: t('chat.tool.shell.exit.failed'), running: false }
+  }
   if (sessionOutput && sessionOutput.exitCode !== null && sessionOutput.exitCode !== 0) {
-    return `exit ${sessionOutput.exitCode}`
+    return { text: `exit ${sessionOutput.exitCode}`, running: false }
   }
-  if (foregroundOutput?.reason === 'timeout') return 'timeout'
+  if (foregroundOutput?.reason === 'timeout') {
+    return { text: t('chat.tool.shell.exit.timeout'), running: false }
+  }
   if (foregroundOutput?.reason === 'abort' || foregroundOutput?.reason === 'closed') {
-    return 'aborted'
+    return { text: t('chat.tool.shell.exit.aborted'), running: false }
   }
-  if (foregroundOutput && foregroundOutput.code !== 0) return `exit ${foregroundOutput.code}`
-  return ''
+  if (foregroundOutput && foregroundOutput.code !== 0) {
+    return { text: `exit ${foregroundOutput.code}`, running: false }
+  }
+  return null
 }
 
 function ShellHeader({ context }: { context: ToolRenderContext }): React.JSX.Element {
+  const { t } = useTranslation()
   const input = context.input as ShellInput | undefined
   const output = context.output
   const sessionOutput = isShellSessionOutput(output) ? output : undefined
@@ -108,11 +123,11 @@ function ShellHeader({ context }: { context: ToolRenderContext }): React.JSX.Ele
       : undefined
   const command = input?.command ?? input?.cmd ?? sessionOutput?.command ?? ''
   const isFinal = context.state === 'output-available'
-  const exitLabel = shellExitLabel(sessionOutput, foregroundOutput)
+  const exitInfo = shellExitInfo(sessionOutput, foregroundOutput, t)
 
   const meta =
-    output && isFinal && exitLabel ? (
-      <ToolMetaChip text={exitLabel} tone={exitLabel === 'running' ? 'info' : 'danger'} />
+    output && isFinal && exitInfo ? (
+      <ToolMetaChip text={exitInfo.text} tone={exitInfo.running ? 'info' : 'danger'} />
     ) : null
 
   return (
@@ -157,6 +172,7 @@ function StreamLabel({
 }
 
 function ShellOutputComp({ context }: { context: ToolRenderContext }): React.JSX.Element | null {
+  const { t } = useTranslation()
   const input = context.input as ShellInput | undefined
   const output = context.output
   const sessionOutput = isShellSessionOutput(output) ? output : undefined
@@ -175,14 +191,21 @@ function ShellOutputComp({ context }: { context: ToolRenderContext }): React.JSX
   const isFinal = context.state === 'output-available'
 
   if (context.state === 'output-error' && !stdout && !stderr) {
-    return <ToolErrorState className="m-2.5" message={context.errorText ?? 'Command failed.'} />
+    return (
+      <ToolErrorState
+        className="m-2.5"
+        message={context.errorText ?? t('chat.tool.shell.errors.commandFailed')}
+      />
+    )
   }
 
   if (isShellListOutput(output)) {
     return (
       <div className="bg-secondary/18 px-2.5 py-1.5">
         {output.sessions.length === 0 ? (
-          <p className="font-mono text-[0.625rem] text-muted-foreground/80">No sessions.</p>
+          <p className="font-mono text-[0.625rem] text-muted-foreground/80">
+            {t('chat.tool.shell.noSessions')}
+          </p>
         ) : (
           <div className="space-y-1">
             {output.sessions.map((session) => (
@@ -206,7 +229,7 @@ function ShellOutputComp({ context }: { context: ToolRenderContext }): React.JSX
   if (isShellStopOutput(output)) {
     return (
       <div className="bg-secondary/18 px-2.5 py-1.5 font-mono text-[0.625rem] text-foreground/85">
-        stopped {output.sessionId}
+        {t('chat.tool.shell.stopped')} {output.sessionId}
       </div>
     )
   }
@@ -231,7 +254,7 @@ function ShellOutputComp({ context }: { context: ToolRenderContext }): React.JSX
         ) : null}
         {!stdout && !stderr ? (
           <p className="px-2.5 py-1.5 font-mono text-[0.625rem] text-muted-foreground/80">
-            {isFinal ? 'No output.' : 'Running…'}
+            {isFinal ? t('chat.tool.shell.noOutput') : t('chat.tool.common.running')}
           </p>
         ) : (
           <>

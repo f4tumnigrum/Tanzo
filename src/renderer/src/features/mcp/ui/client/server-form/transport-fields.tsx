@@ -61,7 +61,7 @@ export function StdioFields({
 
       <div className="space-y-1.5 sm:col-span-2">
         <Label htmlFor="cwd" className={labelClass}>
-          cwd
+          {t('mcp.server.form.cwd')}
         </Label>
         <Input
           id="cwd"

@@ -159,9 +159,41 @@ export const zhCN = {
           attach: '添加图片',
           remove: '移除图片',
           tooLarge: '图片过大（上限 10MB）。',
-          onlyImages: '只能添加图片文件。'
+          onlyImages: '只能添加图片文件。',
+          imageTitle: '图片'
         },
         stop: '停止',
+        send: '发送',
+        sendShortcut: '发送 · Enter',
+        permissionModeLabel: '权限模式',
+        permissionMode: {
+          default: {
+            label: '询问',
+            tooltip: '每次工具调用前询问。'
+          },
+          plan: {
+            label: '计划',
+            tooltip: '计划模式：禁止写入操作。'
+          },
+          yolo: {
+            label: '自动',
+            tooltip: '自动批准所有工具调用。'
+          },
+          dangerous: {
+            label: '危险',
+            tooltip: '危险模式：自动批准工具调用，并允许访问工作区以外的路径。'
+          }
+        },
+        reasoningEffort: {
+          default: '自动',
+          none: '关闭',
+          minimal: '极简',
+          low: '低',
+          medium: '中',
+          high: '高',
+          xhigh: '极高',
+          max: '最高'
+        },
         context: {
           saved: '已节省 {{tokens}}',
           compacted: '已压缩',
@@ -241,6 +273,7 @@ export const zhCN = {
         label: '提问',
         waiting: '等待输入',
         meta: {
+          count_one: '{{count}} 个问题',
           count_other: '{{count}} 个问题',
           answered: '已回答 {{done}}/{{total}}',
           discussing: '讨论中'
@@ -250,7 +283,9 @@ export const zhCN = {
           multi: '多选',
           rank: '排序'
         },
+        selected_one: '已选 {{count}} 项',
         selected_other: '已选 {{count}} 项',
+        ranked_one: '已排序 {{count}} 项',
         ranked_other: '已排序 {{count}} 项',
         ready: '可以提交了',
         currentReady: '可以继续',
@@ -264,6 +299,7 @@ export const zhCN = {
         decoding: '正在准备问题…',
         customPlaceholder: '或输入你自己的答案',
         discuss: '先讨论一下',
+        send_one: '提交回答',
         send_other: '提交回答',
         noAnswer: '未回答',
         error: '提问失败。',
@@ -283,6 +319,20 @@ export const zhCN = {
           action: '编辑消息',
           send: '发送',
           cancel: '取消'
+        },
+        xmlTag: {
+          reasoning: '推理',
+          planning: '规划',
+          observation: '观察',
+          reflection: '反思',
+          response: '回复'
+        },
+        tokenUsage: {
+          in: '输入',
+          out: '输出',
+          reason: '推理',
+          cacheRead: '缓存读取',
+          cacheWrite: '缓存写入'
         },
         parts: {
           plan: {
@@ -356,7 +406,101 @@ export const zhCN = {
       tool: {
         common: {
           running: '运行中…',
-          toggleLineWrap: '切换自动换行'
+          toggleLineWrap: '切换自动换行',
+          error: '工具返回了错误。',
+          decodingInput: '正在解析输入'
+        },
+        status: {
+          streaming: '生成中',
+          pending: '待处理',
+          awaitingApproval: '等待批准',
+          approved: '已批准',
+          done: '完成',
+          error: '错误',
+          denied: '已拒绝'
+        },
+        goal: {
+          label: '目标',
+          status: {
+            complete: '完成',
+            blocked: '受阻'
+          },
+          errors: {
+            updateFailed: '目标更新失败。'
+          }
+        },
+        shell: {
+          noOutput: '无输出。',
+          noSessions: '无会话。',
+          stopped: '已停止',
+          exit: {
+            running: '运行中',
+            stopped: '已停止',
+            failed: '失败',
+            timeout: '超时',
+            aborted: '已中止'
+          },
+          errors: {
+            commandFailed: '命令执行失败。'
+          }
+        },
+        grep: {
+          noMatches: '无匹配。',
+          truncated: '结果已截断。请缩小搜索范围或使用 offset 翻页。',
+          matchesCount_one: '{{count}} 处匹配',
+          matchesCount_other: '{{count}} 处匹配',
+          filesCount_one: '{{count}} 个文件',
+          filesCount_other: '{{count}} 个文件',
+          caseInsensitive: '忽略大小写',
+          multiline: '多行',
+          errors: {
+            searchFailed: '搜索失败。'
+          }
+        },
+        glob: {
+          noMatches: '无匹配文件。',
+          truncated: '结果列表已截断。请细化匹配模式或使用 offset 翻页。',
+          hitsCount_one: '{{count}} 个结果',
+          hitsCount_other: '{{count}} 个结果',
+          includingIgnored: '包含被忽略的文件',
+          errors: {
+            globFailed: 'Glob 失败。'
+          }
+        },
+        fileRead: {
+          lines_one: '{{count}} 行',
+          lines_other: '{{count}} 行',
+          linesPlus: '{{count}}+ 行',
+          cells_one: '{{count}} 个单元格',
+          cells_other: '{{count}} 个单元格',
+          truncated: '已截断',
+          moreAvailable: '还有更多',
+          errors: {
+            readFailed: '读取失败。'
+          }
+        },
+        fileWrite: {
+          errors: {
+            writeFailed: '写入失败。'
+          }
+        },
+        fileEdit: {
+          replacements_one: '{{count}} 处替换',
+          replacements_other: '{{count}} 处替换',
+          edits_one: '{{count}} 处编辑',
+          edits_other: '{{count}} 处编辑',
+          replaceAll: '全部替换',
+          errors: {
+            editFailed: '编辑失败。'
+          }
+        },
+        dynamic: {
+          label: '工具',
+          input: '输入',
+          output: '输出',
+          errors: {
+            toolFailed: '工具执行失败。'
+          }
         },
         todo: {
           label: '任务',
@@ -451,6 +595,15 @@ export const zhCN = {
           budget_limited: '预算用尽',
           usage_limited: '额度受限',
           complete: '已完成'
+        },
+        command: {
+          current: '目标：{{objective}}（{{status}}）',
+          none: '当前没有目标。',
+          cleared: '目标已清除。',
+          paused: '目标已暂停。',
+          resumed: '目标已恢复。',
+          objectiveUpdated: '目标内容已更新。',
+          set: '目标已设置。'
         }
       },
       errors: {
@@ -927,6 +1080,12 @@ export const zhCN = {
         bulk: {
           enableAll: '全部开启',
           disableAll: '全部关闭'
+        },
+        meta: {
+          contextWindow: '{{value}} 上下文',
+          maxOutput: '{{value}} 输出',
+          dimensions: '{{value}} 维',
+          images: '{{value}} 张图片'
         }
       },
       family: {
@@ -967,7 +1126,8 @@ export const zhCN = {
         }
       },
       permissions: {
-        empty: '尚未保存任何规则。'
+        empty: '尚未保存任何规则。',
+        emptyDescription: '从审批提示中保存的权限决定会显示在这里。'
       },
       hooks: {
         title: '钩子',
@@ -1054,7 +1214,16 @@ export const zhCN = {
             remove: '移除'
           },
           import: {
-            placeholder: '粘贴 tweakcn 主题链接'
+            placeholder: '粘贴 tweakcn 主题链接',
+            error: '导入失败',
+            errors: {
+              invalidUrl: '主题链接无效。',
+              httpsRequired: '主题链接必须使用 https。',
+              fetchFailed: '获取失败：{{status}}',
+              tooLarge: '主题响应内容过大。',
+              invalidJson: '主题响应不是有效的 JSON。',
+              noVariables: '响应中未找到 tweakcn 主题颜色变量。'
+            }
           },
           options: {
             tanzo: {
@@ -1076,6 +1245,10 @@ export const zhCN = {
             twitter: {
               label: 'Twitter',
               description: '清爽明亮的蓝色调。'
+            },
+            brutalist: {
+              label: 'Brutalist',
+              description: '粗野风格：粗边框、高对比、原始质感。'
             }
           }
         },
@@ -1185,6 +1358,7 @@ export const zhCN = {
           commandConfig: '连接配置',
           command: '启动命令',
           arguments: '启动参数',
+          cwd: '工作目录',
           fullCommand: '完整命令',
           url: '服务器地址',
           env: '环境变量',
@@ -1224,6 +1398,7 @@ export const zhCN = {
           },
           transport: '连接方式',
           command: '启动命令',
+          cwd: '工作目录',
           arguments: {
             label: '启动参数',
             placeholder: '--flag value',
@@ -1255,7 +1430,10 @@ export const zhCN = {
             placeholder: '在此粘贴 JSON'
           },
           errors: {
-            invalidJson: '无效的 JSON'
+            invalidJson: '无效的 JSON',
+            jsonInvalid: '{{field}} 必须是有效的 JSON 对象。',
+            jsonNotObject: '{{field}} 必须是 JSON 对象。',
+            jsonValuesString: '{{field}} 的所有值都必须是字符串。'
           }
         },
         delete: {
@@ -1298,7 +1476,8 @@ export const zhCN = {
     pet: {
       quickInput: {
         placeholder: '发送消息…',
-        send: '发送'
+        send: '发送',
+        sendShortcut: '发送 · Enter'
       },
       approval: {
         title: '需要权限确认'

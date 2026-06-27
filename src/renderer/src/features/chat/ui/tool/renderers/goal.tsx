@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { Target } from 'lucide-react'
 import { ToolHeaderRow, type ToolBadgeTone } from '../primitives'
 import type { ToolRenderContext } from '../render-context'
@@ -14,9 +15,9 @@ interface GoalOutput {
   status: GoalStatus
 }
 
-const STATUS_BADGE: Record<GoalStatus, { text: string; tone: ToolBadgeTone }> = {
-  complete: { text: 'complete', tone: 'success' },
-  blocked: { text: 'blocked', tone: 'danger' }
+const STATUS_TONE: Record<GoalStatus, ToolBadgeTone> = {
+  complete: 'success',
+  blocked: 'danger'
 }
 
 function goalStatus(context: ToolRenderContext): GoalStatus | null {
@@ -27,12 +28,15 @@ function goalStatus(context: ToolRenderContext): GoalStatus | null {
 }
 
 function GoalHeader({ context }: { context: ToolRenderContext }): React.JSX.Element {
+  const { t } = useTranslation()
   const status = goalStatus(context)
-  const badge = status ? STATUS_BADGE[status] : null
+  const badge = status
+    ? { text: t(`chat.tool.goal.status.${status}`), tone: STATUS_TONE[status] }
+    : null
   return (
     <ToolHeaderRow
       icon={Target}
-      label="Goal"
+      label={t('chat.tool.goal.label')}
       state={context.state}
       badges={badge ? [badge] : undefined}
     />
@@ -40,7 +44,8 @@ function GoalHeader({ context }: { context: ToolRenderContext }): React.JSX.Elem
 }
 
 function GoalOutputComp({ context }: { context: ToolRenderContext }): React.JSX.Element | null {
-  return renderToolError(context, 'Goal update failed.', { className: 'm-2.5' })
+  const { t } = useTranslation()
+  return renderToolError(context, t('chat.tool.goal.errors.updateFailed'), { className: 'm-2.5' })
 }
 
 export const goalRenderer: ToolRenderer = {

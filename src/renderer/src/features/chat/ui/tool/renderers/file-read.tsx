@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { FileText } from 'lucide-react'
 import type { TanzoTools, ToolError } from '@shared/agent-message'
 import {
@@ -17,6 +18,7 @@ type FileReadOutput = Exclude<TanzoTools['fileRead']['output'], ToolError>
 type ImageOutput = Extract<FileReadOutput, { kind: 'image' }>
 type NotebookOutput = Extract<FileReadOutput, { kind: 'notebook' }>
 type TextOutput = Exclude<FileReadOutput, ImageOutput | NotebookOutput>
+type TFn = ReturnType<typeof useTranslation>['t']
 
 function isImage(output: unknown): output is ImageOutput {
   return typeof output === 'object' && output !== null && (output as ImageOutput).kind === 'image'
@@ -43,12 +45,14 @@ function lineRange(content: string): string | undefined {
   return first === last ? `L${first}` : `L${first}-L${last}`
 }
 
-function textMeta(output: TextOutput): string {
-  const total = output.totalLinesKnown === false ? `${output.totalLines}+` : `${output.totalLines}`
-  return `${total} lines`
+function textMeta(output: TextOutput, t: TFn): string {
+  return output.totalLinesKnown === false
+    ? t('chat.tool.fileRead.linesPlus', { count: output.totalLines })
+    : t('chat.tool.fileRead.lines', { count: output.totalLines })
 }
 
 function FileReadHeader({ context }: { context: ToolRenderContext }): React.JSX.Element {
+  const { t } = useTranslation()
   const input = context.input as FileReadInput | undefined
   const output = context.output
   const path = input?.path ?? ''
@@ -57,7 +61,7 @@ function FileReadHeader({ context }: { context: ToolRenderContext }): React.JSX.
   if (output && !isToolError(output)) {
     if (isImage(output)) meta = formatBytes(output.bytes)
     else if (isNotebook(output)) {
-      meta = `${output.cells} cells`
+      meta = t('chat.tool.fileRead.cells', { count: output.cells })
     } else {
       const result = output as TextOutput
       meta = lineRange(result.content)
@@ -76,7 +80,10 @@ function FileReadHeader({ context }: { context: ToolRenderContext }): React.JSX.
 }
 
 function FileReadOutputComp({ context }: { context: ToolRenderContext }): React.JSX.Element | null {
-  const err = renderToolError(context, 'Read failed.', { className: 'm-2.5' })
+  const { t } = useTranslation()
+  const err = renderToolError(context, t('chat.tool.fileRead.errors.readFailed'), {
+    className: 'm-2.5'
+  })
   if (err) return err
   const output = context.output
   if (output === undefined) return null
@@ -109,8 +116,18 @@ function FileReadOutputComp({ context }: { context: ToolRenderContext }): React.
   })
   const isNotebookOut = isNotebook(output)
   const meta = isNotebookOut
-    ? `${(result as NotebookOutput).cells} cells${result.truncated ? ' · truncated' : ''}`
-    : `${textMeta(result as TextOutput)}${(result as TextOutput).hasMore ? ' · more available' : ''}`
+    ? [
+        t('chat.tool.fileRead.cells', { count: (result as NotebookOutput).cells }),
+        result.truncated ? t('chat.tool.fileRead.truncated') : null
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : [
+        textMeta(result as TextOutput, t),
+        (result as TextOutput).hasMore ? t('chat.tool.fileRead.moreAvailable') : null
+      ]
+        .filter(Boolean)
+        .join(' · ')
   return (
     <>
       <HighlightedCodeView

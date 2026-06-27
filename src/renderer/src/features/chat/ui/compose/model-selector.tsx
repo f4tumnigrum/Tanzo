@@ -8,11 +8,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import type { ProviderId } from '@/common/contracts'
-import {
-  REASONING_EFFORT_SHORT_LABEL,
-  reasoningEffortsForProvider,
-  type ReasoningEffort
-} from '../../model/reasoning-effort'
+import { reasoningEffortsForProvider, type ReasoningEffort } from '../../model/reasoning-effort'
 import {
   findModelOption,
   type LanguageModelOption,
@@ -172,7 +168,7 @@ export function ModelSelector({
                       }}
                       className="ml-0.5 shrink-0 cursor-pointer rounded-[var(--radius-4xl)] bg-primary/10 px-1 py-px text-[0.5625rem] font-medium text-primary transition-colors hover:bg-primary/20"
                     >
-                      {REASONING_EFFORT_SHORT_LABEL[reasoningEffort]}
+                      {t(`chat.composer.reasoningEffort.${reasoningEffort}`)}
                     </span>
                   ) : null}
                 </Button>

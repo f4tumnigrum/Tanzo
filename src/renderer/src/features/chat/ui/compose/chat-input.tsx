@@ -20,35 +20,25 @@ import { ComposerAttachment } from './composer-attachment'
 const MODE_ORDER: readonly PermissionMode[] = ['default', 'plan', 'yolo', 'dangerous']
 
 interface ModeChrome {
-  short: string
   icon: typeof ShieldQuestion
   iconClass: string
-  tooltip: string
 }
 const MODE_CHROME: Record<PermissionMode, ModeChrome> = {
   default: {
-    short: 'Ask',
     icon: ShieldQuestion,
-    iconClass: 'text-amber-500',
-    tooltip: 'Ask before each tool call.'
+    iconClass: 'text-amber-500'
   },
   plan: {
-    short: 'Plan',
     icon: ShieldQuestion,
-    iconClass: 'text-violet-500',
-    tooltip: 'Plan mode: writes are blocked.'
+    iconClass: 'text-violet-500'
   },
   yolo: {
-    short: 'Auto',
     icon: ShieldAlert,
-    iconClass: 'text-emerald-500',
-    tooltip: 'Auto-approves all tool calls.'
+    iconClass: 'text-emerald-500'
   },
   dangerous: {
-    short: 'Danger',
     icon: Skull,
-    iconClass: 'text-red-500',
-    tooltip: 'Dangerous mode: auto-approves tools and allows paths outside the workspace.'
+    iconClass: 'text-red-500'
   }
 }
 
@@ -329,6 +319,7 @@ export function ChatInput({
                 part={part}
                 onRemove={() => removeAttachment(index)}
                 removeLabel={t('chat.composer.attachments.remove')}
+                imageTitle={t('chat.composer.attachments.imageTitle')}
               />
             ))}
           </div>
@@ -364,7 +355,7 @@ export function ChatInput({
           <div className="mr-auto flex min-w-0 items-center">
             <div
               role="radiogroup"
-              aria-label="Permission mode"
+              aria-label={t('chat.composer.permissionModeLabel')}
               onBlur={(event) => {
                 if (!event.currentTarget.contains(event.relatedTarget as Node)) {
                   setModeMenuOpen(false)
@@ -379,6 +370,8 @@ export function ChatInput({
                 const item = MODE_CHROME[mode]
                 const ItemIcon = item.icon
                 const active = mode === permissionMode
+                const modeLabel = t(`chat.composer.permissionMode.${mode}.label`)
+                const modeTooltip = t(`chat.composer.permissionMode.${mode}.tooltip`)
                 return (
                   <Tooltip key={mode}>
                     <TooltipTrigger
@@ -388,7 +381,7 @@ export function ChatInput({
                           type="button"
                           role="radio"
                           aria-checked={active}
-                          aria-label={item.short}
+                          aria-label={modeLabel}
                           disabled={isStreaming}
                           onClick={() => {
                             if (!modeMenuOpen) {
@@ -417,11 +410,11 @@ export function ChatInput({
                             )}
                             strokeWidth={1.8}
                           />
-                          <span>{item.short}</span>
+                          <span>{modeLabel}</span>
                         </button>
                       )}
                     />
-                    <TooltipContent side="top">{item.tooltip}</TooltipContent>
+                    <TooltipContent side="top">{modeTooltip}</TooltipContent>
                   </Tooltip>
                 )
               })}
@@ -487,7 +480,7 @@ export function ChatInput({
                       type="button"
                       onClick={isStreaming ? onStop : () => void dispatch('queue')}
                       disabled={isStreaming ? !onStop : !canSubmit}
-                      aria-label={isStreaming ? t('chat.composer.stop') : 'Send'}
+                      aria-label={isStreaming ? t('chat.composer.stop') : t('chat.composer.send')}
                       size="icon-xs"
                       className={cn(
                         'size-6 rounded-[var(--radius-4xl)] p-0',
@@ -508,7 +501,7 @@ export function ChatInput({
                   )}
                 />
                 <TooltipContent side="top">
-                  {isStreaming ? t('chat.composer.stop') : 'Send · Enter'}
+                  {isStreaming ? t('chat.composer.stop') : t('chat.composer.sendShortcut')}
                 </TooltipContent>
               </Tooltip>
             </div>

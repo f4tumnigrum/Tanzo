@@ -1,5 +1,6 @@
 import { FilePen } from 'lucide-react'
 import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { TanzoTools, ToolError } from '@shared/agent-message'
 import {
   PANEL_HEIGHT_LG,
@@ -65,6 +66,7 @@ function FileEditHeader({ context }: { context: ToolRenderContext }): React.JSX.
 }
 
 function FileEditOutputComp({ context }: { context: ToolRenderContext }): React.JSX.Element | null {
+  const { t } = useTranslation()
   const input = context.input as FileEditInput | undefined
   const output = context.output
   const result = output !== undefined && !isToolError(output) ? (output as FileEditOutput) : null
@@ -74,7 +76,7 @@ function FileEditOutputComp({ context }: { context: ToolRenderContext }): React.
     [input?.oldText, input?.newText, startLine]
   )
 
-  const err = renderToolError(context, 'Edit failed.')
+  const err = renderToolError(context, t('chat.tool.fileEdit.errors.editFailed'))
   if (err) return err
   if (stats.lines.length === 0) return null
   return (
@@ -88,8 +90,8 @@ function FileEditOutputComp({ context }: { context: ToolRenderContext }): React.
       />
       {result ? (
         <ToolMetaLine className="border-t border-border/10 px-2.5 py-1">
-          {result.replacements} replacement{result.replacements === 1 ? '' : 's'}
-          {input?.replaceAll ? ' · replace all' : ''}
+          {t('chat.tool.fileEdit.replacements', { count: result.replacements })}
+          {input?.replaceAll ? ` · ${t('chat.tool.fileEdit.replaceAll')}` : ''}
         </ToolMetaLine>
       ) : null}
     </>

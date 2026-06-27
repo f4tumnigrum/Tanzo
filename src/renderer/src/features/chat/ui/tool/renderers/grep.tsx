@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { Search } from 'lucide-react'
 import type { TanzoTools, ToolError } from '@shared/agent-message'
 import {
@@ -16,6 +17,8 @@ import { isToolError, splitDirAndFile } from './shared'
 type GrepInput = Partial<TanzoTools['grep']['input']>
 type GrepOutput = Exclude<TanzoTools['grep']['output'], ToolError>
 type GrepMatch = Extract<GrepOutput, { mode: 'content' }>['matches'][number]
+
+type TFn = ReturnType<typeof useTranslation>['t']
 
 function groupByFile(matches: GrepMatch[]): Array<{ file: string; rows: GrepMatch[] }> {
   const order: string[] = []
@@ -92,15 +95,17 @@ function MatchText({
 }
 
 function GrepHeader({ context }: { context: ToolRenderContext }): React.JSX.Element {
+  const { t } = useTranslation()
   const input = context.input as GrepInput | undefined
   const output = context.output
   const pattern = input?.pattern ?? ''
   let meta: string | undefined
   if (output && !isToolError(output)) {
     const result = output as GrepOutput
-    if (result.mode === 'count') meta = `${result.count} matches`
-    else if (result.mode === 'files') meta = `${result.files.length} files`
-    else meta = `${result.matches.length} matches`
+    if (result.mode === 'count') meta = t('chat.tool.grep.matchesCount', { count: result.count })
+    else if (result.mode === 'files')
+      meta = t('chat.tool.grep.filesCount', { count: result.files.length })
+    else meta = t('chat.tool.grep.matchesCount', { count: result.matches.length })
   }
 
   return (
@@ -115,14 +120,20 @@ function GrepHeader({ context }: { context: ToolRenderContext }): React.JSX.Elem
   )
 }
 
-function GrepQueryMeta({ input }: { input: GrepInput | undefined }): React.JSX.Element | null {
+function GrepQueryMeta({
+  input,
+  t
+}: {
+  input: GrepInput | undefined
+  t: TFn
+}): React.JSX.Element | null {
   const parts: string[] = []
   if (input?.directory) parts.push(`dir ${input.directory}`)
   if (input?.includeGlob) parts.push(`glob ${input.includeGlob}`)
   if (input?.mode && input.mode !== 'content') parts.push(input.mode)
   if (input?.type) parts.push(`type ${input.type}`)
-  if (input?.caseInsensitive) parts.push('case-insensitive')
-  if (input?.multiline) parts.push('multiline')
+  if (input?.caseInsensitive) parts.push(t('chat.tool.grep.caseInsensitive'))
+  if (input?.multiline) parts.push(t('chat.tool.grep.multiline'))
   if (typeof input?.contextBefore === 'number' || typeof input?.contextAfter === 'number') {
     parts.push(`context ${input.contextBefore ?? 0}/${input.contextAfter ?? 0}`)
   }
@@ -137,7 +148,10 @@ function GrepQueryMeta({ input }: { input: GrepInput | undefined }): React.JSX.E
 }
 
 function GrepOutputComp({ context }: { context: ToolRenderContext }): React.JSX.Element | null {
-  const err = renderToolError(context, 'Search failed.', { className: 'm-2.5' })
+  const { t } = useTranslation()
+  const err = renderToolError(context, t('chat.tool.grep.errors.searchFailed'), {
+    className: 'm-2.5'
+  })
   if (err) return err
   const output = context.output
   if (output === undefined) return null
@@ -147,19 +161,20 @@ function GrepOutputComp({ context }: { context: ToolRenderContext }): React.JSX.
   if (result.mode === 'count') {
     return (
       <div>
-        <GrepQueryMeta input={input} />
+        <GrepQueryMeta input={input} t={t} />
         <p className="px-2.5 py-1.5 font-mono text-[0.6875rem] text-foreground/85">
-          {result.count} matches
+          {t('chat.tool.grep.matchesCount', { count: result.count })}
         </p>
       </div>
     )
   }
 
   if (result.mode === 'files') {
-    if (result.files.length === 0) return <ToolEmptyState className="m-2.5" message="No matches." />
+    if (result.files.length === 0)
+      return <ToolEmptyState className="m-2.5" message={t('chat.tool.grep.noMatches')} />
     return (
       <ToolScrollPanel flush tone="subtle" maxHeight={PANEL_HEIGHT_MD}>
-        <GrepQueryMeta input={input} />
+        <GrepQueryMeta input={input} t={t} />
         <ul className="divide-y divide-border/8">
           {result.files.map((file, index) => (
             <li key={`${index}-${file}`} className="hover:bg-background/24">
@@ -167,17 +182,18 @@ function GrepOutputComp({ context }: { context: ToolRenderContext }): React.JSX.
             </li>
           ))}
         </ul>
-        {result.truncated && <TruncatedNote />}
+        {result.truncated && <TruncatedNote t={t} />}
       </ToolScrollPanel>
     )
   }
 
-  if (result.matches.length === 0) return <ToolEmptyState className="m-2.5" message="No matches." />
+  if (result.matches.length === 0)
+    return <ToolEmptyState className="m-2.5" message={t('chat.tool.grep.noMatches')} />
   const matcher = buildMatcher(context.input as GrepInput | undefined)
   const groups = groupByFile(result.matches)
   return (
     <ToolScrollPanel flush tone="subtle" maxHeight={PANEL_HEIGHT_MD}>
-      <GrepQueryMeta input={input} />
+      <GrepQueryMeta input={input} t={t} />
       <div className="divide-y divide-border/8">
         {groups.map((group, gi) => (
           <div key={`${gi}-${group.file}`}>
@@ -202,15 +218,15 @@ function GrepOutputComp({ context }: { context: ToolRenderContext }): React.JSX.
           </div>
         ))}
       </div>
-      {result.truncated && <TruncatedNote />}
+      {result.truncated && <TruncatedNote t={t} />}
     </ToolScrollPanel>
   )
 }
 
-function TruncatedNote(): React.JSX.Element {
+function TruncatedNote({ t }: { t: TFn }): React.JSX.Element {
   return (
     <p className="border-t border-border/10 px-2.5 py-1 text-[0.5625rem] text-muted-foreground">
-      Results truncated. Narrow the search or page with offset.
+      {t('chat.tool.grep.truncated')}
     </p>
   )
 }

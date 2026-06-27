@@ -252,16 +252,36 @@ export function ModelsList({ providerId, family, state }: ModelsListProps) {
                     {model.source}
                   </AddModelDialog>
                   {model.contextWindow
-                    ? renderMetaBadge(model, `${model.contextWindow.toLocaleString()} ctx`, true)
+                    ? renderMetaBadge(
+                        model,
+                        t('providers.models.meta.contextWindow', {
+                          value: model.contextWindow.toLocaleString()
+                        }),
+                        true
+                      )
                     : null}
                   {model.maxOutput
-                    ? renderMetaBadge(model, `${model.maxOutput.toLocaleString()} out`, true)
+                    ? renderMetaBadge(
+                        model,
+                        t('providers.models.meta.maxOutput', {
+                          value: model.maxOutput.toLocaleString()
+                        }),
+                        true
+                      )
                     : null}
                   {model.dimensions
-                    ? renderMetaBadge(model, `${model.dimensions.toLocaleString()} dims`)
+                    ? renderMetaBadge(
+                        model,
+                        t('providers.models.meta.dimensions', {
+                          value: model.dimensions.toLocaleString()
+                        })
+                      )
                     : null}
                   {model.maxImagesPerCall
-                    ? renderMetaBadge(model, `${model.maxImagesPerCall} images`)
+                    ? renderMetaBadge(
+                        model,
+                        t('providers.models.meta.images', { value: model.maxImagesPerCall })
+                      )
                     : null}
                   {model.supportedSizes?.length
                     ? renderMetaBadge(model, model.supportedSizes.slice(0, 3).join(', '))

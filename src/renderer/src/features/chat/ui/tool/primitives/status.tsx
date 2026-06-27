@@ -1,4 +1,5 @@
 import { memo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Ban, CircleAlert, CircleCheck, CircleCheckBig, CircleDashed, Pause } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ShimmerText } from './shimmer'
@@ -36,9 +37,10 @@ export const ToolStatusIndicator = memo(function ToolStatusIndicator({
   showLabel = false,
   label
 }: ToolStatusIndicatorProps): React.JSX.Element {
+  const { t } = useTranslation()
   const meta = STATE_META[state]
   const Icon = meta.Icon
-  const text = label ?? defaultLabel(state)
+  const text = label ?? defaultLabel(state, t)
   const isLive = meta.shimmer
 
   return (
@@ -68,21 +70,21 @@ export const ToolStatusIndicator = memo(function ToolStatusIndicator({
   )
 })
 
-function defaultLabel(state: ToolUIState): string {
+function defaultLabel(state: ToolUIState, t: ReturnType<typeof useTranslation>['t']): string {
   switch (state) {
     case 'input-streaming':
-      return 'streaming'
+      return t('chat.tool.status.streaming')
     case 'input-available':
-      return 'pending'
+      return t('chat.tool.status.pending')
     case 'approval-requested':
-      return 'awaiting approval'
+      return t('chat.tool.status.awaitingApproval')
     case 'approval-responded':
-      return 'approved'
+      return t('chat.tool.status.approved')
     case 'output-available':
-      return 'done'
+      return t('chat.tool.status.done')
     case 'output-error':
-      return 'error'
+      return t('chat.tool.status.error')
     case 'output-denied':
-      return 'denied'
+      return t('chat.tool.status.denied')
   }
 }

@@ -10,17 +10,6 @@ export type ReasoningEffort =
   | 'xhigh'
   | 'max'
 
-export const REASONING_EFFORT_SHORT_LABEL: Record<ReasoningEffort, string> = {
-  default: 'auto',
-  none: 'none',
-  minimal: 'min',
-  low: 'low',
-  medium: 'med',
-  high: 'high',
-  xhigh: 'xhigh',
-  max: 'max'
-}
-
 const ANTHROPIC_EFFORTS: ReasoningEffort[] = ['default', 'low', 'medium', 'high', 'xhigh', 'max']
 const OPENAI_LIKE_EFFORTS: ReasoningEffort[] = [
   'default',

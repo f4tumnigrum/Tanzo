@@ -83,7 +83,7 @@ export function CompactionMessage({
             </span>
           )}
           <MessageTokenUsage
-            entries={compactionUsageEntries(usage, afterTokens)}
+            entries={compactionUsageEntries(usage, afterTokens, t)}
             className="ml-0"
           />
         </div>
@@ -109,16 +109,19 @@ export function CompactionMessage({
 
 function compactionUsageEntries(
   usage: CompactionMessageProps['usage'],
-  afterTokens: number | undefined
+  afterTokens: number | undefined,
+  t: ReturnType<typeof useTranslation>['t']
 ) {
   if (usage) {
     return [
-      { label: 'in', value: usage.inputTokens ?? 0 },
-      { label: 'out', value: usage.outputTokens ?? 0 },
-      { label: 'reason', value: usage.reasoningTokens ?? 0 },
-      { label: 'cache read', value: usage.cacheReadTokens ?? 0 },
-      { label: 'cache write', value: usage.cacheWriteTokens ?? 0 }
+      { label: t('chat.message.tokenUsage.in'), value: usage.inputTokens ?? 0 },
+      { label: t('chat.message.tokenUsage.out'), value: usage.outputTokens ?? 0 },
+      { label: t('chat.message.tokenUsage.reason'), value: usage.reasoningTokens ?? 0 },
+      { label: t('chat.message.tokenUsage.cacheRead'), value: usage.cacheReadTokens ?? 0 },
+      { label: t('chat.message.tokenUsage.cacheWrite'), value: usage.cacheWriteTokens ?? 0 }
     ]
   }
-  return typeof afterTokens === 'number' ? [{ label: 'in', value: afterTokens }] : []
+  return typeof afterTokens === 'number'
+    ? [{ label: t('chat.message.tokenUsage.in'), value: afterTokens }]
+    : []
 }

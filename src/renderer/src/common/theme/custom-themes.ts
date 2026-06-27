@@ -1,6 +1,7 @@
 import type { ColorThemeDefinition, ColorThemeId, ThemeColors, ThemeOverrides } from './types'
 import { addCustomTheme, removeCustomTheme, usePreferences } from '@/common/preferences'
 import { TanzoIntegrationError } from '@shared/errors'
+import i18n from '@/i18n'
 
 const THEME_COLOR_KEYS = new Set<string>([
   'background',
@@ -115,10 +116,16 @@ export async function importTweakcnTheme(input: string): Promise<ColorThemeDefin
   try {
     parsed = new URL(url)
   } catch {
-    throw new TanzoIntegrationError('THEME_IMPORT_INVALID', 'The theme URL is not valid.')
+    throw new TanzoIntegrationError(
+      'THEME_IMPORT_INVALID',
+      i18n.t('settings.theme.colors.import.errors.invalidUrl')
+    )
   }
   if (parsed.protocol !== 'https:') {
-    throw new TanzoIntegrationError('THEME_IMPORT_INVALID', 'The theme URL must use https.')
+    throw new TanzoIntegrationError(
+      'THEME_IMPORT_INVALID',
+      i18n.t('settings.theme.colors.import.errors.httpsRequired')
+    )
   }
 
   const controller = new AbortController()
@@ -130,7 +137,7 @@ export async function importTweakcnTheme(input: string): Promise<ColorThemeDefin
     if (!response.ok) {
       throw new TanzoIntegrationError(
         'THEME_IMPORT_FETCH_FAILED',
-        `Failed to fetch: ${response.status}`
+        i18n.t('settings.theme.colors.import.errors.fetchFailed', { status: response.status })
       )
     }
     text = await response.text()
@@ -138,7 +145,10 @@ export async function importTweakcnTheme(input: string): Promise<ColorThemeDefin
     clearTimeout(timer)
   }
   if (text.length > 1_000_000) {
-    throw new TanzoIntegrationError('THEME_IMPORT_INVALID', 'The theme response is too large.')
+    throw new TanzoIntegrationError(
+      'THEME_IMPORT_INVALID',
+      i18n.t('settings.theme.colors.import.errors.tooLarge')
+    )
   }
 
   let data: TweakcnResponse
@@ -147,7 +157,7 @@ export async function importTweakcnTheme(input: string): Promise<ColorThemeDefin
   } catch {
     throw new TanzoIntegrationError(
       'THEME_IMPORT_INVALID',
-      'The theme response was not valid JSON.'
+      i18n.t('settings.theme.colors.import.errors.invalidJson')
     )
   }
   const name =
@@ -164,7 +174,7 @@ export async function importTweakcnTheme(input: string): Promise<ColorThemeDefin
   if (light.colorCount === 0 && dark.colorCount === 0) {
     throw new TanzoIntegrationError(
       'THEME_IMPORT_INVALID',
-      'No tweakcn theme color variables were found in the response.'
+      i18n.t('settings.theme.colors.import.errors.noVariables')
     )
   }
 

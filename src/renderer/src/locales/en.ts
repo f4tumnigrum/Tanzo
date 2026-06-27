@@ -161,9 +161,41 @@ export const en = {
           attach: 'Attach images',
           remove: 'Remove image',
           tooLarge: 'Image is too large (max 10MB).',
-          onlyImages: 'Only image files can be attached.'
+          onlyImages: 'Only image files can be attached.',
+          imageTitle: 'image'
         },
         stop: 'Stop',
+        send: 'Send',
+        sendShortcut: 'Send · Enter',
+        permissionModeLabel: 'Permission mode',
+        permissionMode: {
+          default: {
+            label: 'Ask',
+            tooltip: 'Ask before each tool call.'
+          },
+          plan: {
+            label: 'Plan',
+            tooltip: 'Plan mode: writes are blocked.'
+          },
+          yolo: {
+            label: 'Auto',
+            tooltip: 'Auto-approves all tool calls.'
+          },
+          dangerous: {
+            label: 'Danger',
+            tooltip: 'Dangerous mode: auto-approves tools and allows paths outside the workspace.'
+          }
+        },
+        reasoningEffort: {
+          default: 'auto',
+          none: 'none',
+          minimal: 'min',
+          low: 'low',
+          medium: 'med',
+          high: 'high',
+          xhigh: 'xhigh',
+          max: 'max'
+        },
         context: {
           saved: 'saved {{tokens}}',
           compacted: 'compacted',
@@ -290,6 +322,20 @@ export const en = {
           send: 'Send',
           cancel: 'Cancel'
         },
+        xmlTag: {
+          reasoning: 'Reasoning',
+          planning: 'Planning',
+          observation: 'Observation',
+          reflection: 'Reflection',
+          response: 'Response'
+        },
+        tokenUsage: {
+          in: 'in',
+          out: 'out',
+          reason: 'reason',
+          cacheRead: 'cache read',
+          cacheWrite: 'cache write'
+        },
         parts: {
           plan: {
             title: 'Plan',
@@ -362,7 +408,101 @@ export const en = {
       tool: {
         common: {
           running: 'Running…',
-          toggleLineWrap: 'Toggle line wrap'
+          toggleLineWrap: 'Toggle line wrap',
+          error: 'Tool reported an error.',
+          decodingInput: 'decoding input'
+        },
+        status: {
+          streaming: 'streaming',
+          pending: 'pending',
+          awaitingApproval: 'awaiting approval',
+          approved: 'approved',
+          done: 'done',
+          error: 'error',
+          denied: 'denied'
+        },
+        goal: {
+          label: 'Goal',
+          status: {
+            complete: 'complete',
+            blocked: 'blocked'
+          },
+          errors: {
+            updateFailed: 'Goal update failed.'
+          }
+        },
+        shell: {
+          noOutput: 'No output.',
+          noSessions: 'No sessions.',
+          stopped: 'stopped',
+          exit: {
+            running: 'running',
+            stopped: 'stopped',
+            failed: 'failed',
+            timeout: 'timeout',
+            aborted: 'aborted'
+          },
+          errors: {
+            commandFailed: 'Command failed.'
+          }
+        },
+        grep: {
+          noMatches: 'No matches.',
+          truncated: 'Results truncated. Narrow the search or page with offset.',
+          matchesCount_one: '{{count}} match',
+          matchesCount_other: '{{count}} matches',
+          filesCount_one: '{{count}} file',
+          filesCount_other: '{{count}} files',
+          caseInsensitive: 'case-insensitive',
+          multiline: 'multiline',
+          errors: {
+            searchFailed: 'Search failed.'
+          }
+        },
+        glob: {
+          noMatches: 'No matching files.',
+          truncated: 'Result list was truncated. Refine the pattern or page with offset.',
+          hitsCount_one: '{{count}} hit',
+          hitsCount_other: '{{count}} hits',
+          includingIgnored: 'including ignored files',
+          errors: {
+            globFailed: 'Glob failed.'
+          }
+        },
+        fileRead: {
+          lines_one: '{{count}} line',
+          lines_other: '{{count}} lines',
+          linesPlus: '{{count}}+ lines',
+          cells_one: '{{count}} cell',
+          cells_other: '{{count}} cells',
+          truncated: 'truncated',
+          moreAvailable: 'more available',
+          errors: {
+            readFailed: 'Read failed.'
+          }
+        },
+        fileWrite: {
+          errors: {
+            writeFailed: 'Write failed.'
+          }
+        },
+        fileEdit: {
+          replacements_one: '{{count}} replacement',
+          replacements_other: '{{count}} replacements',
+          edits_one: '{{count}} edit',
+          edits_other: '{{count}} edits',
+          replaceAll: 'replace all',
+          errors: {
+            editFailed: 'Edit failed.'
+          }
+        },
+        dynamic: {
+          label: 'Tool',
+          input: 'input',
+          output: 'output',
+          errors: {
+            toolFailed: 'Tool failed.'
+          }
         },
         todo: {
           label: 'Todo',
@@ -457,6 +597,15 @@ export const en = {
           budget_limited: 'Budget reached',
           usage_limited: 'Usage limited',
           complete: 'Complete'
+        },
+        command: {
+          current: 'Goal: {{objective}} ({{status}})',
+          none: 'No active goal.',
+          cleared: 'Goal cleared.',
+          paused: 'Goal paused.',
+          resumed: 'Goal resumed.',
+          objectiveUpdated: 'Goal objective updated.',
+          set: 'Goal set.'
         }
       },
       errors: {
@@ -936,6 +1085,12 @@ export const en = {
         bulk: {
           enableAll: 'Enable all',
           disableAll: 'Disable all'
+        },
+        meta: {
+          contextWindow: '{{value}} ctx',
+          maxOutput: '{{value}} out',
+          dimensions: '{{value}} dims',
+          images: '{{value}} images'
         }
       },
       family: {
@@ -976,7 +1131,8 @@ export const en = {
         }
       },
       permissions: {
-        empty: 'No saved rules yet.'
+        empty: 'No saved rules yet.',
+        emptyDescription: 'Permission decisions saved from approval prompts will appear here.'
       },
       hooks: {
         title: 'Hooks',
@@ -1066,7 +1222,16 @@ export const en = {
             remove: 'Remove'
           },
           import: {
-            placeholder: 'Paste a tweakcn theme URL'
+            placeholder: 'Paste a tweakcn theme URL',
+            error: 'Import failed',
+            errors: {
+              invalidUrl: 'The theme URL is not valid.',
+              httpsRequired: 'The theme URL must use https.',
+              fetchFailed: 'Failed to fetch: {{status}}',
+              tooLarge: 'The theme response is too large.',
+              invalidJson: 'The theme response was not valid JSON.',
+              noVariables: 'No tweakcn theme color variables were found in the response.'
+            }
           },
           options: {
             tanzo: {
@@ -1088,6 +1253,10 @@ export const en = {
             twitter: {
               label: 'Twitter',
               description: 'Bright blues with a crisp finish.'
+            },
+            brutalist: {
+              label: 'Brutalist',
+              description: 'Bold borders, high contrast, raw edges.'
             }
           }
         },
@@ -1197,6 +1366,7 @@ export const en = {
           commandConfig: 'Command',
           command: 'Command',
           arguments: 'Arguments',
+          cwd: 'Working directory',
           fullCommand: 'Full command',
           url: 'URL',
           env: 'Environment',
@@ -1236,6 +1406,7 @@ export const en = {
           },
           transport: 'Transport',
           command: 'Command',
+          cwd: 'Working directory',
           arguments: {
             label: 'Arguments',
             placeholder: '--flag value',
@@ -1267,7 +1438,10 @@ export const en = {
             placeholder: 'Paste JSON here'
           },
           errors: {
-            invalidJson: 'Enter valid JSON'
+            invalidJson: 'Enter valid JSON',
+            jsonInvalid: '{{field}} must be a valid JSON object.',
+            jsonNotObject: '{{field}} must be a JSON object.',
+            jsonValuesString: '{{field}} values must all be strings.'
           }
         },
         delete: {
@@ -1310,7 +1484,8 @@ export const en = {
     pet: {
       quickInput: {
         placeholder: 'Send a message…',
-        send: 'Send'
+        send: 'Send',
+        sendShortcut: 'Send · Enter'
       },
       approval: {
         title: 'Permission requested'

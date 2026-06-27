@@ -27,7 +27,7 @@ export function ThemeImportRow() {
       void setColorThemeId(theme.id)
       setUrl('')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Import failed')
+      setError(err instanceof Error ? err.message : t('settings.theme.colors.import.error'))
     } finally {
       setLoading(false)
     }

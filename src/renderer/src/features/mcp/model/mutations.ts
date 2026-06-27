@@ -87,7 +87,7 @@ export function useUpdateServer() {
       if (!updatedServer) {
         throw new TanzoOperationError(
           'MCP_SERVER_UPDATE_FAILED',
-          `Failed to update MCP server ${id}.`
+          i18n.t('mcp.server.notifications.updateError')
         )
       }
       return updatedServer
@@ -132,7 +132,7 @@ export function useDeleteServer() {
       if (!deleted) {
         throw new TanzoOperationError(
           'MCP_SERVER_DELETE_FAILED',
-          `Failed to delete MCP server ${id}.`
+          i18n.t('mcp.server.notifications.deleteError')
         )
       }
       return deleted
@@ -169,7 +169,7 @@ export function useToggleServerEnabled() {
       if (!updatedServer) {
         throw new TanzoOperationError(
           'MCP_SERVER_TOGGLE_FAILED',
-          `Failed to toggle MCP server ${id}.`
+          i18n.t('mcp.server.notifications.toggleError')
         )
       }
       return updatedServer

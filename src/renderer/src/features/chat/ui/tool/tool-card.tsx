@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Wrench } from 'lucide-react'
 import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
@@ -135,8 +136,9 @@ function DefaultHeader({ context }: { context: ToolRenderContext }): React.JSX.E
 }
 
 function DefaultOutput({ context }: { context: ToolRenderContext }): React.JSX.Element | null {
+  const { t } = useTranslation()
   if (context.state === 'output-error' || context.errorText) {
-    return <ToolErrorState message={context.errorText ?? 'Tool reported an error.'} />
+    return <ToolErrorState message={context.errorText ?? t('chat.tool.common.error')} />
   }
   if (context.output === undefined) return null
 
@@ -144,10 +146,14 @@ function DefaultOutput({ context }: { context: ToolRenderContext }): React.JSX.E
 }
 
 function StreamingInputPreview({ input }: { input: unknown }): React.JSX.Element {
+  const { t } = useTranslation()
   return (
     <div className="space-y-1">
       <div className="flex items-center gap-1.5 px-1 text-[0.5625rem] uppercase tracking-[0.08em] text-muted-foreground/70">
-        <ShimmerText text="decoding input" className="text-[0.5625rem] tracking-[0.08em]" />
+        <ShimmerText
+          text={t('chat.tool.common.decodingInput')}
+          className="text-[0.5625rem] tracking-[0.08em]"
+        />
       </div>
       <ToolValuePreview value={input} maxHeight="160px" maxItems={6} maxTextLength={180} />
     </div>

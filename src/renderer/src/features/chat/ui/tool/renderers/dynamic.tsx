@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { Plug } from 'lucide-react'
 import { ToolBadge, ToolErrorState, ToolHeaderRow, ToolValuePreview } from '../primitives'
 import type { ToolRenderContext } from '../render-context'
@@ -20,6 +21,7 @@ function parseDynamicName(toolName: string): DynamicNamespace {
 }
 
 function DynamicHeader({ context }: { context: ToolRenderContext }): React.JSX.Element {
+  const { t } = useTranslation()
   const ns = parseDynamicName(context.toolName)
   const badges =
     ns.kind === 'mcp' ? [{ text: `mcp:${ns.server ?? '?'}`, tone: 'info' as const }] : undefined
@@ -27,7 +29,7 @@ function DynamicHeader({ context }: { context: ToolRenderContext }): React.JSX.E
   return (
     <ToolHeaderRow
       icon={Plug}
-      label="Tool"
+      label={t('chat.tool.dynamic.label')}
       title={ns.tool}
       state={context.state}
       {...(badges ? { badges } : {})}
@@ -37,8 +39,11 @@ function DynamicHeader({ context }: { context: ToolRenderContext }): React.JSX.E
 }
 
 function DynamicOutputComp({ context }: { context: ToolRenderContext }): React.JSX.Element | null {
+  const { t } = useTranslation()
   if (context.state === 'output-error') {
-    return <ToolErrorState message={context.errorText ?? 'Tool failed.'} />
+    return (
+      <ToolErrorState message={context.errorText ?? t('chat.tool.dynamic.errors.toolFailed')} />
+    )
   }
   const output = context.output
   const input = context.input
@@ -48,13 +53,13 @@ function DynamicOutputComp({ context }: { context: ToolRenderContext }): React.J
     <div className="space-y-1.5">
       {input !== undefined && (
         <div className="space-y-1">
-          <ToolBadge text="input" tone="neutral" />
+          <ToolBadge text={t('chat.tool.dynamic.input')} tone="neutral" />
           <ToolValuePreview value={input} maxHeight="180px" />
         </div>
       )}
       {output !== undefined && (
         <div className="space-y-1">
-          <ToolBadge text="output" tone="info" />
+          <ToolBadge text={t('chat.tool.dynamic.output')} tone="info" />
           <ToolValuePreview value={output} />
         </div>
       )}

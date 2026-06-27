@@ -1,5 +1,6 @@
 import { FilePen } from 'lucide-react'
 import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { TanzoTools, ToolError } from '@shared/agent-message'
 import {
   PANEL_HEIGHT_LG,
@@ -54,12 +55,14 @@ function buildDiff(edits: EditSpec[], locations?: MultiEditOutput['locations']):
 }
 
 function MultiEditHeader({ context }: { context: ToolRenderContext }): React.JSX.Element {
+  const { t } = useTranslation()
   const input = context.input as MultiEditInput | undefined
   const { fileName } = splitDirAndFile(input?.path)
   const edits = input?.edits ?? []
   const stats = edits.length ? buildDiff(edits) : null
   const badges: Array<{ text: string; tone?: 'info' }> = []
-  if (edits.length) badges.push({ text: `${edits.length} edits`, tone: 'info' })
+  if (edits.length)
+    badges.push({ text: t('chat.tool.fileEdit.edits', { count: edits.length }), tone: 'info' })
 
   return (
     <ToolHeaderRow
@@ -78,13 +81,14 @@ function MultiEditOutputComp({
 }: {
   context: ToolRenderContext
 }): React.JSX.Element | null {
+  const { t } = useTranslation()
   const input = context.input as MultiEditInput | undefined
   const output = context.output
   const result = output !== undefined && !isToolError(output) ? (output as MultiEditOutput) : null
   const locations = result?.locations
   const stats = useMemo(() => buildDiff(input?.edits ?? [], locations), [input?.edits, locations])
 
-  const err = renderToolError(context, 'Edit failed.')
+  const err = renderToolError(context, t('chat.tool.fileEdit.errors.editFailed'))
   if (err) return err
   if (stats.lines.length === 0) return null
   return (
@@ -98,8 +102,10 @@ function MultiEditOutputComp({
       />
       {result ? (
         <ToolMetaLine className="border-t border-border/10 px-2.5 py-1">
-          {result.replacements} replacements
-          {input?.edits?.some((edit) => edit.replaceAll) ? ' · replace all' : ''}
+          {t('chat.tool.fileEdit.replacements', { count: result.replacements })}
+          {input?.edits?.some((edit) => edit.replaceAll)
+            ? ` · ${t('chat.tool.fileEdit.replaceAll')}`
+            : ''}
         </ToolMetaLine>
       ) : null}
     </>

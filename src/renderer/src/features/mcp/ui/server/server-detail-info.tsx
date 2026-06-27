@@ -156,7 +156,7 @@ export function ServerDetailInfo({ server }: ServerDetailInfoProps) {
                 </InfoRow>
               ) : null}
               {server.cwd ? (
-                <InfoRow label="cwd" mono>
+                <InfoRow label={t('mcp.server.detail.cwd')} mono>
                   {server.cwd}
                 </InfoRow>
               ) : null}

@@ -1,6 +1,7 @@
 import type { McpServerConfig, ServerFormData } from '@/common/contracts'
 import { isRecord } from '@/common/lib/type-guards'
 import { TanzoValidationError } from '@shared/errors'
+import i18n from '@/i18n'
 
 function tryParseJsonArgs(argsString: string): string[] | null {
   try {
@@ -69,7 +70,7 @@ function parseRequiredJSON(jsonString: string, field: string): unknown {
   } catch (error) {
     throw new TanzoValidationError(
       'MCP_FORM_JSON_INVALID',
-      `${field} must be a valid JSON object.`,
+      i18n.t('mcp.server.form.errors.jsonInvalid', { field }),
       { cause: error }
     )
   }
@@ -82,7 +83,10 @@ function normalizeStringRecord(
   if (!jsonString || jsonString.trim().length === 0) return undefined
   const parsed = parseRequiredJSON(jsonString, field)
   if (!isRecord(parsed)) {
-    throw new TanzoValidationError('MCP_FORM_JSON_INVALID', `${field} must be a JSON object.`)
+    throw new TanzoValidationError(
+      'MCP_FORM_JSON_INVALID',
+      i18n.t('mcp.server.form.errors.jsonNotObject', { field })
+    )
   }
 
   const entries = Object.entries(parsed)
@@ -94,7 +98,7 @@ function normalizeStringRecord(
     if (typeof value !== 'string') {
       throw new TanzoValidationError(
         'MCP_FORM_JSON_INVALID',
-        `${field} values must all be strings.`
+        i18n.t('mcp.server.form.errors.jsonValuesString', { field })
       )
     }
     normalized[key] = value

@@ -1,7 +1,9 @@
+import { useTranslation } from 'react-i18next'
 import type { TanzoUIMessage } from '@shared/agent-message'
 import { MessageTokenUsage, type TokenUsageEntry } from './message-token-usage'
 
 export function FinishFooter({ message }: { message: TanzoUIMessage }): React.JSX.Element | null {
+  const { t } = useTranslation()
   const steps = message.metadata?.steps
   const hasStepUsage = steps?.some((step) => step.usage) ?? false
 
@@ -31,11 +33,16 @@ export function FinishFooter({ message }: { message: TanzoUIMessage }): React.JS
         }
 
   const entries: TokenUsageEntry[] = []
-  if (totals.input > 0) entries.push({ label: 'in', value: totals.input })
-  if (totals.output > 0) entries.push({ label: 'out', value: totals.output })
-  if (totals.reasoning > 0) entries.push({ label: 'reason', value: totals.reasoning })
-  if (totals.cacheRead > 0) entries.push({ label: 'cache read', value: totals.cacheRead })
-  if (totals.cacheWrite > 0) entries.push({ label: 'cache write', value: totals.cacheWrite })
+  if (totals.input > 0)
+    entries.push({ label: t('chat.message.tokenUsage.in'), value: totals.input })
+  if (totals.output > 0)
+    entries.push({ label: t('chat.message.tokenUsage.out'), value: totals.output })
+  if (totals.reasoning > 0)
+    entries.push({ label: t('chat.message.tokenUsage.reason'), value: totals.reasoning })
+  if (totals.cacheRead > 0)
+    entries.push({ label: t('chat.message.tokenUsage.cacheRead'), value: totals.cacheRead })
+  if (totals.cacheWrite > 0)
+    entries.push({ label: t('chat.message.tokenUsage.cacheWrite'), value: totals.cacheWrite })
 
   return <MessageTokenUsage entries={entries} />
 }

@@ -109,7 +109,7 @@ export function QuickInputBubble({ onSubmit, onClose }: QuickInputBubbleProps): 
               </Button>
             )}
           />
-          <TooltipContent side="top">{`${t('pet.quickInput.send')} · Enter`}</TooltipContent>
+          <TooltipContent side="top">{t('pet.quickInput.sendShortcut')}</TooltipContent>
         </Tooltip>
       </div>
     </div>

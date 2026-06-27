@@ -7,11 +7,13 @@ import { cn } from '@/lib/utils'
 export function ComposerAttachment({
   part,
   onRemove,
-  removeLabel
+  removeLabel,
+  imageTitle
 }: {
   part: FileUIPart
   onRemove: () => void
   removeLabel: string
+  imageTitle: string
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
 
@@ -52,7 +54,7 @@ export function ComposerAttachment({
         className="flex h-screen max-h-screen w-screen max-w-screen items-center justify-center border-0 bg-transparent p-6 ring-0 sm:max-w-screen"
         onClick={() => setOpen(false)}
       >
-        <DialogTitle className="sr-only">{part.filename ?? 'image'}</DialogTitle>
+        <DialogTitle className="sr-only">{part.filename ?? imageTitle}</DialogTitle>
         <img
           src={part.url}
           alt={part.filename ?? ''}

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { FilePlus2 } from 'lucide-react'
 import { HighlightedCodeView, PANEL_HEIGHT_LG, ToolHeaderRow, ToolMetaChip } from '../primitives'
 import type { ToolRenderContext } from '../render-context'
@@ -37,7 +38,10 @@ function FileWriteOutputComp({
 }: {
   context: ToolRenderContext
 }): React.JSX.Element | null {
-  const err = renderToolError(context, 'Write failed.', { className: 'm-2.5' })
+  const { t } = useTranslation()
+  const err = renderToolError(context, t('chat.tool.fileWrite.errors.writeFailed'), {
+    className: 'm-2.5'
+  })
   if (err) return err
   const input = context.input as FileWriteInput | undefined
   if (!input?.content) return null

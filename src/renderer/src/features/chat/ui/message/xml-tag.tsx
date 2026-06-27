@@ -1,4 +1,5 @@
 import { memo, useState, type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 import { ChevronRight } from 'lucide-react'
 import { usePreferences } from '@/common/preferences'
 import { cn } from '@/lib/utils'
@@ -13,13 +14,13 @@ export interface XmlTagProps {
   disclosureKey?: string
 }
 
-const TAG_LABELS: Record<string, string> = {
-  thinking: 'Reasoning',
-  reasoning: 'Reasoning',
-  toolplan: 'Planning',
-  observation: 'Observation',
-  reflection: 'Reflection',
-  response: 'Response'
+const TAG_LABEL_KEYS: Record<string, string> = {
+  thinking: 'chat.message.xmlTag.reasoning',
+  reasoning: 'chat.message.xmlTag.reasoning',
+  toolplan: 'chat.message.xmlTag.planning',
+  observation: 'chat.message.xmlTag.observation',
+  reflection: 'chat.message.xmlTag.reflection',
+  response: 'chat.message.xmlTag.response'
 }
 
 function usesReasoningPreference(tag: string): boolean {
@@ -41,8 +42,10 @@ export const XmlTag = memo(function XmlTag({
   defaultExpanded,
   disclosureKey
 }: XmlTagProps): React.JSX.Element {
+  const { t } = useTranslation()
   const normalized = tag.toLowerCase().replace(/[_-]/g, '')
-  const label = TAG_LABELS[normalized] ?? tag
+  const labelKey = TAG_LABEL_KEYS[normalized]
+  const label = labelKey ? t(labelKey) : tag
   const reasoningExpandedByDefault = usePreferences().reasoningExpandedByDefault
   const initial =
     defaultExpanded ?? (usesReasoningPreference(normalized) ? reasoningExpandedByDefault : true)
