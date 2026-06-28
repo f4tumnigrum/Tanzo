@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useTransition } from 'react'
-import { Globe, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { Globe } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { usePanelRef } from 'react-resizable-panels'
 import { PageHeader, pageHeaderIconBtnCls } from '@/components/layout/page-header'
@@ -9,7 +9,6 @@ import { Spinner } from '@/components/ui/spinner'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { BrowserPanel, useBrowserUiStore } from '@/features/browser'
-import { useAppShell } from '@/app/app-shell-context'
 import { useChatNavigation } from './model/use-chat-navigation'
 import { ChatEmpty } from './ui/chat-empty'
 import { ActiveChat } from './ui/active-chat'
@@ -20,7 +19,6 @@ import { useGitReviewController } from '@/features/git/model'
 
 export default function ChatPage(): React.JSX.Element {
   const { t } = useTranslation()
-  const { sidebarCollapsed, toggleSidebar } = useAppShell()
   const browserOpen = useBrowserUiStore((s) => s.open)
   const browserMaximized = useBrowserUiStore((s) => s.maximized)
   const toggleBrowser = useBrowserUiStore((s) => s.toggle)
@@ -31,9 +29,6 @@ export default function ChatPage(): React.JSX.Element {
   const [, startChatSwitchTransition] = useTransition()
 
   const headerTitle = currentWorkspace?.label || activeConversation?.title || t('chat.page.title')
-  const sidebarToggleLabel = sidebarCollapsed
-    ? t('chat.sidebar.expandSidebar')
-    : t('chat.sidebar.collapseSidebar')
 
   const gitCwd = activeConversation?.cwd ?? currentWorkspace?.cwd ?? null
   const gitTarget = useMemo(() => (gitCwd ? { cwd: gitCwd } : null), [gitCwd])
@@ -97,31 +92,6 @@ export default function ChatPage(): React.JSX.Element {
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <PageHeader
         title={headerTitle}
-        leadingActions={
-          <Tooltip>
-            <TooltipTrigger
-              render={(triggerProps) => (
-                <Button
-                  {...triggerProps}
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className={cn(pageHeaderIconBtnCls, 'hover:bg-transparent')}
-                  onClick={toggleSidebar}
-                  aria-label={sidebarToggleLabel}
-                  aria-pressed={sidebarCollapsed}
-                >
-                  {sidebarCollapsed ? (
-                    <PanelLeftOpen className="size-4" aria-hidden="true" />
-                  ) : (
-                    <PanelLeftClose className="size-4" aria-hidden="true" />
-                  )}
-                </Button>
-              )}
-            />
-            <TooltipContent side="bottom">{sidebarToggleLabel}</TooltipContent>
-          </Tooltip>
-        }
         actions={
           <>
             {displayedChatId ? <TaskOverviewPill chatId={displayedChatId} /> : null}

@@ -11,7 +11,6 @@ import {
   Webhook
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { EmbeddedScaffoldProvider } from '@/components/layout/page-scaffold'
 import McpPage from '@/features/mcp/page'
 import PluginsPage from '@/features/plugins/page'
 import ProvidersPage from '@/features/providers/page'
@@ -43,16 +42,6 @@ export interface SettingsSectionDef {
   HeaderActions?: ComponentType
 }
 
-function embed(Page: ComponentType): ComponentType {
-  return function EmbeddedPage() {
-    return (
-      <EmbeddedScaffoldProvider>
-        <Page />
-      </EmbeddedScaffoldProvider>
-    )
-  }
-}
-
 export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
   {
     id: 'theme',
@@ -66,7 +55,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
     labelKey: 'nav.items.skills',
     defaultLabel: 'Skills',
     icon: Sparkles,
-    Component: embed(SkillsPage),
+    Component: SkillsPage,
     embedded: true
   },
   {
@@ -74,7 +63,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
     labelKey: 'nav.items.plugins',
     defaultLabel: 'Plugins',
     icon: Blocks,
-    Component: embed(PluginsPage),
+    Component: PluginsPage,
     embedded: true
   },
   {
@@ -82,7 +71,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
     labelKey: 'nav.items.providers',
     defaultLabel: 'Providers',
     icon: Plug,
-    Component: embed(ProvidersPage),
+    Component: ProvidersPage,
     embedded: true
   },
   {
@@ -90,7 +79,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
     labelKey: 'nav.items.mcp',
     defaultLabel: 'MCP',
     icon: Server,
-    Component: embed(McpPage),
+    Component: McpPage,
     embedded: true
   },
   {
@@ -98,7 +87,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
     labelKey: 'nav.items.usage',
     defaultLabel: 'Usage',
     icon: BarChart3,
-    Component: embed(UsagePage),
+    Component: UsagePage,
     embedded: true
   },
   {
