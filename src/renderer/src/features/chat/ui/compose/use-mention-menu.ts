@@ -54,20 +54,23 @@ function formatFileInsertion(entry: FileMentionEntry): string {
 /** Rank plugins whose name matches the query: prefix matches before substring. */
 export function matchPlugins(plugins: PluginMentionOption[], query: string): MentionItem[] {
   const q = query.toLowerCase()
-  const scored = plugins
-    .map((plugin) => {
-      const name = plugin.name.toLowerCase()
-      const rank = name.startsWith(q) ? 0 : name.includes(q) ? 1 : -1
-      return { plugin, rank }
+  const scored: { plugin: PluginMentionOption; rank: number }[] = []
+  for (const plugin of plugins) {
+    const name = plugin.name.toLowerCase()
+    const rank = name.startsWith(q) ? 0 : name.includes(q) ? 1 : -1
+    if (rank >= 0) scored.push({ plugin, rank })
+  }
+  scored.sort((a, b) => a.rank - b.rank || a.plugin.name.localeCompare(b.plugin.name))
+  const result: MentionItem[] = []
+  for (const { plugin } of scored) {
+    if (result.length >= MAX_PLUGIN_SUGGESTIONS) break
+    result.push({
+      kind: 'plugin',
+      name: plugin.name,
+      ...(plugin.description ? { description: plugin.description } : {})
     })
-    .filter((entry) => entry.rank >= 0)
-    .sort((a, b) => a.rank - b.rank || a.plugin.name.localeCompare(b.plugin.name))
-    .slice(0, MAX_PLUGIN_SUGGESTIONS)
-  return scored.map(({ plugin }) => ({
-    kind: 'plugin' as const,
-    name: plugin.name,
-    ...(plugin.description ? { description: plugin.description } : {})
-  }))
+  }
+  return result
 }
 
 /**

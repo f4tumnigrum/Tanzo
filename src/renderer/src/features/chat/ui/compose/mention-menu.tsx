@@ -79,14 +79,18 @@ export function MentionMenu({
 
   // Group by kind for display while keeping each item's flat index for
   // keyboard navigation and highlight tracking (mirrors the slash menu).
-  const groups = useMemo(
-    () =>
-      KIND_ORDER.map((kind) => ({
-        kind,
-        rows: items.map((item, index) => ({ item, index })).filter(({ item }) => item.kind === kind)
-      })).filter((group) => group.rows.length > 0),
-    [items]
-  )
+  const groups = useMemo(() => {
+    const byKind = new Map<MentionKind, { item: MentionItem; index: number }[]>()
+    items.forEach((item, index) => {
+      const rows = byKind.get(item.kind)
+      if (rows) rows.push({ item, index })
+      else byKind.set(item.kind, [{ item, index }])
+    })
+    return KIND_ORDER.flatMap((kind) => {
+      const rows = byKind.get(kind)
+      return rows ? [{ kind, rows }] : []
+    })
+  }, [items])
 
   useEffect(() => {
     const active = items[highlightedIndex]
