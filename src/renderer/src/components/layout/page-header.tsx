@@ -5,7 +5,6 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { SidebarTrigger, useSidebarOptional } from '@/components/ui/sidebar'
-import { WindowControls } from '@/components/ui/window-controls'
 import { useAppShell } from '@/app/app-shell-context'
 
 export interface PageHeaderStat {
@@ -75,14 +74,20 @@ export function PageHeader({
   actions
 }: PageHeaderProps) {
   const { t } = useTranslation()
+  const { sidebarCollapsed } = useAppShell()
   const totalCount = stats?.[0]?.value ?? 0
   const sidebarContext = useSidebarOptional()
+  const showLeadingInset = sidebarCollapsed
 
   return (
     <div className="app-titlebar sticky top-0 z-30 shrink-0">
       <div className="page-header-surface relative isolate overflow-hidden">
         <div className="flex h-11 items-center gap-2 px-5">
           <div className="flex min-w-0 flex-1 items-center gap-1">
+            {/* When the sidebar is collapsed the persistent traffic lights sit at
+                the window's top-left; reserve space so the header content does
+                not slide under them. */}
+            {showLeadingInset ? <div className="w-[68px] shrink-0" aria-hidden="true" /> : null}
             {sidebarContext ? (
               <SidebarTrigger className={cn(pageHeaderIconBtnCls, '-ml-1')} />
             ) : null}
@@ -134,7 +139,6 @@ export function PageHeader({
                 {actions}
               </div>
             ) : null}
-            <WindowControls />
           </div>
         </div>
       </div>

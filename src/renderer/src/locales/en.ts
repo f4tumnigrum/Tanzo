@@ -14,6 +14,70 @@ export const en = {
         settings: 'Settings'
       }
     },
+    browser: {
+      toggle: 'Toggle browser',
+      back: 'Back',
+      forward: 'Forward',
+      reload: 'Reload',
+      maximize: 'Maximize',
+      restore: 'Restore split view',
+      close: 'Close browser',
+      address: 'Address',
+      addressPlaceholder: 'Search or enter address',
+      clear: 'Clear',
+      error: {
+        title: "This page couldn't be loaded",
+        code: 'Error {{code}}',
+        retry: 'Try again'
+      },
+      tabs: {
+        new: 'New tab',
+        close: 'Close tab'
+      },
+      picker: {
+        pick: 'Pick element',
+        picking: 'Click an element… (Esc to cancel)',
+        copyAll: 'Copy all',
+        copied: 'Copied',
+        closePanel: 'Close panel',
+        groups: {
+          color: 'Color',
+          typography: 'Typography',
+          layout: 'Layout',
+          spacing: 'Spacing',
+          border: 'Border',
+          effects: 'Effects'
+        },
+        fields: {
+          textColor: 'Text',
+          background: 'Background',
+          gradient: 'Gradient',
+          borderColor: 'Border',
+          fontFamily: 'Family',
+          fontSize: 'Size',
+          fontWeight: 'Weight',
+          lineHeight: 'Line height',
+          letterSpacing: 'Tracking',
+          textAlign: 'Align',
+          textTransform: 'Transform',
+          display: 'Display',
+          flexDirection: 'Direction',
+          justifyContent: 'Justify',
+          alignItems: 'Align items',
+          padding: 'Padding',
+          margin: 'Margin',
+          gap: 'Gap',
+          borderWidth: 'Width',
+          borderStyle: 'Style',
+          borderRadius: 'Radius',
+          opacity: 'Opacity',
+          boxShadow: 'Shadow',
+          filter: 'Filter',
+          backdropFilter: 'Backdrop',
+          transform: 'Transform'
+        }
+      }
+    },
     usage: {
       page: {
         title: 'Usage'

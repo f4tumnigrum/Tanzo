@@ -41,7 +41,7 @@ function App() {
         <I18nLanguageSync />
         <WallpaperLayer />
         <HashRouter>
-          <div data-slot="sidebar-wrapper" className="flex h-svh w-full">
+          <div data-slot="sidebar-wrapper" className="relative flex h-svh w-full">
             <AppShell>
               <AppRoutes />
             </AppShell>

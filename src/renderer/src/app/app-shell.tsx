@@ -6,6 +6,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/componen
 import { cn } from '@/lib/utils'
 import { ConversationSidebar } from '@/features/chat/ui/conversation/conversation-sidebar'
 import { SettingsNav } from '@/features/settings/ui/settings-nav'
+import { WindowControls } from '@/components/ui/window-controls'
 import { useChatNavigation } from '@/features/chat/model/use-chat-navigation'
 import { AppShellContext, type AppShellContextValue } from './app-shell-context'
 
@@ -58,6 +59,12 @@ export function AppShell({ children }: AppShellProps): React.JSX.Element {
 
   return (
     <AppShellContext.Provider value={contextValue}>
+      {/* A single persistent traffic-light overlay pinned to the window's
+          top-left corner. It never unmounts as the sidebar collapses/expands,
+          so the controls never flash. */}
+      <div className="app-titlebar pointer-events-none absolute left-0 top-0 z-50 flex h-11 items-center px-5">
+        <WindowControls className="app-no-drag pointer-events-auto" />
+      </div>
       <ResizablePanelGroup
         id="app-shell"
         orientation="horizontal"
@@ -76,22 +83,25 @@ export function AppShell({ children }: AppShellProps): React.JSX.Element {
           onResize={handleSidebarResize}
           className="min-h-0 min-w-0 transition-[flex-basis] duration-200 ease-linear"
         >
-          <div className="sidebar-surface h-full min-h-0 w-full min-w-0">
-            {isSettings ? (
-              <SettingsNav />
-            ) : (
-              <ConversationSidebar
-                sidebar={navigation.sidebarModel}
-                onConversationSelect={navigation.handleSelectConversation}
-                onConversationDelete={navigation.handleDelete}
-                onConversationRename={navigation.handleRename}
-                onNewConversation={navigation.handleNewConversation}
-                onWorkspaceConversationCreate={navigation.handleWorkspaceConversationCreate}
-                onWorkspaceRemove={navigation.handleWorkspaceRemove}
-                onToggleWorkspaceExpanded={navigation.handleToggleWorkspaceExpanded}
-                onPickWorkspace={navigation.handlePickWorkspace}
-              />
-            )}
+          <div className="sidebar-surface flex h-full min-h-0 w-full min-w-0 flex-col">
+            <div className="app-titlebar h-11 shrink-0" />
+            <div className="min-h-0 flex-1">
+              {isSettings ? (
+                <SettingsNav />
+              ) : (
+                <ConversationSidebar
+                  sidebar={navigation.sidebarModel}
+                  onConversationSelect={navigation.handleSelectConversation}
+                  onConversationDelete={navigation.handleDelete}
+                  onConversationRename={navigation.handleRename}
+                  onNewConversation={navigation.handleNewConversation}
+                  onWorkspaceConversationCreate={navigation.handleWorkspaceConversationCreate}
+                  onWorkspaceRemove={navigation.handleWorkspaceRemove}
+                  onToggleWorkspaceExpanded={navigation.handleToggleWorkspaceExpanded}
+                  onPickWorkspace={navigation.handlePickWorkspace}
+                />
+              )}
+            </div>
           </div>
         </ResizablePanel>
 
@@ -100,9 +110,10 @@ export function AppShell({ children }: AppShellProps): React.JSX.Element {
           disabled={sidebarCollapsed}
           style={{ backgroundColor: 'transparent' }}
           className={cn(
-            'relative w-px shrink-0 cursor-col-resize',
-            'bg-gradient-to-b from-transparent via-foreground/20 to-transparent',
-            'transition-[colors,opacity] duration-200 ease-linear hover:via-foreground/40',
+            'relative z-10 w-0 shrink-0 cursor-col-resize overflow-visible bg-transparent',
+            'before:absolute before:inset-y-0 before:left-1/2 before:w-px before:-translate-x-1/2',
+            'before:bg-gradient-to-b before:from-transparent before:via-foreground/15 before:to-transparent',
+            'before:transition-opacity before:duration-200 hover:before:via-foreground/35',
             'after:absolute after:inset-y-0 after:left-1/2 after:w-3 after:-translate-x-1/2',
             sidebarCollapsed && 'pointer-events-none opacity-0'
           )}

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url'
 import { BrowserWindow, screen, shell, type BrowserWindowConstructorOptions } from 'electron'
 import { is } from '@electron-toolkit/utils'
 import { detectNativeWindowEffect } from '@shared/system'
+import { installEmbeddedBrowserHardening } from './embedded-browser'
 import icon from '../../resources/Tanzo.png?asset'
 
 function clamp(value: number, min: number, max: number): number {
@@ -76,9 +77,12 @@ export function createWindow(): BrowserWindow {
       nodeIntegration: false,
       backgroundThrottling: false,
       sandbox: true,
+      webviewTag: true,
       additionalArguments: effect ? [`--window-effect=${effect}`] : []
     }
   })
+
+  installEmbeddedBrowserHardening(window)
 
   if (isMac) {
     window.setWindowButtonVisibility(false)

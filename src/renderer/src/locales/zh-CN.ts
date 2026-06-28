@@ -14,6 +14,70 @@ export const zhCN = {
         settings: '设置'
       }
     },
+    browser: {
+      toggle: '切换浏览器',
+      back: '后退',
+      forward: '前进',
+      reload: '刷新',
+      maximize: '最大化',
+      restore: '恢复分屏',
+      close: '关闭浏览器',
+      address: '地址',
+      addressPlaceholder: '搜索或输入网址',
+      clear: '清除',
+      error: {
+        title: '无法加载此页面',
+        code: '错误 {{code}}',
+        retry: '重试'
+      },
+      tabs: {
+        new: '新建标签页',
+        close: '关闭标签页'
+      },
+      picker: {
+        pick: '拾取元素',
+        picking: '点击页面元素…(Esc 取消)',
+        copyAll: '复制全部',
+        copied: '已复制',
+        closePanel: '关闭面板',
+        groups: {
+          color: '颜色',
+          typography: '排版',
+          layout: '布局',
+          spacing: '间距',
+          border: '边框',
+          effects: '效果'
+        },
+        fields: {
+          textColor: '文字',
+          background: '背景',
+          gradient: '渐变',
+          borderColor: '边框',
+          fontFamily: '字体',
+          fontSize: '字号',
+          fontWeight: '字重',
+          lineHeight: '行高',
+          letterSpacing: '字距',
+          textAlign: '对齐',
+          textTransform: '大小写',
+          display: '显示',
+          flexDirection: '方向',
+          justifyContent: '主轴',
+          alignItems: '交叉轴',
+          padding: '内边距',
+          margin: '外边距',
+          gap: '间隔',
+          borderWidth: '粗细',
+          borderStyle: '样式',
+          borderRadius: '圆角',
+          opacity: '不透明度',
+          boxShadow: '阴影',
+          filter: '滤镜',
+          backdropFilter: '背景滤镜',
+          transform: '变换'
+        }
+      }
+    },
     usage: {
       page: {
         title: '用量'
