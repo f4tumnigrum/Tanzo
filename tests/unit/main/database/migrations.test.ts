@@ -13,9 +13,42 @@ describe('database/migrations on real sqlite', () => {
           .all(['tanzo']) as Array<{ version: number }>
       ).map((row) => row.version)
 
-    expect(versions()).toEqual([1])
+    expect(versions()).toEqual([1, 19])
     expect(() => runMigrations(db, [tanzoMigrations])).not.toThrow()
-    expect(versions()).toEqual([1])
+    expect(versions()).toEqual([1, 19])
+  })
+
+  it('applies plugin_states for databases that already used earlier migration versions', () => {
+    const db = createRealDb({ migrate: false })
+    db.exec(`
+      CREATE TABLE _tanzo_migrations (
+        module TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        applied_at INTEGER NOT NULL,
+        PRIMARY KEY (module, version)
+      );
+    `)
+    const insert = db.prepare(
+      'INSERT INTO _tanzo_migrations (module, version, name, applied_at) VALUES (?, ?, ?, ?)'
+    )
+    for (let version = 1; version <= 18; version++) {
+      insert.run(['tanzo', version, `legacy_${version}`, 1])
+    }
+
+    runMigrations(db, [tanzoMigrations])
+
+    expect(
+      db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get([
+        'plugin_states'
+      ])
+    ).toEqual({ name: 'plugin_states' })
+    expect(
+      db
+        .prepare('SELECT version, name FROM _tanzo_migrations WHERE module = ? AND version = ?')
+        .get(['tanzo', 19])
+    ).toEqual({ version: 19, name: 'plugin_states' })
+    db.close()
   })
 
   it('creates the core tables with foreign keys enforced', () => {

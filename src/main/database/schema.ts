@@ -378,6 +378,24 @@ CREATE TABLE policy_modes (
 );
 `
 
+// Per-plugin enable/install state. Identity is the `<plugin>@<marketplace>`
+// config key, mirroring Codex's PluginId. The plugin's cached artifacts and
+// manifest live on disk under `<userData>/plugins/`; this table only overlays
+// durable enable/install bookkeeping.
+const PLUGIN_STATES_SCHEMA = `
+CREATE TABLE IF NOT EXISTS plugin_states (
+  config_key       TEXT PRIMARY KEY,
+  plugin_name      TEXT NOT NULL,
+  marketplace_name TEXT NOT NULL,
+  enabled          INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+  installed        INTEGER NOT NULL DEFAULT 0 CHECK (installed IN (0, 1)),
+  version          TEXT,
+  source_path      TEXT,
+  installed_at     INTEGER,
+  updated_at       INTEGER NOT NULL
+);
+`
+
 export const tanzoMigrations: ModuleMigrations = {
   moduleName: 'tanzo',
   files: [
@@ -385,6 +403,11 @@ export const tanzoMigrations: ModuleMigrations = {
       version: 1,
       name: 'initial_schema',
       up: (db) => db.exec(INITIAL_SCHEMA)
+    },
+    {
+      version: 19,
+      name: 'plugin_states',
+      up: (db) => db.exec(PLUGIN_STATES_SCHEMA)
     }
   ]
 }
