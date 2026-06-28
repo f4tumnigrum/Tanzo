@@ -7,7 +7,7 @@ export const SKILL_CHANNELS = {
   reload: 'skills:reload'
 } as const
 
-export type SkillScope = 'user' | 'workspace' | 'builtin'
+export type SkillScope = 'user' | 'workspace' | 'builtin' | 'plugin'
 export type SkillInstallScope = 'user' | 'workspace'
 
 export interface SkillSummary {

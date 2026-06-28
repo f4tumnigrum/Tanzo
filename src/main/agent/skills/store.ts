@@ -21,11 +21,26 @@ interface SkillRoot {
   scope: SkillScope
 }
 
+/** An extra skills directory contributed by a plugin. */
+export interface PluginSkillRootInput {
+  /** Absolute path to the plugin's skills directory. */
+  dir: string
+  /** Namespace prefix (the plugin's manifest name) applied to its skills. */
+  namespace: string
+}
+
 export interface SkillsStoreDeps {
   workspaceRoot: string
   userDir: string
   logger: Logger
   db?: SqlDatabase
+  /**
+   * Lazily provides skills directories contributed by active plugins. Called on
+   * every (re)load so plugin enable/disable changes take effect on reload.
+   * Plugin skills are namespaced (`<namespace>:<name>`) to avoid collisions
+   * with user/workspace skills.
+   */
+  pluginSkillRoots?: () => PluginSkillRootInput[]
 }
 
 export function createSkillsStore(deps: SkillsStoreDeps): SkillsStore {
@@ -205,6 +220,14 @@ function loadSkills(deps: SkillsStoreDeps): Map<string, ResolvedSkill> {
   for (const root of roots) {
     for (const skill of loadFromRoot(root, deps.logger)) {
       skills.set(skill.name, skill)
+    }
+  }
+  // Plugin-contributed skills load last and are namespaced (`<namespace>:<name>`)
+  // so they never collide with user/workspace skills of the same bare name.
+  for (const pluginRoot of deps.pluginSkillRoots?.() ?? []) {
+    for (const skill of loadFromRoot({ dir: pluginRoot.dir, scope: 'plugin' }, deps.logger)) {
+      const namespaced = `${pluginRoot.namespace}:${skill.name}`
+      skills.set(namespaced, { ...skill, name: namespaced })
     }
   }
   return skills
