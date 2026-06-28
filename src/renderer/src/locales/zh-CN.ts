@@ -285,6 +285,12 @@ export const zhCN = {
             goal: '设定、更换或清除自主目标',
             agent: '切换当前会话智能体'
           }
+        },
+        mentions: {
+          groups: {
+            plugin: '插件',
+            file: '文件'
+          }
         }
       },
       approval: {

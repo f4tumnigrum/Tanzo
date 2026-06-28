@@ -8,6 +8,7 @@ import { useAgents, usePolicyMode, useConversations } from '../../model/queries'
 import { useChatSession } from '../../model'
 import { useChatUiStore } from '../../model/store'
 import { useSlashCommands } from '../../model/slash/use-slash-commands'
+import { usePluginMentions } from '../../model/conversation/use-plugin-mentions'
 import {
   useSetPolicyMode,
   useSetConversationModel,
@@ -52,6 +53,7 @@ export function Composer({ chatId }: ComposerProps): React.JSX.Element {
   )
 
   const baseSlashCommands = useSlashCommands(activeConversation?.cwd ?? null)
+  const pluginMentions = usePluginMentions()
   const slashCommands = useMemo(
     () => [...baseSlashCommands, ...agentSlashCommands(agents.data ?? [])],
     [baseSlashCommands, agents.data]
@@ -240,6 +242,7 @@ export function Composer({ chatId }: ComposerProps): React.JSX.Element {
           trailingSlot={trailing}
           slashCommands={slashCommands}
           workspaceRoot={activeConversation?.cwd ?? null}
+          pluginMentions={pluginMentions}
           draft={draft}
           onDraftChange={(next) => setDraft(chatId, next)}
         />

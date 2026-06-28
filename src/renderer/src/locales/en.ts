@@ -287,6 +287,12 @@ export const en = {
             goal: 'Set, change, or clear an autonomous goal',
             agent: 'Switch the current conversation agent'
           }
+        },
+        mentions: {
+          groups: {
+            plugin: 'Plugins',
+            file: 'Files'
+          }
         }
       },
       approval: {

@@ -15,6 +15,7 @@ import {
 } from '../../model/reasoning-effort'
 import { ChatInput } from './chat-input'
 import { ModelSelector } from './model-selector'
+import { usePluginMentions } from '../../model/conversation/use-plugin-mentions'
 
 export interface StartConversationDraft {
   message: TanzoUIMessage
@@ -32,6 +33,7 @@ export function StartComposer({
 }: StartComposerProps): React.JSX.Element {
   const mode = usePolicyMode()
   const setMode = useSetPolicyMode()
+  const pluginMentions = usePluginMentions()
   const saveLanguageDefaults = useSaveLanguageDefaults()
   const { models } = useAvailableLanguageModels()
   const [selectedModelRef, setSelectedModelRef] = useState<string | null>(null)
@@ -119,6 +121,7 @@ export function StartComposer({
       }}
       trailingSlot={trailing}
       workspaceRoot={workspaceRoot}
+      pluginMentions={pluginMentions}
     />
   )
 }
