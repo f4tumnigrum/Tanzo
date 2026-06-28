@@ -36,6 +36,7 @@ export interface ContextSnapshot {
 
 export interface ContextEnginePrepareOptions {
   consumeGoalInjection?: boolean
+  consumePluginMention?: boolean
 }
 
 export interface BuiltContext {
@@ -131,10 +132,14 @@ export function createContextEngine(deps: ContextEngineDeps): ContextEngine {
       turnIndex === 0 && options.consumeGoalInjection !== false
         ? deps.goal.peekInjection(chatId)
         : null
+    const pluginMention =
+      turnIndex === 0 && options.consumePluginMention !== false
+        ? deps.pluginMention.peek(chatId)
+        : null
 
     let plan = await compileSections(
       registry,
-      { def, chatId, cwd, capabilities, goalInjection },
+      { def, chatId, cwd, capabilities, goalInjection, pluginMention },
       history
     )
 
@@ -154,6 +159,7 @@ export function createContextEngine(deps: ContextEngineDeps): ContextEngine {
       }) ?? plan
     plan = strategy.applyCaching(plan)
     if (goalInjection) deps.goal.takeInjection(chatId)
+    if (pluginMention && pluginMention.length > 0) deps.pluginMention.take(chatId)
     return plan
   }
 

@@ -44,6 +44,21 @@ import {
 import type { PluginStore } from './store'
 import type { PluginStateStore } from './plugin-state-db'
 
+/**
+ * Structured, prose-free summary of one active plugin's capabilities. The
+ * context engine renders these into a catalog block and per-turn focus hints.
+ * Mirrors Codex's `capability_summaries()`.
+ */
+export interface PluginCapabilitySummary {
+  /** Namespace prefix for the plugin's skills (manifest name, else plugin name). */
+  name: string
+  description?: string
+  /** Whether the plugin contributes a skills directory. */
+  hasSkills: boolean
+  /** MCP server names contributed by this plugin. */
+  mcpServerNames: string[]
+}
+
 export interface PluginsManagerDeps {
   store: PluginStore
   state: PluginStateStore | null
@@ -72,6 +87,12 @@ export interface PluginsManager {
   mcpServers(): McpServerConfig[]
   /** Hook config sources from active plugins (always `managed`). */
   hookSources(): PluginHookSourceInput[]
+  /**
+   * Structured capability summaries for active (enabled) plugins, for the
+   * context engine to render a plugin catalog and per-turn focus hints.
+   * Mirrors Codex's `capability_summaries()`: pure data, no prose.
+   */
+  capabilitySummaries(): PluginCapabilitySummary[]
   /**
    * Subscribe to contribution changes (install/uninstall/enable/disable).
    * The composition root fans this out to the subsystems. Returns unsubscribe.
@@ -288,6 +309,22 @@ export function createPluginsManager(deps: PluginsManagerDeps): PluginsManager {
       return loadOutcome()
         .effectiveHookPaths()
         .map((path) => ({ source: 'managed' as const, path }))
+    },
+
+    capabilitySummaries() {
+      // Active = enabled, error-free, installed — same predicate the loader's
+      // effective getters use. We summarize per-plugin (not aggregated) so the
+      // context engine can name each plugin and its skill namespace.
+      return loadOutcome()
+        .plugins.filter(
+          (plugin) => plugin.enabled && plugin.error === undefined && plugin.root !== null
+        )
+        .map((plugin) => ({
+          name: plugin.manifestName ?? plugin.id.pluginName,
+          ...(plugin.manifestDescription ? { description: plugin.manifestDescription } : {}),
+          hasSkills: plugin.skillRoot !== null,
+          mcpServerNames: plugin.mcpServers.map((server) => server.name)
+        }))
     },
 
     onContributionsChanged(listener) {

@@ -4,6 +4,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { ProviderService } from '../../provider/service'
 import type { SkillsStore } from '../skills/types'
+import type { PluginCapabilitySummary } from '../plugins/manager'
 import type { ContextEngineDeps } from './index'
 import type { GoalSectionReader } from './sections/goal'
 import type { PlanModeSectionReader } from './sections/plan-mode'
@@ -26,6 +27,8 @@ const GIT_STATUS_MAX_LINES = 40
 export interface ContextEngineWiring {
   userDir?: string
   skills: SkillsStore
+  pluginCapabilities: () => PluginCapabilitySummary[]
+  pluginMention: { peek: (chatId: string) => string[]; take: (chatId: string) => void }
   providerService: ProviderService
   goal: GoalSectionReader
   policyMode: PlanModeSectionReader
@@ -43,6 +46,24 @@ export function createContextEngineDeps(wiring: ContextEngineWiring): ContextEng
           name: skill.name,
           description: skill.description
         }))
+    },
+    pluginsIndex: {
+      list: () =>
+        wiring.pluginCapabilities().map((plugin) => ({
+          name: plugin.name,
+          ...(plugin.description ? { description: plugin.description } : {})
+        }))
+    },
+    pluginMention: {
+      list: () =>
+        wiring.pluginCapabilities().map((plugin) => ({
+          name: plugin.name,
+          ...(plugin.description ? { description: plugin.description } : {}),
+          hasSkills: plugin.hasSkills,
+          mcpServerNames: plugin.mcpServerNames
+        })),
+      peek: (chatId) => wiring.pluginMention.peek(chatId),
+      take: (chatId) => wiring.pluginMention.take(chatId)
     },
     gitStatus: {
       read: (cwd) => readGitStatus(cwd)

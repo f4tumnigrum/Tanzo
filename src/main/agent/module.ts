@@ -41,6 +41,7 @@ import { createShellRunner } from './shell/runner'
 import { createShellSessionService } from './shell/session-service'
 import { createSkillsStore } from './skills/store'
 import { createPluginsManager, defaultMarketplaceRoots } from './plugins/manager'
+import { createPluginMentionTracker } from './plugins/mention-tracker'
 import { createPluginStore } from './plugins/store'
 import { createPluginStateStore } from './plugins/plugin-state-db'
 import { createAgentStore } from './store'
@@ -318,10 +319,22 @@ export function createAgentModule(options: AgentModuleOptions): AgentModule {
   const changeSet = createChangeSetService({ userDataPath: app.getPath('userData') })
   const questions = createQuestionBroker()
 
+  // Tracks explicit plugin @mentions in user messages for one-shot, per-turn
+  // capability hints. Only mentions matching an active plugin's skill namespace
+  // are recorded; the context engine peeks and consumes them at step 0.
+  const pluginMentions = createPluginMentionTracker(() =>
+    plugins.capabilitySummaries().map((plugin) => plugin.name)
+  )
+
   const contextEngine = createContextEngine({
     ...createContextEngineDeps({
       userDir: join(app.getPath('userData'), 'agent'),
       skills,
+      pluginCapabilities: () => plugins.capabilitySummaries(),
+      pluginMention: {
+        peek: (chatId) => pluginMentions.peek(chatId),
+        take: (chatId) => pluginMentions.take(chatId)
+      },
       providerService: options.providerService,
       goal: {
         get: (chatId) => goalService.get(chatId),
@@ -395,7 +408,8 @@ export function createAgentModule(options: AgentModuleOptions): AgentModule {
     streams,
     changeSet,
     questions,
-    hooks
+    hooks,
+    recordPluginMentions: (chatId, text) => pluginMentions.recordFromText(chatId, text)
   })
   serviceRef.current = service
 

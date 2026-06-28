@@ -257,6 +257,11 @@ describe('agent/module', () => {
     expect(mocks.createContextEngineDeps).toHaveBeenCalledWith({
       userDir: join('/user-data', 'agent'),
       skills: mocks.skills,
+      pluginCapabilities: expect.any(Function),
+      pluginMention: {
+        peek: expect.any(Function),
+        take: expect.any(Function)
+      },
       providerService,
       goal: {
         takeInjection: expect.any(Function),

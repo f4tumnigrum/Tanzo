@@ -51,6 +51,10 @@ describe('agent/context/deps', () => {
         list: () => [],
         get: () => undefined
       },
+      pluginCapabilities: () => [
+        { name: 'sales', description: 'Sales workflows', hasSkills: true, mcpServerNames: ['crm'] },
+        { name: 'bare', hasSkills: false, mcpServerNames: [] }
+      ],
       providerService: {
         getModelMetadata: vi.fn(() => ({
           contextWindow: 128000,
@@ -65,6 +69,10 @@ describe('agent/context/deps', () => {
       '<global-instructions>\nUse global rules.\n</global-instructions>\n\n<project-instructions>\nUse local rules.\n</project-instructions>'
     )
     expect(deps.skillsIndex.list()).toEqual([{ name: 'review', description: 'Review code' }])
+    expect(deps.pluginsIndex.list()).toEqual([
+      { name: 'sales', description: 'Sales workflows' },
+      { name: 'bare' }
+    ])
     expect(deps.gitStatus.read('/workspace')).toContain('branch: feature/test')
     expect(deps.gitStatus.read('/workspace')).toContain('main branch (usually used for PRs): main')
     expect(deps.gitStatus.read('/workspace')).toContain('git user: Ada Lovelace')
@@ -85,6 +93,7 @@ describe('agent/context/deps', () => {
     })
     const deps = createContextEngineDeps({
       skills: { listEnabled: () => [], list: () => [], get: () => undefined },
+      pluginCapabilities: () => [],
       providerService: { getModelMetadata: vi.fn(() => undefined) } as never
     })
 

@@ -30,6 +30,7 @@ export function createChatInbox(
     runTurn(chatId: string, messages: TanzoUIMessage[]): Promise<void>
     submitUserMessage(chatId: string, text: string): Promise<void>
     instructTask(chatId: string, text: string): void
+    recordPluginMentions?(chatId: string, text: string): void
   }
 ): ChatInbox {
   const { messageQueue, steerQueue } = collaborators
@@ -145,6 +146,11 @@ export function createChatInbox(
           return
         }
       }
+    }
+    // Record any explicit plugin @mentions so the context engine can inject a
+    // focused capability hint for the upcoming turn (consumed once, at step 0).
+    if (message.role === 'user') {
+      callbacks.recordPluginMentions?.(chatId, promptTextOf(message))
     }
     const messages = [...history, message]
     await routeMessages(chatId, messages)
