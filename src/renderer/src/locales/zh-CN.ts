@@ -8,6 +8,7 @@ export const zhCN = {
       items: {
         chat: '对话',
         skills: '技能',
+        plugins: '插件',
         providers: '模型服务',
         mcp: 'MCP 服务器',
         usage: '用量',
@@ -1549,6 +1550,57 @@ export const zhCN = {
       reply: {
         title: 'Tanzo 回复了',
         open: '打开'
+      }
+    },
+    plugins: {
+      page: {
+        title: '插件',
+        search: {
+          placeholder: '搜索插件'
+        },
+        stats: {
+          installed: '已安装',
+          enabled: '已启用',
+          available: '可用'
+        },
+        actions: {
+          reload: '重新加载'
+        },
+        sections: {
+          installed: '已安装',
+          available: '可从市场安装'
+        },
+        empty: {
+          title: '未找到插件',
+          description:
+            'Tanzo 会从 ~/.agents/plugins 和当前工作区的 .agents/plugins 中的 marketplace.json 发现插件。'
+        }
+      },
+      status: {
+        error: '错误'
+      },
+      contributes: {
+        skills: '技能',
+        mcp: '{{count}} 个 MCP 服务器',
+        hooks: '钩子'
+      },
+      actions: {
+        install: '安装',
+        toggle: '切换插件',
+        uninstall: '卸载'
+      },
+      uninstall: {
+        title: '卸载插件？',
+        description: '这将从缓存中移除 “{{name}}” 及其贡献的技能、MCP 服务器和钩子。',
+        confirm: '卸载'
+      },
+      toast: {
+        installed: '插件已安装',
+        uninstalled: '插件已卸载',
+        updateFailed: '更新插件失败',
+        installFailed: '安装插件失败',
+        uninstallFailed: '卸载插件失败',
+        reloadFailed: '重新加载插件失败'
       }
     },
     skills: {

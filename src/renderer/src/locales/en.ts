@@ -8,6 +8,7 @@ export const en = {
       items: {
         chat: 'Chat',
         skills: 'Skills',
+        plugins: 'Plugins',
         providers: 'Providers',
         mcp: 'MCP Servers',
         usage: 'Usage',
@@ -1557,6 +1558,58 @@ export const en = {
       reply: {
         title: 'Tanzo replied',
         open: 'Open'
+      }
+    },
+    plugins: {
+      page: {
+        title: 'Plugins',
+        search: {
+          placeholder: 'Search plugins'
+        },
+        stats: {
+          installed: 'installed',
+          enabled: 'enabled',
+          available: 'available'
+        },
+        actions: {
+          reload: 'Reload'
+        },
+        sections: {
+          installed: 'Installed',
+          available: 'Available'
+        },
+        empty: {
+          title: 'No plugins found',
+          description:
+            'Tanzo discovers plugins from local marketplaces in ~/.agents/plugins and the active workspace. Add a marketplace.json to install Codex-compatible plugins.'
+        }
+      },
+      status: {
+        error: 'error'
+      },
+      actions: {
+        install: 'Install',
+        uninstall: 'Uninstall',
+        toggle: 'Toggle plugin'
+      },
+      contributes: {
+        skills: 'skills',
+        mcp: '{{count}} MCP',
+        hooks: 'hooks'
+      },
+      uninstall: {
+        title: 'Uninstall plugin?',
+        description:
+          'This removes "{{name}}" from the local plugin cache. You can reinstall it from its marketplace later.',
+        confirm: 'Uninstall'
+      },
+      toast: {
+        installed: 'Plugin installed',
+        uninstalled: 'Plugin uninstalled',
+        updateFailed: 'Failed to update plugin',
+        installFailed: 'Failed to install plugin',
+        uninstallFailed: 'Failed to uninstall plugin',
+        reloadFailed: 'Failed to reload plugins'
       }
     },
     skills: {
