@@ -44,10 +44,12 @@ import { createAgentStore } from './store'
 import { createBuildTools } from './tools/registry'
 import type { AgentService, ChunkSink, ChunkSinkMeta } from './runtime/types'
 import type { SkillsStore } from './skills/types'
+import type { AgentStore } from './store-types'
 import type { ToolDeps } from './tools/types'
 
 export interface AgentModule {
   service: AgentService
+  store: AgentStore
   skills: SkillsStore
   presence: PresenceAggregator
   registerIpc(ipcMain: IpcMain): void
@@ -362,6 +364,7 @@ export function createAgentModule(options: AgentModuleOptions): AgentModule {
 
   return {
     service,
+    store,
     skills,
     presence,
     registerIpc(ipcMain) {

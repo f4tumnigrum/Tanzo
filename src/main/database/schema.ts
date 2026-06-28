@@ -376,6 +376,17 @@ CREATE TABLE policy_modes (
   mode            TEXT NOT NULL CHECK (mode IN ('default', 'plan', 'yolo', 'dangerous')),
   updated_at      INTEGER NOT NULL
 );
+
+CREATE TABLE imported_conversations (
+  source          TEXT NOT NULL,
+  external_id     TEXT NOT NULL,
+  conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  imported_at     INTEGER NOT NULL,
+  source_path     TEXT,
+  source_hash     TEXT,
+  PRIMARY KEY (source, external_id)
+);
+CREATE INDEX idx_imported_conversations__conversation ON imported_conversations (conversation_id);
 `
 
 export const tanzoMigrations: ModuleMigrations = {
@@ -385,6 +396,24 @@ export const tanzoMigrations: ModuleMigrations = {
       version: 1,
       name: 'initial_schema',
       up: (db) => db.exec(INITIAL_SCHEMA)
+    },
+    {
+      version: 2,
+      name: 'imported_conversations',
+      up: (db) =>
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS imported_conversations (
+            source          TEXT NOT NULL,
+            external_id     TEXT NOT NULL,
+            conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+            imported_at     INTEGER NOT NULL,
+            source_path     TEXT,
+            source_hash     TEXT,
+            PRIMARY KEY (source, external_id)
+          );
+          CREATE INDEX IF NOT EXISTS idx_imported_conversations__conversation
+            ON imported_conversations (conversation_id);
+        `)
     }
   ]
 }

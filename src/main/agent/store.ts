@@ -7,6 +7,7 @@ import type {
   NewConversationInput
 } from '@shared/chat'
 import type { TanzoUIMessage } from '@shared/agent-message'
+import type { ImportedConversationInput, ImportedConversationRecord } from '@shared/codex-import'
 import { TanzoNotFoundError, TanzoValidationError } from '@shared/errors'
 import type { SqlDatabase } from '../database/types'
 import type { AgentDefinition } from './agents/types'
@@ -41,6 +42,44 @@ export function createAgentStore(
   const subagentTasks = createSubagentTaskRepo(db)
   const toolExecutions = createToolExecutionRepo(db)
   const activity = createActivityRepo(db)
+
+  const selectImportedConversation = db.prepare(`
+    SELECT source, external_id, conversation_id, imported_at, source_path, source_hash
+    FROM imported_conversations
+    WHERE source = ? AND external_id = ?
+  `)
+  const selectImportedConversations = db.prepare(`
+    SELECT source, external_id, conversation_id, imported_at, source_path, source_hash
+    FROM imported_conversations
+    WHERE source = ?
+  `)
+  const insertImportedConversation = db.prepare(`
+    INSERT INTO imported_conversations (
+      source, external_id, conversation_id, imported_at, source_path, source_hash
+    ) VALUES (
+      @source, @external_id, @conversation_id, @imported_at, @source_path, @source_hash
+    )
+  `)
+
+  interface ImportedConversationRow {
+    source: string
+    external_id: string
+    conversation_id: string
+    imported_at: number
+    source_path: string | null
+    source_hash: string | null
+  }
+
+  function importedRowToRecord(row: ImportedConversationRow): ImportedConversationRecord {
+    return {
+      source: row.source,
+      externalId: row.external_id,
+      conversationId: row.conversation_id,
+      importedAt: row.imported_at,
+      sourcePath: row.source_path,
+      sourceHash: row.source_hash
+    }
+  }
 
   function normalizeCwd(cwd: string): string {
     const absolute = resolve(cwd)
@@ -224,6 +263,108 @@ export function createAgentStore(
     return { ...existing, agentId: normalizedAgentId, updatedAt }
   }
 
+  function safeNormalizeImportedCwd(cwd: string | undefined): string {
+    if (!cwd) return normalizeCwd(defaultCwd)
+    try {
+      return normalizeCwd(cwd)
+    } catch {
+      return normalizeCwd(defaultCwd)
+    }
+  }
+
+  function getImportedConversation(
+    source: string,
+    externalId: string
+  ): ImportedConversationRecord | undefined {
+    const row = selectImportedConversation.get([source, externalId]) as
+      | ImportedConversationRow
+      | undefined
+    return row ? importedRowToRecord(row) : undefined
+  }
+
+  function listImportedConversations(source: string): ImportedConversationRecord[] {
+    return (selectImportedConversations.all([source]) as ImportedConversationRow[]).map(
+      importedRowToRecord
+    )
+  }
+
+  function importConversation(input: ImportedConversationInput): ConversationSummary {
+    const existing = getImportedConversation(input.source, input.externalId)
+    if (existing) {
+      const conversation = conversations.get(existing.conversationId)
+      if (conversation) return conversation
+    }
+
+    const cwd = safeNormalizeImportedCwd(input.cwd)
+    const now = Date.now()
+    const createdAt = input.createdAt ?? now
+    const updatedAt = input.updatedAt ?? createdAt
+    const summary: ConversationSummary = {
+      id: randomUUID(),
+      title: input.title ?? '',
+      agentId: 'tanzo',
+      modelRef: input.modelRef ?? '',
+      subagentModelRef: '',
+      workspaceId: workspaceIdFromCwd(cwd),
+      workspaceName: workspaceNameFromCwd(cwd),
+      cwd,
+      parentConversationId: null,
+      parentRelation: null,
+      createdAt,
+      updatedAt,
+      archivedAt: null
+    }
+
+    db.transaction(() => {
+      conversations.insert(summary)
+      messages.writeActive(summary.id, input.messages)
+      const tailCount = Math.max(0, input.contextTailMessages ?? 12)
+      const archived = tailCount === 0 ? input.messages : input.messages.slice(0, -tailCount)
+      if (archived.length > 0) {
+        const summaryId = randomUUID()
+        const summaryText = [
+          `已导入的 ${archived.length} 条较早 Codex 消息已为模型上下文折叠。`,
+          '完整导入记录仍保留在当前会话历史中。'
+        ].join('\n')
+        messages.finalizeCompaction(
+          summary.id,
+          archived.map((message) => message.id),
+          summaryId,
+          [
+            {
+              id: summaryId,
+              role: 'assistant',
+              parts: [
+                { type: 'text', text: summaryText },
+                {
+                  type: 'data-compaction',
+                  data: {
+                    stage: 'complete',
+                    summary: summaryText,
+                    summaryId,
+                    omittedMessages: archived.length
+                  }
+                }
+              ],
+              metadata: { createdAt: now }
+            } as TanzoUIMessage,
+            ...input.messages.slice(-tailCount)
+          ]
+        )
+      }
+      insertImportedConversation.run({
+        source: input.source,
+        external_id: input.externalId,
+        conversation_id: summary.id,
+        imported_at: now,
+        source_path: input.sourcePath ?? null,
+        source_hash: input.sourceHash ?? null
+      })
+    })
+
+    return conversations.get(summary.id) ?? summary
+  }
+
   async function resolveAgentDefinition(chatId: string): Promise<AgentDefinition> {
     const conversation = requireConversation(chatId, 'AGENT_DEFINITION_NOT_FOUND')
     const def = identity.resolveAgentType(conversation.agentId)
@@ -275,6 +416,9 @@ export function createAgentStore(
     listWorkspaces: conversations.listWorkspaces,
     listChildren: conversations.listChildren,
     getConversation: conversations.get,
+    importConversation,
+    getImportedConversation,
+    listImportedConversations,
     depthOf: conversations.depthOf,
     rootOf: conversations.rootOf,
     deleteWorkspace,

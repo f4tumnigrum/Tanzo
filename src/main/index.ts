@@ -7,6 +7,7 @@ import { tanzoMigrations } from './database/schema'
 import { createMcpModule, type McpModule } from './mcp/module'
 import { createProviderModule, type ProviderModule } from './provider/module'
 import { createAgentModule, type AgentModule } from './agent/module'
+import { createCodexImportModule, type CodexImportModule } from './codex-import/module'
 import { createSlashCommandModule, type SlashCommandModule } from './slash-command/module'
 import { createFileMentionModule, type FileMentionModule } from './file-mention/module'
 import { createPetAssetsModule, type PetAssetsModule } from './pet/module'
@@ -57,6 +58,7 @@ let databaseModule: DatabaseModule | null = null
 let mcpModule: McpModule | null = null
 let providerModule: ProviderModule | null = null
 let agentModule: AgentModule | null = null
+let codexImportModule: CodexImportModule | null = null
 let slashCommandModule: SlashCommandModule | null = null
 let fileMentionModule: FileMentionModule | null = null
 let isQuitting = false
@@ -209,6 +211,10 @@ if (singleInstanceLock)
     agentModule.registerIpc(ipcMain)
     markStartup('agent.module')
 
+    codexImportModule = createCodexImportModule({ store: agentModule.store })
+    codexImportModule.registerIpc(ipcMain)
+    markStartup('codexImport.module')
+
     slashCommandModule = createSlashCommandModule({ skills: agentModule.skills })
     slashCommandModule.registerIpc(ipcMain)
     markStartup('slashCommand.module')
@@ -278,6 +284,7 @@ app.on('before-quit', (event) => {
   void (async () => {
     if (petWindow && !petWindow.isDestroyed()) destroyPetWindow(petWindow)
     petWindow = null
+    codexImportModule?.close()
     slashCommandModule?.close()
     fileMentionModule?.close()
     await agentModule?.close()

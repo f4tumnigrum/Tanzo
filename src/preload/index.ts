@@ -1,6 +1,7 @@
 import { contextBridge } from 'electron'
 import log from 'electron-log/preload'
 import { activityApi, chatApi, changeSetApi, gitApi, goalApi, policyApi } from './agent'
+import { codexImportApi } from './codex-import'
 import { hooksApi } from './hooks'
 import { mcpApi } from './mcp'
 import { petApi } from './pet'
@@ -14,6 +15,7 @@ import { systemApi } from './system'
 const tanzoApi = {
   ...systemApi,
   preferences: preferencesApi,
+  codexImport: codexImportApi,
   mcp: mcpApi,
   provider: providerApi,
   chat: chatApi,

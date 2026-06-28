@@ -7,6 +7,7 @@ import type {
   NewConversationInput
 } from '@shared/chat'
 import type { TanzoUIMessage } from '@shared/agent-message'
+import type { ImportedConversationInput, ImportedConversationRecord } from '@shared/codex-import'
 import type {
   ActivityRange,
   ActivityConversationList,
@@ -43,6 +44,9 @@ export interface AgentStore {
   setConversationSubagentModel(chatId: string, modelRef: string): ConversationSummary
   setConversationAgent(chatId: string, agentId: string): ConversationSummary
   save(chatId: string, messages: TanzoUIMessage[]): void
+  importConversation(input: ImportedConversationInput): ConversationSummary
+  getImportedConversation(source: string, externalId: string): ImportedConversationRecord | undefined
+  listImportedConversations(source: string): ImportedConversationRecord[]
 
   finalizeCompaction(
     chatId: string,

@@ -1,11 +1,22 @@
 import type { ComponentType } from 'react'
-import { BarChart3, Cat, Palette, Plug, Server, ShieldCheck, Sparkles, Webhook } from 'lucide-react'
+import {
+  ArchiveRestore,
+  BarChart3,
+  Cat,
+  Palette,
+  Plug,
+  Server,
+  ShieldCheck,
+  Sparkles,
+  Webhook
+} from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { EmbeddedScaffoldProvider } from '@/components/layout/page-scaffold'
 import McpPage from '@/features/mcp/page'
 import ProvidersPage from '@/features/providers/page'
 import SkillsPage from '@/features/skills/page'
 import UsagePage from '@/features/usage/page'
+import { SettingsCodexImportTab } from '../ui/settings-codex-import-tab'
 import { SettingsHooksTab, SettingsHooksHeaderActions } from '../ui/settings-hooks-tab'
 import { SettingsPermissionsTab } from '../ui/settings-permissions-tab'
 import { SettingsPetTab } from '../ui/settings-pet-tab'
@@ -17,6 +28,7 @@ export type SettingsSectionId =
   | 'providers'
   | 'mcp'
   | 'usage'
+  | 'codexImport'
   | 'permissions'
   | 'hooks'
   | 'pet'
@@ -80,6 +92,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
     icon: BarChart3,
     Component: embed(UsagePage),
     embedded: true
+  },
+  {
+    id: 'codexImport',
+    labelKey: 'settings.page.tabs.codexImport',
+    defaultLabel: 'Codex 导入',
+    icon: ArchiveRestore,
+    Component: SettingsCodexImportTab
   },
   {
     id: 'permissions',

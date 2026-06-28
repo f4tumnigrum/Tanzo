@@ -13,9 +13,9 @@ describe('database/migrations on real sqlite', () => {
           .all(['tanzo']) as Array<{ version: number }>
       ).map((row) => row.version)
 
-    expect(versions()).toEqual([1])
+    expect(versions()).toEqual([1, 2])
     expect(() => runMigrations(db, [tanzoMigrations])).not.toThrow()
-    expect(versions()).toEqual([1])
+    expect(versions()).toEqual([1, 2])
   })
 
   it('creates the core tables with foreign keys enforced', () => {
@@ -34,6 +34,7 @@ describe('database/migrations on real sqlite', () => {
       'quarantined_messages',
       'queued_messages',
       'policy_modes',
+      'imported_conversations',
       'runs',
       'run_steps',
       'prompt_diagnostics',
