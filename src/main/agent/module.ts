@@ -40,15 +40,20 @@ import {
 import { createShellRunner } from './shell/runner'
 import { createShellSessionService } from './shell/session-service'
 import { createSkillsStore } from './skills/store'
+import { createPluginsManager, defaultMarketplaceRoots } from './plugins/manager'
+import { createPluginStore } from './plugins/store'
+import { createPluginStateStore } from './plugins/plugin-state-db'
 import { createAgentStore } from './store'
 import { createBuildTools } from './tools/registry'
 import type { AgentService, ChunkSink, ChunkSinkMeta } from './runtime/types'
 import type { SkillsStore } from './skills/types'
+import type { PluginsManager } from './plugins/manager'
 import type { ToolDeps } from './tools/types'
 
 export interface AgentModule {
   service: AgentService
   skills: SkillsStore
+  plugins: PluginsManager
   presence: PresenceAggregator
   registerIpc(ipcMain: IpcMain): void
   close(): Promise<void>
@@ -196,11 +201,21 @@ export function createAgentModule(options: AgentModuleOptions): AgentModule {
     }
   }
 
+  const pluginStore = createPluginStore(app.getPath('userData'), logger)
+  const plugins = createPluginsManager({
+    store: pluginStore,
+    state: options.db ? createPluginStateStore(options.db) : null,
+    marketplaceRoots: defaultMarketplaceRoots(options.workspaceRoot),
+    logger
+  })
+
   const skills = createSkillsStore({
     workspaceRoot: options.workspaceRoot,
     userDir: join(app.getPath('userData'), 'agent'),
     logger,
-    db: options.db
+    db: options.db,
+    // Active plugins contribute namespaced skills; re-evaluated on every reload.
+    pluginSkillRoots: () => plugins.skillRoots()
   })
 
   const identity = createAgentIdentity({
@@ -221,6 +236,8 @@ export function createAgentModule(options: AgentModuleOptions): AgentModule {
     store: hooksStore,
     userDir: join(app.getPath('userData'), 'agent'),
     logger,
+    // Active plugins contribute `managed` (auto-trusted) hook configs.
+    pluginSources: () => plugins.hookSources(),
     sessionMeta: (chatId) => {
       const conversation = store.getConversation(chatId)
       if (!conversation) return undefined
@@ -230,6 +247,30 @@ export function createAgentModule(options: AgentModuleOptions): AgentModule {
         mode: policyEngine.getMode(store.rootOf(chatId))
       }
     }
+  })
+
+  // Wire the plugin system as a pure data source into the three subsystems.
+  // The MCP service is created before the agent module, so its plugin provider
+  // is bound late here. Skills and hooks already pull via their providers above.
+  options.mcpService.setPluginServers(() => plugins.mcpServers())
+
+  // A single contribution-change event, fanned out to each subsystem. The
+  // plugin manager never reaches into a subsystem; the composition root owns
+  // this wiring. Skills/hooks re-read lazily on reload; MCP re-syncs connections.
+  plugins.onContributionsChanged(() => {
+    try {
+      skills.reload()
+    } catch (error) {
+      logger.warn('skills reload after plugin change failed', error)
+    }
+    try {
+      hooks.reload()
+    } catch (error) {
+      logger.warn('hooks reload after plugin change failed', error)
+    }
+    void options.mcpService.syncFromStore().catch((error) => {
+      logger.warn('mcp sync after plugin change failed', error)
+    })
   })
 
   const policy: typeof policyEngine = {
@@ -363,6 +404,7 @@ export function createAgentModule(options: AgentModuleOptions): AgentModule {
   return {
     service,
     skills,
+    plugins,
     presence,
     registerIpc(ipcMain) {
       unregisterIpc?.()
@@ -377,6 +419,7 @@ export function createAgentModule(options: AgentModuleOptions): AgentModule {
         git,
         changeSet,
         skills,
+        plugins,
         streams
       })
     },

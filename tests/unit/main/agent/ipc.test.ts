@@ -6,6 +6,7 @@ import { GIT_CHANNELS } from '@shared/git'
 import { POLICY_CHANNELS } from '@shared/policy'
 import { HOOKS_CHANNELS } from '@shared/hooks'
 import { SKILL_CHANNELS } from '@shared/skills'
+import { PLUGIN_CHANNELS } from '@shared/plugins'
 import { ACTIVITY_CHANNELS } from '@shared/activity'
 import { CHANGE_SET_CHANNELS } from '@shared/change-set'
 import { registerAgentIpc } from '@main/agent/ipc'
@@ -122,6 +123,15 @@ function deps() {
     uninstall: vi.fn(() => ({ skills: [], updatedAt: 0 })),
     reload: vi.fn(() => ({ skills: [], updatedAt: 0 }))
   }
+  const plugins = {
+    list: vi.fn(() => ({ plugins: [], updatedAt: 0 })),
+    detail: vi.fn((id: string) => ({ id })),
+    setEnabled: vi.fn(() => ({ plugins: [], updatedAt: 0 })),
+    install: vi.fn(() => ({ plugins: [], updatedAt: 0 })),
+    uninstall: vi.fn(() => ({ plugins: [], updatedAt: 0 })),
+    listMarketplacePlugins: vi.fn(() => []),
+    reload: vi.fn(() => ({ plugins: [], updatedAt: 0 }))
+  }
   const streams = {
     snapshot: vi.fn((chatId: string) => ({
       chatId,
@@ -151,7 +161,19 @@ function deps() {
       timedOut: false
     }))
   }
-  return { service, store, identity, policy, policyStore, hooks, goal, skills, streams, changeSet }
+  return {
+    service,
+    store,
+    identity,
+    policy,
+    policyStore,
+    hooks,
+    goal,
+    skills,
+    plugins,
+    streams,
+    changeSet
+  }
 }
 
 const userMessage: TanzoUIMessage = {
@@ -177,6 +199,7 @@ describe('agent/ipc', () => {
         Object.keys(HOOKS_CHANNELS).length +
         Object.keys(GOAL_CHANNELS).length +
         Object.keys(SKILL_CHANNELS).length +
+        Object.keys(PLUGIN_CHANNELS).length +
         Object.keys(ACTIVITY_CHANNELS).length +
         Object.keys(GIT_CHANNELS).length +
         Object.keys(CHANGE_SET_CHANNELS).length
@@ -363,7 +386,8 @@ describe('agent/ipc', () => {
         Object.keys(SKILL_CHANNELS).length +
         Object.keys(ACTIVITY_CHANNELS).length +
         Object.keys(GIT_CHANNELS).length +
-        Object.keys(CHANGE_SET_CHANNELS).length) *
+        Object.keys(CHANGE_SET_CHANNELS).length +
+        Object.keys(PLUGIN_CHANNELS).length) *
         2
     )
   })

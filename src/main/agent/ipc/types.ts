@@ -7,6 +7,7 @@ import type { HookService } from '../hooks/service'
 import type { AgentService } from '../runtime/types'
 import type { ChatRunSessionRegistry } from '../runtime/run-session-registry'
 import type { SkillsStore } from '../skills/types'
+import type { PluginsManager } from '../plugins/manager'
 import type { AgentStore } from '../store-types'
 
 export type IpcHandler = (...args: unknown[]) => unknown
@@ -23,5 +24,6 @@ export interface AgentIpcDeps {
   git: GitService
   changeSet: ChangeSetService
   skills: SkillsStore
+  plugins: PluginsManager
   streams: Pick<ChatRunSessionRegistry, 'snapshot'>
 }

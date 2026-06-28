@@ -7,6 +7,7 @@ import { petApi } from './pet'
 import { preferencesApi } from './preferences'
 import { providerApi } from './provider'
 import { skillsApi } from './skills'
+import { pluginsApi } from './plugins'
 import { slashCommandApi } from './slash-command'
 import { fileMentionApi } from './file-mention'
 import { systemApi } from './system'
@@ -24,6 +25,7 @@ const tanzoApi = {
   changeSet: changeSetApi,
   activity: activityApi,
   skills: skillsApi,
+  plugins: pluginsApi,
   slashCommand: slashCommandApi,
   fileMention: fileMentionApi,
   pet: petApi,

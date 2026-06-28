@@ -73,6 +73,15 @@ const mocks = vi.hoisted(() => {
     createPolicyStore: vi.fn(() => policyStore),
     createPolicyEngine: vi.fn(() => policy),
     createSkillsStore: vi.fn(() => skills),
+    createPluginStore: vi.fn(() => ({ kind: 'plugin-store' })),
+    createPluginStateStore: vi.fn(() => ({ kind: 'plugin-state' })),
+    createPluginsManager: vi.fn(() => ({
+      skillRoots: vi.fn(() => []),
+      mcpServers: vi.fn(() => []),
+      hookSources: vi.fn(() => []),
+      onContributionsChanged: vi.fn(() => () => undefined)
+    })),
+    defaultMarketplaceRoots: vi.fn(() => []),
     createAgentIdentity: vi.fn((options: { defaultModelRef(): string }) => {
       identityOptions = options
       return identity
@@ -113,6 +122,19 @@ vi.mock('@main/agent/policy/engine', () => ({
 
 vi.mock('@main/agent/skills/store', () => ({
   createSkillsStore: mocks.createSkillsStore
+}))
+
+vi.mock('@main/agent/plugins/manager', () => ({
+  createPluginsManager: mocks.createPluginsManager,
+  defaultMarketplaceRoots: mocks.defaultMarketplaceRoots
+}))
+
+vi.mock('@main/agent/plugins/store', () => ({
+  createPluginStore: mocks.createPluginStore
+}))
+
+vi.mock('@main/agent/plugins/plugin-state-db', () => ({
+  createPluginStateStore: mocks.createPluginStateStore
 }))
 
 vi.mock('@main/agent/agents', () => ({
@@ -187,7 +209,7 @@ describe('agent/module', () => {
     const module = createAgentModule({
       db,
       providerService: providerService as never,
-      mcpService: { kind: 'mcp' } as never,
+      mcpService: { kind: 'mcp', setPluginServers: vi.fn(), syncFromStore: vi.fn() } as never,
       workspaceRoot: '/workspace/root',
       getWindows: () =>
         [window(firstSend), window(vi.fn(), true), window(secondSend, false, true)] as never
@@ -199,12 +221,15 @@ describe('agent/module', () => {
     expect(mocks.createPolicyEngine).toHaveBeenCalledWith(
       expect.objectContaining({ policyStore: mocks.policyStore })
     )
-    expect(mocks.createSkillsStore).toHaveBeenCalledWith({
-      workspaceRoot: '/workspace/root',
-      userDir: join('/user-data', 'agent'),
-      logger: mocks.logger,
-      db
-    })
+    expect(mocks.createSkillsStore).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceRoot: '/workspace/root',
+        userDir: join('/user-data', 'agent'),
+        logger: mocks.logger,
+        db,
+        pluginSkillRoots: expect.any(Function)
+      })
+    )
     expect(mocks.createAgentIdentity).toHaveBeenCalledWith(
       expect.objectContaining({ workspaceRoot: '/workspace/root', logger: mocks.logger })
     )
