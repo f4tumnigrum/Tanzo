@@ -785,6 +785,10 @@ export const en = {
       metrics: {
         total: 'Total'
       },
+      pagination: {
+        showing: 'Showing {{start}}–{{end}} of {{total}}',
+        goToPage: 'Go to page {{page}}'
+      },
       status: {
         configured: 'Configured',
         notConfigured: 'Not configured',
@@ -1582,7 +1586,8 @@ export const en = {
         },
         sections: {
           installed: 'Installed',
-          available: 'Available'
+          available: 'Available',
+          availableFrom: 'Available · {{name}}'
         },
         empty: {
           title: 'No plugins found',
@@ -1631,6 +1636,56 @@ export const en = {
         installFailed: 'Failed to install plugin',
         uninstallFailed: 'Failed to uninstall plugin',
         reloadFailed: 'Failed to reload plugins'
+      },
+      marketplace: {
+        add: {
+          action: 'Add marketplace',
+          title: 'Add marketplace',
+          source: {
+            label: 'Source',
+            placeholder: 'owner/repo, a git URL, or a local path',
+            hint: 'A GitHub shorthand (owner/repo), git/SSH URL, or local directory containing a marketplace.json.'
+          },
+          ref: {
+            label: 'Ref',
+            placeholder: 'branch, tag, or commit'
+          },
+          sparse: {
+            label: 'Sparse paths',
+            placeholder: 'comma-separated paths'
+          },
+          submit: 'Add',
+          errors: {
+            sourceRequired: 'Enter a marketplace source.',
+            addFailed: 'Failed to add marketplace'
+          }
+        },
+        manage: {
+          action: 'Marketplaces',
+          title: 'Marketplaces',
+          type: {
+            git: 'Git',
+            local: 'Local'
+          },
+          actions: {
+            upgrade: 'Upgrade',
+            remove: 'Remove'
+          },
+          empty: {
+            title: 'No marketplaces added',
+            description:
+              'Add a git or local marketplace to discover plugins beyond the default ~/.agents/plugins and workspace catalogs.'
+          }
+        },
+        toast: {
+          added: 'Added marketplace "{{name}}"',
+          alreadyAdded: 'Marketplace "{{name}}" is already added',
+          removed: 'Removed marketplace "{{name}}"',
+          removeFailed: 'Failed to remove marketplace',
+          upgraded: 'Upgraded marketplace "{{name}}"',
+          upToDate: 'Marketplace "{{name}}" is up to date',
+          upgradeFailed: 'Failed to upgrade marketplace'
+        }
       }
     },
     skills: {

@@ -14,6 +14,8 @@ import { UninstallDialog } from './uninstall-dialog'
 
 type SkillsPageController = ReturnType<typeof useSkillsPageController>
 
+const SKILL_PAGE_SIZE = 12
+
 export function SkillsPageView({
   controller
 }: {
@@ -89,6 +91,7 @@ export function SkillsPageView({
               <SkillsGrid
                 title={t('common.status.enabled')}
                 skills={controller.enabledSkills}
+                pageSize={SKILL_PAGE_SIZE}
                 onOpen={controller.openDetail}
                 onToggle={(selected, enabled) => void controller.toggleSkill(selected, enabled)}
               />
@@ -98,6 +101,7 @@ export function SkillsPageView({
                 title={t('common.status.disabled')}
                 skills={controller.disabledSkills}
                 defaultOpen={controller.enabledSkills.length === 0}
+                pageSize={SKILL_PAGE_SIZE}
                 onOpen={controller.openDetail}
                 onToggle={(selected, enabled) => void controller.toggleSkill(selected, enabled)}
               />

@@ -783,6 +783,10 @@ export const zhCN = {
       metrics: {
         total: '总数'
       },
+      pagination: {
+        showing: '显示第 {{start}}–{{end}} 项，共 {{total}} 项',
+        goToPage: '第 {{page}} 页'
+      },
       status: {
         configured: '已配置',
         notConfigured: '未配置',
@@ -1574,7 +1578,8 @@ export const zhCN = {
         },
         sections: {
           installed: '已安装',
-          available: '可从市场安装'
+          available: '可从市场安装',
+          availableFrom: '{{name}} 市场'
         },
         empty: {
           title: '未找到插件',
@@ -1622,6 +1627,55 @@ export const zhCN = {
         installFailed: '安装插件失败',
         uninstallFailed: '卸载插件失败',
         reloadFailed: '重新加载插件失败'
+      },
+      marketplace: {
+        add: {
+          action: '添加市场',
+          title: '添加市场',
+          source: {
+            label: '来源',
+            placeholder: 'owner/repo、git URL 或本地路径',
+            hint: 'GitHub 简写（owner/repo）、git/SSH URL，或包含 marketplace.json 的本地目录。'
+          },
+          ref: {
+            label: '分支/标签',
+            placeholder: '分支、标签或提交'
+          },
+          sparse: {
+            label: '稀疏路径',
+            placeholder: '以逗号分隔的路径'
+          },
+          submit: '添加',
+          errors: {
+            sourceRequired: '请输入市场来源。',
+            addFailed: '添加市场失败'
+          }
+        },
+        manage: {
+          action: '市场',
+          title: '市场',
+          type: {
+            git: 'Git',
+            local: '本地'
+          },
+          actions: {
+            upgrade: '更新',
+            remove: '移除'
+          },
+          empty: {
+            title: '尚未添加市场',
+            description: '添加 git 或本地市场，发现默认 ~/.agents/plugins 和工作区目录之外的插件。'
+          }
+        },
+        toast: {
+          added: '已添加市场 “{{name}}”',
+          alreadyAdded: '市场 “{{name}}” 已添加',
+          removed: '已移除市场 “{{name}}”',
+          removeFailed: '移除市场失败',
+          upgraded: '已更新市场 “{{name}}”',
+          upToDate: '市场 “{{name}}” 已是最新',
+          upgradeFailed: '更新市场失败'
+        }
       }
     },
     skills: {

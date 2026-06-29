@@ -6,6 +6,7 @@ export function InstalledPluginsGrid({
   title,
   plugins,
   defaultOpen,
+  pageSize,
   onOpen,
   onToggle,
   onUninstall
@@ -13,6 +14,7 @@ export function InstalledPluginsGrid({
   title: string
   plugins: PluginSummary[]
   defaultOpen?: boolean
+  pageSize?: number
   onOpen: (plugin: PluginSummary) => void
   onToggle: (plugin: PluginSummary, enabled: boolean) => void
   onUninstall: (plugin: PluginSummary) => void
@@ -23,6 +25,7 @@ export function InstalledPluginsGrid({
       items={plugins}
       getItemKey={(plugin) => plugin.id}
       defaultOpen={defaultOpen}
+      pageSize={pageSize}
       renderItem={(plugin) => (
         <InstalledPluginCard
           plugin={plugin}
@@ -39,11 +42,15 @@ export function AvailablePluginsGrid({
   title,
   entries,
   installingId,
+  pageSize,
+  defaultOpen,
   onInstall
 }: {
   title: string
   entries: MarketplacePluginEntry[]
   installingId: string | undefined
+  pageSize?: number
+  defaultOpen?: boolean
   onInstall: (entry: MarketplacePluginEntry) => void
 }): React.ReactElement | null {
   return (
@@ -51,6 +58,8 @@ export function AvailablePluginsGrid({
       title={title}
       items={entries}
       getItemKey={(entry) => entry.id}
+      pageSize={pageSize}
+      defaultOpen={defaultOpen}
       renderItem={(entry) => (
         <AvailablePluginCard
           entry={entry}
