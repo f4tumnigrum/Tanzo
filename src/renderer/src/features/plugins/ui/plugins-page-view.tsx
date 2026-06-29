@@ -1,4 +1,4 @@
-import { Blocks, RefreshCw } from 'lucide-react'
+import { Blocks, RefreshCw, Plus, Store } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -18,8 +18,13 @@ import { cn } from '@/lib/utils'
 import type { usePluginsPageController } from '../model/use-plugins-page-controller'
 import { AvailablePluginsGrid, InstalledPluginsGrid } from './plugins-grid'
 import { PluginDetailView } from './plugin-detail-view'
+import { AddMarketplaceDialog } from './add-marketplace-dialog'
+import { ManageMarketplacesDialog } from './manage-marketplaces-dialog'
 
 type Controller = ReturnType<typeof usePluginsPageController>
+
+/** Items per page before a section paginates. */
+const PLUGIN_PAGE_SIZE = 12
 
 export function PluginsPageView({ controller }: { controller: Controller }): React.ReactElement {
   const { t } = useTranslation()
@@ -48,16 +53,38 @@ export function PluginsPageView({ controller }: { controller: Controller }): Rea
         searchPlaceholder={t('plugins.page.search.placeholder')}
         onSearchChange={controller.setSearchValue}
         actions={
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className={cn(pageHeaderIconBtnCls, 'w-auto gap-1.5 px-2.5')}
-            onClick={() => void controller.reload()}
-          >
-            <RefreshCw className={cn('size-3.5', controller.reloading && 'animate-spin')} />
-            <span className="text-xs">{t('plugins.page.actions.reload')}</span>
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className={cn(pageHeaderIconBtnCls, 'w-auto gap-1.5 px-2.5')}
+              onClick={() => controller.setAddMarketplaceOpen(true)}
+            >
+              <Plus className="size-3.5" />
+              <span className="text-xs">{t('plugins.marketplace.add.action')}</span>
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className={cn(pageHeaderIconBtnCls, 'w-auto gap-1.5 px-2.5')}
+              onClick={() => controller.setManageMarketplacesOpen(true)}
+            >
+              <Store className="size-3.5" />
+              <span className="text-xs">{t('plugins.marketplace.manage.action')}</span>
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className={cn(pageHeaderIconBtnCls, 'w-auto gap-1.5 px-2.5')}
+              onClick={() => void controller.reload()}
+            >
+              <RefreshCw className={cn('size-3.5', controller.reloading && 'animate-spin')} />
+              <span className="text-xs">{t('plugins.page.actions.reload')}</span>
+            </Button>
+          </div>
         }
       >
         {controller.loading ? null : noResults ? (
@@ -72,16 +99,21 @@ export function PluginsPageView({ controller }: { controller: Controller }): Rea
             <InstalledPluginsGrid
               title={t('plugins.page.sections.installed')}
               plugins={controller.filteredPlugins}
+              pageSize={PLUGIN_PAGE_SIZE}
               onOpen={(plugin) => controller.setSelectedPluginId(plugin.id)}
               onToggle={(plugin, enabled) => void controller.togglePlugin(plugin, enabled)}
               onUninstall={(plugin) => controller.setDeleteTarget(plugin)}
             />
-            <AvailablePluginsGrid
-              title={t('plugins.page.sections.available')}
-              entries={controller.filteredAvailable}
-              installingId={controller.installingId}
-              onInstall={(entry) => void controller.installPlugin(entry)}
-            />
+            {controller.availableByMarketplace.map((group) => (
+              <AvailablePluginsGrid
+                key={group.name}
+                title={t('plugins.page.sections.availableFrom', { name: group.displayName })}
+                entries={group.entries}
+                pageSize={PLUGIN_PAGE_SIZE}
+                installingId={controller.installingId}
+                onInstall={(entry) => void controller.installPlugin(entry)}
+              />
+            ))}
           </div>
         )}
       </ListPageScaffold>
@@ -109,6 +141,23 @@ export function PluginsPageView({ controller }: { controller: Controller }): Rea
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <AddMarketplaceDialog
+        open={controller.addMarketplaceOpen}
+        adding={controller.addingMarketplace}
+        onOpenChange={controller.setAddMarketplaceOpen}
+        onAdd={controller.addMarketplace}
+      />
+
+      <ManageMarketplacesDialog
+        open={controller.manageMarketplacesOpen}
+        sources={controller.marketplaceSources}
+        removingName={controller.removingMarketplace}
+        upgradingName={controller.upgradingMarketplace}
+        onOpenChange={controller.setManageMarketplacesOpen}
+        onRemove={controller.removeMarketplace}
+        onUpgrade={controller.upgradeMarketplace}
+      />
     </>
   )
 }

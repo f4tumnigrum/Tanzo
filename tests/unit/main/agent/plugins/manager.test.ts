@@ -63,6 +63,7 @@ function makeManager(home: string): PluginsManager {
     store: createPluginStore(cacheRoot, silentLogger),
     state: createPluginStateStore(db),
     marketplaceRoots: [home],
+    installer: null,
     logger: silentLogger
   })
 }

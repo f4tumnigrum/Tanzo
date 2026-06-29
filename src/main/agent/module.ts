@@ -44,6 +44,8 @@ import { createPluginsManager, defaultMarketplaceRoots } from './plugins/manager
 import { createPluginMentionTracker } from './plugins/mention-tracker'
 import { createPluginStore } from './plugins/store'
 import { createPluginStateStore } from './plugins/plugin-state-db'
+import { createMarketplaceSourceStore } from './plugins/marketplace-source-db'
+import { createMarketplaceInstaller } from './plugins/marketplace-install'
 import { createAgentStore } from './store'
 import { createBuildTools } from './tools/registry'
 import type { AgentService, ChunkSink, ChunkSinkMeta } from './runtime/types'
@@ -203,10 +205,18 @@ export function createAgentModule(options: AgentModuleOptions): AgentModule {
   }
 
   const pluginStore = createPluginStore(app.getPath('userData'), logger)
+  const marketplaceInstaller = options.db
+    ? createMarketplaceInstaller({
+        installRoot: join(app.getPath('userData'), 'plugins', 'marketplaces'),
+        store: createMarketplaceSourceStore(options.db),
+        logger
+      })
+    : null
   const plugins = createPluginsManager({
     store: pluginStore,
     state: options.db ? createPluginStateStore(options.db) : null,
     marketplaceRoots: defaultMarketplaceRoots(options.workspaceRoot),
+    installer: marketplaceInstaller,
     logger
   })
 

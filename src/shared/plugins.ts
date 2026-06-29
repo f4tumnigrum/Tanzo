@@ -5,7 +5,11 @@ export const PLUGIN_CHANNELS = {
   install: 'plugins:install',
   uninstall: 'plugins:uninstall',
   listMarketplaces: 'plugins:list-marketplaces',
-  reload: 'plugins:reload'
+  reload: 'plugins:reload',
+  listMarketplaceSources: 'plugins:list-marketplace-sources',
+  addMarketplace: 'plugins:add-marketplace',
+  removeMarketplace: 'plugins:remove-marketplace',
+  upgradeMarketplace: 'plugins:upgrade-marketplace'
 } as const
 
 /** Marketplace install-availability policy (Codex-compatible enum). */
@@ -74,6 +78,48 @@ export interface SetPluginEnabledInput {
   enabled: boolean
 }
 
+/** How a registered marketplace was sourced. */
+export type MarketplaceSourceType = 'git' | 'local'
+
+/** A registered marketplace source (git clone or local directory). */
+export interface MarketplaceSourceSummary {
+  /** Marketplace name, read from its `marketplace.json`. */
+  name: string
+  sourceType: MarketplaceSourceType
+  /** Git URL for `git` sources, or the absolute directory for `local` sources. */
+  source: string
+  /** Branch / tag / SHA; git sources only. */
+  refName?: string
+  /** Sparse-checkout paths; git sources only. */
+  sparsePaths: string[]
+  /** Last cloned commit SHA; git sources only. */
+  lastRevision?: string
+  installedAt: number
+}
+
+export interface AddMarketplaceInput {
+  /** Raw source string: `owner/repo`, a git URL/SSH, or a local path. */
+  source: string
+  /** Explicit ref (branch/tag/SHA); git sources only. */
+  refName?: string
+  /** Sparse-checkout paths; git sources only. */
+  sparsePaths?: string[]
+}
+
+export interface AddMarketplaceResult {
+  name: string
+  sourceType: MarketplaceSourceType
+  sourceDisplay: string
+  alreadyAdded: boolean
+}
+
+export interface UpgradeMarketplaceResult {
+  name: string
+  /** True when a new revision was cloned and activated. */
+  updated: boolean
+  revision: string | null
+}
+
 export interface PluginApi {
   listPlugins(): Promise<PluginSnapshot>
   getPlugin(id: string): Promise<PluginDetail | null>
@@ -82,4 +128,8 @@ export interface PluginApi {
   uninstallPlugin(id: string): Promise<PluginSnapshot>
   listMarketplacePlugins(): Promise<MarketplacePluginEntry[]>
   reloadPlugins(): Promise<PluginSnapshot>
+  listMarketplaceSources(): Promise<MarketplaceSourceSummary[]>
+  addMarketplace(input: AddMarketplaceInput): Promise<AddMarketplaceResult>
+  removeMarketplace(name: string): Promise<MarketplaceSourceSummary[]>
+  upgradeMarketplace(name: string): Promise<UpgradeMarketplaceResult>
 }

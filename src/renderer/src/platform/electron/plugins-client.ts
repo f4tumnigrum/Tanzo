@@ -1,10 +1,14 @@
 import type {
+  AddMarketplaceInput,
+  AddMarketplaceResult,
   InstallPluginInput,
   MarketplacePluginEntry,
+  MarketplaceSourceSummary,
   PluginApi,
   PluginDetail,
   PluginSnapshot,
-  SetPluginEnabledInput
+  SetPluginEnabledInput,
+  UpgradeMarketplaceResult
 } from '@shared/plugins'
 import { TanzoIntegrationError } from '@shared/errors'
 import { withDecodedIpcErrors } from './ipc-errors'
@@ -41,5 +45,17 @@ export const pluginsClient = {
   },
   reloadPlugins(): Promise<PluginSnapshot> {
     return requirePluginsApi().reloadPlugins()
+  },
+  listMarketplaceSources(): Promise<MarketplaceSourceSummary[]> {
+    return requirePluginsApi().listMarketplaceSources()
+  },
+  addMarketplace(input: AddMarketplaceInput): Promise<AddMarketplaceResult> {
+    return requirePluginsApi().addMarketplace(input)
+  },
+  removeMarketplace(name: string): Promise<MarketplaceSourceSummary[]> {
+    return requirePluginsApi().removeMarketplace(name)
+  },
+  upgradeMarketplace(name: string): Promise<UpgradeMarketplaceResult> {
+    return requirePluginsApi().upgradeMarketplace(name)
   }
 }

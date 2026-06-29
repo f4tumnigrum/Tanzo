@@ -14,6 +14,14 @@ const installSchema = z.object({
   enableAfterInstall: z.boolean().optional()
 })
 
+const marketplaceNameSchema = z.string().trim().min(1)
+
+const addMarketplaceSchema = z.object({
+  source: z.string().trim().min(1),
+  refName: z.string().trim().min(1).optional(),
+  sparsePaths: z.array(z.string().trim().min(1)).optional()
+})
+
 export function pluginHandlers(deps: AgentIpcDeps): IpcRegistration[] {
   return [
     [PLUGIN_CHANNELS.list, () => deps.plugins.list()],
@@ -28,6 +36,19 @@ export function pluginHandlers(deps: AgentIpcDeps): IpcRegistration[] {
     [PLUGIN_CHANNELS.install, (input) => deps.plugins.install(installSchema.parse(input))],
     [PLUGIN_CHANNELS.uninstall, (id) => deps.plugins.uninstall(pluginIdSchema.parse(id))],
     [PLUGIN_CHANNELS.listMarketplaces, () => deps.plugins.listMarketplacePlugins()],
-    [PLUGIN_CHANNELS.reload, () => deps.plugins.reload()]
+    [PLUGIN_CHANNELS.reload, () => deps.plugins.reload()],
+    [PLUGIN_CHANNELS.listMarketplaceSources, () => deps.plugins.listMarketplaceSources()],
+    [
+      PLUGIN_CHANNELS.addMarketplace,
+      (input) => deps.plugins.addMarketplace(addMarketplaceSchema.parse(input))
+    ],
+    [
+      PLUGIN_CHANNELS.removeMarketplace,
+      (name) => deps.plugins.removeMarketplace(marketplaceNameSchema.parse(name))
+    ],
+    [
+      PLUGIN_CHANNELS.upgradeMarketplace,
+      (name) => deps.plugins.upgradeMarketplace(marketplaceNameSchema.parse(name))
+    ]
   ]
 }

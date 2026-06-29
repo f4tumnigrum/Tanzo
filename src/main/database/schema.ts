@@ -396,6 +396,24 @@ CREATE TABLE IF NOT EXISTS plugin_states (
 );
 `
 
+// Registered marketplace sources. A marketplace is either a local directory
+// (referenced in place, never copied) or a git repository cloned into a
+// Tanzo-owned install root. Identity is the marketplace `name` read from the
+// cloned/local `marketplace.json`. Mirrors Codex's `[marketplaces.<name>]`
+// config blocks, but persisted in SQLite rather than config.toml.
+const PLUGIN_MARKETPLACES_SCHEMA = `
+CREATE TABLE IF NOT EXISTS plugin_marketplaces (
+  name          TEXT PRIMARY KEY,
+  source_type   TEXT NOT NULL CHECK (source_type IN ('git', 'local')),
+  source        TEXT NOT NULL,
+  ref_name      TEXT,
+  sparse_paths  TEXT,
+  last_revision TEXT,
+  installed_at  INTEGER NOT NULL,
+  updated_at    INTEGER NOT NULL
+);
+`
+
 export const tanzoMigrations: ModuleMigrations = {
   moduleName: 'tanzo',
   files: [
@@ -408,6 +426,11 @@ export const tanzoMigrations: ModuleMigrations = {
       version: 19,
       name: 'plugin_states',
       up: (db) => db.exec(PLUGIN_STATES_SCHEMA)
+    },
+    {
+      version: 20,
+      name: 'plugin_marketplaces',
+      up: (db) => db.exec(PLUGIN_MARKETPLACES_SCHEMA)
     }
   ]
 }

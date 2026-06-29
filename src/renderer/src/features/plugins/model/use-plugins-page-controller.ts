@@ -1,10 +1,16 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import type { MarketplacePluginEntry, PluginSummary } from '@shared/plugins'
+import type {
+  AddMarketplaceInput,
+  MarketplacePluginEntry,
+  MarketplaceSourceSummary,
+  PluginSummary
+} from '@shared/plugins'
 import { errorMessage } from '@/common/lib/error-utils'
 import {
   useMarketplacePlugins,
+  useMarketplaceSources,
   usePluginDetail,
   usePluginMutations,
   usePluginsSnapshot
@@ -13,15 +19,19 @@ import { usePluginDetailStore } from './store'
 
 const EMPTY_PLUGINS: PluginSummary[] = []
 const EMPTY_MARKET: MarketplacePluginEntry[] = []
+const EMPTY_SOURCES: MarketplaceSourceSummary[] = []
 
 export function usePluginsPageController() {
   const { t } = useTranslation()
   const snapshotQuery = usePluginsSnapshot()
   const marketplaceQuery = useMarketplacePlugins()
+  const sourcesQuery = useMarketplaceSources()
   const mutations = usePluginMutations()
 
   const [searchValue, setSearchValue] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<PluginSummary | null>(null)
+  const [addMarketplaceOpen, setAddMarketplaceOpen] = useState(false)
+  const [manageMarketplacesOpen, setManageMarketplacesOpen] = useState(false)
   const selectedPluginId = usePluginDetailStore((s) => s.selectedPluginId)
   const setSelectedPluginId = usePluginDetailStore((s) => s.setSelectedPluginId)
   const detailQuery = usePluginDetail(selectedPluginId)
@@ -56,6 +66,29 @@ export function usePluginsPageController() {
         .some((field) => field.toLowerCase().includes(query))
     )
   }, [available, searchValue])
+
+  // Group the available catalog by marketplace so each source renders as its
+  // own collapsible, paginated section.
+  const availableByMarketplace = useMemo(() => {
+    const groups = new Map<
+      string,
+      { name: string; displayName: string; entries: MarketplacePluginEntry[] }
+    >()
+    for (const entry of filteredAvailable) {
+      const key = entry.marketplaceName
+      const group = groups.get(key)
+      if (group) {
+        group.entries.push(entry)
+      } else {
+        groups.set(key, {
+          name: key,
+          displayName: entry.marketplaceDisplayName ?? key,
+          entries: [entry]
+        })
+      }
+    }
+    return [...groups.values()].sort((a, b) => a.displayName.localeCompare(b.displayName))
+  }, [filteredAvailable])
 
   const stats = useMemo(
     () => [
@@ -108,6 +141,38 @@ export function usePluginsPageController() {
     }
   }
 
+  async function addMarketplace(input: AddMarketplaceInput): Promise<void> {
+    const result = await mutations.addMarketplace.mutateAsync(input)
+    toast.success(
+      result.alreadyAdded
+        ? t('plugins.marketplace.toast.alreadyAdded', { name: result.name })
+        : t('plugins.marketplace.toast.added', { name: result.name })
+    )
+    setAddMarketplaceOpen(false)
+  }
+
+  async function removeMarketplace(name: string): Promise<void> {
+    try {
+      await mutations.removeMarketplace.mutateAsync(name)
+      toast.success(t('plugins.marketplace.toast.removed', { name }))
+    } catch (error) {
+      toast.error(errorMessage(error, t('plugins.marketplace.toast.removeFailed')))
+    }
+  }
+
+  async function upgradeMarketplace(name: string): Promise<void> {
+    try {
+      const result = await mutations.upgradeMarketplace.mutateAsync(name)
+      toast.success(
+        result.updated
+          ? t('plugins.marketplace.toast.upgraded', { name })
+          : t('plugins.marketplace.toast.upToDate', { name })
+      )
+    } catch (error) {
+      toast.error(errorMessage(error, t('plugins.marketplace.toast.upgradeFailed')))
+    }
+  }
+
   // A selected plugin still present in the snapshot routes to the detail view.
   const selectedPlugin = useMemo(
     () =>
@@ -126,6 +191,7 @@ export function usePluginsPageController() {
     plugins,
     filteredPlugins,
     filteredAvailable,
+    availableByMarketplace,
     stats,
     searchValue,
     setSearchValue,
@@ -134,6 +200,22 @@ export function usePluginsPageController() {
     togglePlugin,
     installPlugin,
     confirmUninstall,
-    reload
+    reload,
+    // Marketplace source registration (git / local).
+    marketplaceSources: sourcesQuery.data ?? EMPTY_SOURCES,
+    addMarketplaceOpen,
+    setAddMarketplaceOpen,
+    manageMarketplacesOpen,
+    setManageMarketplacesOpen,
+    addingMarketplace: mutations.addMarketplace.isPending,
+    removingMarketplace: mutations.removeMarketplace.isPending
+      ? mutations.removeMarketplace.variables
+      : undefined,
+    upgradingMarketplace: mutations.upgradeMarketplace.isPending
+      ? mutations.upgradeMarketplace.variables
+      : undefined,
+    addMarketplace,
+    removeMarketplace,
+    upgradeMarketplace
   }
 }

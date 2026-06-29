@@ -1,5 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { InstallPluginInput, SetPluginEnabledInput } from '@shared/plugins'
+import type {
+  AddMarketplaceInput,
+  InstallPluginInput,
+  SetPluginEnabledInput
+} from '@shared/plugins'
 import { pluginsClient } from '@/platform/electron/plugins-client'
 import { pluginKeys } from './query-keys'
 
@@ -34,6 +38,15 @@ export function useMarketplacePlugins() {
   })
 }
 
+export function useMarketplaceSources() {
+  return useQuery({
+    queryKey: pluginKeys.sources(),
+    queryFn: () => pluginsClient.listMarketplaceSources(),
+    staleTime: PLUGIN_STALE_TIME,
+    gcTime: PLUGIN_GC_TIME
+  })
+}
+
 export function usePluginMutations() {
   const queryClient = useQueryClient()
   const invalidate = (): void => {
@@ -56,6 +69,26 @@ export function usePluginMutations() {
     mutationFn: () => pluginsClient.reloadPlugins(),
     onSuccess: invalidate
   })
+  const addMarketplace = useMutation({
+    mutationFn: (input: AddMarketplaceInput) => pluginsClient.addMarketplace(input),
+    onSuccess: invalidate
+  })
+  const removeMarketplace = useMutation({
+    mutationFn: (name: string) => pluginsClient.removeMarketplace(name),
+    onSuccess: invalidate
+  })
+  const upgradeMarketplace = useMutation({
+    mutationFn: (name: string) => pluginsClient.upgradeMarketplace(name),
+    onSuccess: invalidate
+  })
 
-  return { setEnabled, install, uninstall, reload }
+  return {
+    setEnabled,
+    install,
+    uninstall,
+    reload,
+    addMarketplace,
+    removeMarketplace,
+    upgradeMarketplace
+  }
 }

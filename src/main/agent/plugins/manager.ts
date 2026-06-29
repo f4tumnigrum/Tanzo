@@ -18,11 +18,15 @@
 import { homedir } from 'node:os'
 import { TanzoNotFoundError, TanzoValidationError } from '@shared/errors'
 import type {
+  AddMarketplaceInput,
+  AddMarketplaceResult,
   InstallPluginInput,
   MarketplacePluginEntry,
+  MarketplaceSourceSummary,
   PluginDetail,
   PluginSnapshot,
-  PluginSummary
+  PluginSummary,
+  UpgradeMarketplaceResult
 } from '@shared/plugins'
 import type { McpServerConfig } from '@shared/mcp'
 import type { Logger } from '../logging'
@@ -43,6 +47,8 @@ import {
 } from './loader'
 import type { PluginStore } from './store'
 import type { PluginStateStore } from './plugin-state-db'
+import type { MarketplaceInstaller } from './marketplace-install'
+import type { MarketplaceSourceRecord } from './marketplace-source-db'
 
 /**
  * Structured, prose-free summary of one active plugin's capabilities. The
@@ -64,6 +70,11 @@ export interface PluginsManagerDeps {
   state: PluginStateStore | null
   /** Directories to search for a `marketplace.json` (e.g. home, workspace). */
   marketplaceRoots: string[]
+  /**
+   * Manages registered git/local marketplace sources. Null when no database is
+   * available (marketplace registration requires durable persistence).
+   */
+  installer: MarketplaceInstaller | null
   logger: Logger
 }
 
@@ -99,6 +110,16 @@ export interface PluginsManager {
    */
   onContributionsChanged(listener: () => void): () => void
   reload(): PluginSnapshot
+  // --- Marketplace source registration (git / local). Each mutation triggers a
+  // contribution change so newly discovered plugins reach the wiring layer.
+  /** Registered marketplace sources, newest registration first. */
+  listMarketplaceSources(): MarketplaceSourceSummary[]
+  /** Register a marketplace from a git URL/shorthand or a local directory. */
+  addMarketplace(input: AddMarketplaceInput): Promise<AddMarketplaceResult>
+  /** Remove a registered marketplace and its managed install root. */
+  removeMarketplace(name: string): MarketplaceSourceSummary[]
+  /** Re-clone a git marketplace when its remote revision changed. */
+  upgradeMarketplace(name: string): Promise<UpgradeMarketplaceResult>
 }
 
 /** Default marketplace roots: the user's home `~/.agents/plugins` lives here. */
@@ -111,9 +132,15 @@ export function createPluginsManager(deps: PluginsManagerDeps): PluginsManager {
 
   function discoverMarketplaces(): Marketplace[] {
     const found: Marketplace[] = []
-    for (const root of deps.marketplaceRoots) {
+    const seenManifests = new Set<string>()
+    // Static roots (home/workspace) plus any registered git/local sources. A
+    // manifest path is loaded once; the first occurrence wins so a registered
+    // source can't shadow a static one (or vice versa) twice.
+    const roots = [...deps.marketplaceRoots, ...(deps.installer?.resolveRoots() ?? [])]
+    for (const root of roots) {
       const path = findMarketplacePath(root)
-      if (!path) continue
+      if (!path || seenManifests.has(path)) continue
+      seenManifests.add(path)
       const market = loadMarketplace(path, logger)
       if (market) found.push(market)
     }
@@ -189,6 +216,28 @@ export function createPluginsManager(deps: PluginsManagerDeps): PluginsManager {
   function snapshot(): PluginSnapshot {
     const plugins = loadOutcome().plugins.map(toSummary)
     return { plugins, updatedAt: Date.now() }
+  }
+
+  function requireInstaller(): MarketplaceInstaller {
+    if (!deps.installer) {
+      throw new TanzoValidationError(
+        'MARKETPLACE_PERSISTENCE_UNAVAILABLE',
+        'Marketplace registration is unavailable without a database.'
+      )
+    }
+    return deps.installer
+  }
+
+  function toSourceSummary(record: MarketplaceSourceRecord): MarketplaceSourceSummary {
+    return {
+      name: record.name,
+      sourceType: record.sourceType,
+      source: record.source,
+      ...(record.refName ? { refName: record.refName } : {}),
+      sparsePaths: record.sparsePaths,
+      ...(record.lastRevision ? { lastRevision: record.lastRevision } : {}),
+      installedAt: record.installedAt
+    }
   }
 
   return {
@@ -334,6 +383,36 @@ export function createPluginsManager(deps: PluginsManagerDeps): PluginsManager {
       }
     },
 
-    reload: snapshot
+    reload: snapshot,
+
+    listMarketplaceSources() {
+      return deps.installer ? deps.installer.list().map(toSourceSummary) : []
+    },
+
+    async addMarketplace(input) {
+      const outcome = await requireInstaller().add(input)
+      // A new marketplace can expose install-by-default plugins and changes the
+      // discoverable catalog, so refresh the wiring layer.
+      emitChanged()
+      return {
+        name: outcome.name,
+        sourceType: outcome.sourceType,
+        sourceDisplay: outcome.sourceDisplay,
+        alreadyAdded: outcome.alreadyAdded
+      }
+    },
+
+    removeMarketplace(name) {
+      const installer = requireInstaller()
+      installer.remove(name)
+      emitChanged()
+      return installer.list().map(toSourceSummary)
+    },
+
+    async upgradeMarketplace(name) {
+      const outcome = await requireInstaller().upgrade(name)
+      if (outcome.updated) emitChanged()
+      return outcome
+    }
   }
 }

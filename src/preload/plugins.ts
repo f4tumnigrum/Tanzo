@@ -10,7 +10,13 @@ export const pluginsApi: PluginApi = {
   listMarketplacePlugins: invoke<PluginApi['listMarketplacePlugins']>(
     PLUGIN_CHANNELS.listMarketplaces
   ),
-  reloadPlugins: invoke<PluginApi['reloadPlugins']>(PLUGIN_CHANNELS.reload)
+  reloadPlugins: invoke<PluginApi['reloadPlugins']>(PLUGIN_CHANNELS.reload),
+  listMarketplaceSources: invoke<PluginApi['listMarketplaceSources']>(
+    PLUGIN_CHANNELS.listMarketplaceSources
+  ),
+  addMarketplace: invoke<PluginApi['addMarketplace']>(PLUGIN_CHANNELS.addMarketplace),
+  removeMarketplace: invoke<PluginApi['removeMarketplace']>(PLUGIN_CHANNELS.removeMarketplace),
+  upgradeMarketplace: invoke<PluginApi['upgradeMarketplace']>(PLUGIN_CHANNELS.upgradeMarketplace)
 }
 
 export type PluginsPreloadApi = typeof pluginsApi
