@@ -86,7 +86,7 @@ export function SkillsPageView({
         }
       >
         {controller.loading ? null : controller.filteredSkills.length > 0 ? (
-          <div className="space-y-8 pt-4">
+          <div className="space-y-8">
             {controller.enabledSkills.length > 0 ? (
               <SkillsGrid
                 title={t('common.status.enabled')}
