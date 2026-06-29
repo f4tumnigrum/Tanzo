@@ -3,7 +3,13 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import type { MarketplacePluginEntry, PluginSummary } from '@shared/plugins'
 import { errorMessage } from '@/common/lib/error-utils'
-import { useMarketplacePlugins, usePluginMutations, usePluginsSnapshot } from './queries'
+import {
+  useMarketplacePlugins,
+  usePluginDetail,
+  usePluginMutations,
+  usePluginsSnapshot
+} from './queries'
+import { usePluginDetailStore } from './store'
 
 const EMPTY_PLUGINS: PluginSummary[] = []
 const EMPTY_MARKET: MarketplacePluginEntry[] = []
@@ -16,6 +22,9 @@ export function usePluginsPageController() {
 
   const [searchValue, setSearchValue] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<PluginSummary | null>(null)
+  const selectedPluginId = usePluginDetailStore((s) => s.selectedPluginId)
+  const setSelectedPluginId = usePluginDetailStore((s) => s.setSelectedPluginId)
+  const detailQuery = usePluginDetail(selectedPluginId)
 
   const plugins = snapshotQuery.data?.plugins ?? EMPTY_PLUGINS
   const marketplace = marketplaceQuery.data ?? EMPTY_MARKET
@@ -81,6 +90,9 @@ export function usePluginsPageController() {
     if (!deleteTarget) return
     try {
       await mutations.uninstall.mutateAsync(deleteTarget.id)
+      // Clear a detail-view selection pointing at the now-removed plugin so a
+      // later reinstall of the same id does not silently reopen the detail page.
+      if (selectedPluginId === deleteTarget.id) setSelectedPluginId(null)
       setDeleteTarget(null)
       toast.success(t('plugins.toast.uninstalled'))
     } catch (error) {
@@ -96,9 +108,20 @@ export function usePluginsPageController() {
     }
   }
 
+  // A selected plugin still present in the snapshot routes to the detail view.
+  const selectedPlugin = useMemo(
+    () =>
+      selectedPluginId ? (plugins.find((plugin) => plugin.id === selectedPluginId) ?? null) : null,
+    [plugins, selectedPluginId]
+  )
+
   return {
     loading: snapshotQuery.isLoading,
     reloading: mutations.reload.isPending,
+    selectedPlugin,
+    detail: detailQuery.data ?? null,
+    detailLoading: detailQuery.isPending,
+    setSelectedPluginId,
     installingId: mutations.install.isPending ? mutations.install.variables?.id : undefined,
     plugins,
     filteredPlugins,

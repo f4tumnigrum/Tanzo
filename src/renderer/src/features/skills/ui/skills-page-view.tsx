@@ -28,6 +28,7 @@ export function SkillsPageView({
           <SkillDetailView
             skill={controller.selectedSkill}
             onBack={controller.closeDetail}
+            onToggle={(enabled) => void controller.toggleSkill(controller.selectedSkill!, enabled)}
             onUninstall={(skill) => controller.setDeleteTarget(skill)}
           />
         ) : (

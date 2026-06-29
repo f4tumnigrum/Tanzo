@@ -1590,6 +1590,21 @@ export const zhCN = {
         mcp: '{{count}} 个 MCP 服务器',
         hooks: '钩子'
       },
+      card: {
+        noDescription: '暂无描述。'
+      },
+      detail: {
+        version: '版本',
+        category: '分类',
+        path: '路径',
+        contributes: '贡献',
+        skillsPrefix: '技能前缀为',
+        hooksActive: '生命周期钩子已激活',
+        noContributions: '该插件未贡献任何技能、MCP 服务器或钩子。',
+        mentionHint: '在对话中输入 @{{name}} 可让模型在该回合优先使用此插件。',
+        about: '关于',
+        keywords: '关键词'
+      },
       actions: {
         install: '安装',
         toggle: '切换插件',
@@ -1637,7 +1652,8 @@ export const zhCN = {
       scope: {
         user: '用户',
         workspace: '工作区',
-        builtin: '内置'
+        builtin: '内置',
+        plugin: '插件'
       },
       status: {
         enabled: '已启用',

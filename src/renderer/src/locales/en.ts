@@ -1598,10 +1598,25 @@ export const en = {
         uninstall: 'Uninstall',
         toggle: 'Toggle plugin'
       },
+      card: {
+        noDescription: 'No description provided.'
+      },
       contributes: {
-        skills: 'skills',
+        skills: 'Skills',
         mcp: '{{count}} MCP',
-        hooks: 'hooks'
+        hooks: 'Hooks'
+      },
+      detail: {
+        version: 'Version',
+        category: 'Category',
+        path: 'Path',
+        contributes: 'Contributions',
+        about: 'About',
+        keywords: 'Keywords',
+        skillsPrefix: 'Skills are prefixed',
+        hooksActive: 'Lifecycle hooks active',
+        noContributions: 'This plugin contributes no skills, MCP servers, or hooks.',
+        mentionHint: 'Mention @{{name}} in chat to focus the model on this plugin for that turn.'
       },
       uninstall: {
         title: 'Uninstall plugin?',
@@ -1647,7 +1662,8 @@ export const en = {
       scope: {
         user: 'User',
         workspace: 'Workspace',
-        builtin: 'Built-in'
+        builtin: 'Built-in',
+        plugin: 'Plugin'
       },
       status: {
         enabled: 'enabled',
