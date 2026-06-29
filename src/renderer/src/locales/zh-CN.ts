@@ -8,10 +8,75 @@ export const zhCN = {
       items: {
         chat: '对话',
         skills: '技能',
+        plugins: '插件',
         providers: '模型服务',
         mcp: 'MCP 服务器',
         usage: '用量',
         settings: '设置'
+      }
+    },
+    browser: {
+      toggle: '切换浏览器',
+      back: '后退',
+      forward: '前进',
+      reload: '刷新',
+      maximize: '最大化',
+      restore: '恢复分屏',
+      close: '关闭浏览器',
+      address: '地址',
+      addressPlaceholder: '搜索或输入网址',
+      clear: '清除',
+      error: {
+        title: '无法加载此页面',
+        code: '错误 {{code}}',
+        retry: '重试'
+      },
+      tabs: {
+        new: '新建标签页',
+        close: '关闭标签页'
+      },
+      picker: {
+        pick: '拾取元素',
+        picking: '点击页面元素…(Esc 取消)',
+        copyAll: '复制全部',
+        copied: '已复制',
+        closePanel: '关闭面板',
+        groups: {
+          color: '颜色',
+          typography: '排版',
+          layout: '布局',
+          spacing: '间距',
+          border: '边框',
+          effects: '效果'
+        },
+        fields: {
+          textColor: '文字',
+          background: '背景',
+          gradient: '渐变',
+          borderColor: '边框',
+          fontFamily: '字体',
+          fontSize: '字号',
+          fontWeight: '字重',
+          lineHeight: '行高',
+          letterSpacing: '字距',
+          textAlign: '对齐',
+          textTransform: '大小写',
+          display: '显示',
+          flexDirection: '方向',
+          justifyContent: '主轴',
+          alignItems: '交叉轴',
+          padding: '内边距',
+          margin: '外边距',
+          gap: '间隔',
+          borderWidth: '粗细',
+          borderStyle: '样式',
+          borderRadius: '圆角',
+          opacity: '不透明度',
+          boxShadow: '阴影',
+          filter: '滤镜',
+          backdropFilter: '背景滤镜',
+          transform: '变换'
+        }
       }
     },
     usage: {
@@ -219,6 +284,12 @@ export const zhCN = {
             compact: '压缩当前会话上下文',
             goal: '设定、更换或清除自主目标',
             agent: '切换当前会话智能体'
+          }
+        },
+        mentions: {
+          groups: {
+            plugin: '插件',
+            file: '文件'
           }
         }
       },
@@ -711,6 +782,10 @@ export const zhCN = {
       },
       metrics: {
         total: '总数'
+      },
+      pagination: {
+        showing: '显示第 {{start}}–{{end}} 项，共 {{total}} 项',
+        goToPage: '第 {{page}} 页'
       },
       status: {
         configured: '已配置',
@@ -1487,6 +1562,122 @@ export const zhCN = {
         open: '打开'
       }
     },
+    plugins: {
+      page: {
+        title: '插件',
+        search: {
+          placeholder: '搜索插件'
+        },
+        stats: {
+          installed: '已安装',
+          enabled: '已启用',
+          available: '可用'
+        },
+        actions: {
+          reload: '重新加载'
+        },
+        sections: {
+          installed: '已安装',
+          available: '可从市场安装',
+          availableFrom: '{{name}} 市场'
+        },
+        empty: {
+          title: '未找到插件',
+          description:
+            'Tanzo 会从 ~/.agents/plugins 和当前工作区的 .agents/plugins 中的 marketplace.json 发现插件。'
+        }
+      },
+      status: {
+        error: '错误'
+      },
+      contributes: {
+        skills: '技能',
+        mcp: '{{count}} 个 MCP 服务器',
+        hooks: '钩子'
+      },
+      card: {
+        noDescription: '暂无描述。'
+      },
+      detail: {
+        version: '版本',
+        category: '分类',
+        path: '路径',
+        contributes: '贡献',
+        skillsPrefix: '技能前缀为',
+        hooksActive: '生命周期钩子已激活',
+        noContributions: '该插件未贡献任何技能、MCP 服务器或钩子。',
+        mentionHint: '在对话中输入 @{{name}} 可让模型在该回合优先使用此插件。',
+        about: '关于',
+        keywords: '关键词'
+      },
+      actions: {
+        install: '安装',
+        toggle: '切换插件',
+        uninstall: '卸载'
+      },
+      uninstall: {
+        title: '卸载插件？',
+        description: '这将从缓存中移除 “{{name}}” 及其贡献的技能、MCP 服务器和钩子。',
+        confirm: '卸载'
+      },
+      toast: {
+        installed: '插件已安装',
+        uninstalled: '插件已卸载',
+        updateFailed: '更新插件失败',
+        installFailed: '安装插件失败',
+        uninstallFailed: '卸载插件失败',
+        reloadFailed: '重新加载插件失败'
+      },
+      marketplace: {
+        add: {
+          action: '添加市场',
+          title: '添加市场',
+          source: {
+            label: '来源',
+            placeholder: 'owner/repo、git URL 或本地路径',
+            hint: 'GitHub 简写（owner/repo）、git/SSH URL，或包含 marketplace.json 的本地目录。'
+          },
+          ref: {
+            label: '分支/标签',
+            placeholder: '分支、标签或提交'
+          },
+          sparse: {
+            label: '稀疏路径',
+            placeholder: '以逗号分隔的路径'
+          },
+          submit: '添加',
+          errors: {
+            sourceRequired: '请输入市场来源。',
+            addFailed: '添加市场失败'
+          }
+        },
+        manage: {
+          action: '市场',
+          title: '市场',
+          type: {
+            git: 'Git',
+            local: '本地'
+          },
+          actions: {
+            upgrade: '更新',
+            remove: '移除'
+          },
+          empty: {
+            title: '尚未添加市场',
+            description: '添加 git 或本地市场，发现默认 ~/.agents/plugins 和工作区目录之外的插件。'
+          }
+        },
+        toast: {
+          added: '已添加市场 “{{name}}”',
+          alreadyAdded: '市场 “{{name}}” 已添加',
+          removed: '已移除市场 “{{name}}”',
+          removeFailed: '移除市场失败',
+          upgraded: '已更新市场 “{{name}}”',
+          upToDate: '市场 “{{name}}” 已是最新',
+          upgradeFailed: '更新市场失败'
+        }
+      }
+    },
     skills: {
       page: {
         title: '技能',
@@ -1515,7 +1706,8 @@ export const zhCN = {
       scope: {
         user: '用户',
         workspace: '工作区',
-        builtin: '内置'
+        builtin: '内置',
+        plugin: '插件'
       },
       status: {
         enabled: '已启用',

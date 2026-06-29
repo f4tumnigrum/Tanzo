@@ -33,6 +33,7 @@ export type AgentServiceDeps = AgentRuntimeDeps & {
   changeSet?: ChangeSetService
   questions?: QuestionBroker
   hooks?: HookLifecycle
+  recordPluginMentions?: (chatId: string, text: string) => void
 }
 
 export function createAgentService(deps: AgentServiceDeps): AgentService {
@@ -141,7 +142,8 @@ export function createAgentService(deps: AgentServiceDeps): AgentService {
       instructTask: (chatId, text) => {
         void text
         tasks.resumeByChat(chatId)
-      }
+      },
+      ...(deps.recordPluginMentions ? { recordPluginMentions: deps.recordPluginMentions } : {})
     }
   )
 

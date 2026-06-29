@@ -35,13 +35,37 @@ export interface McpService {
   reconnectServer(serverName: string): Promise<void>
   toolsForServer(serverName: string): Promise<McpAiSdkToolSet>
   onConnectionStatesChanged(listener: (states: McpConnectionState[]) => void): () => void
+  /**
+   * Register a lazy provider of MCP servers contributed by active plugins.
+   * Late-bound because the plugin manager is created after the MCP service.
+   * Merged into the connection set on every sync; user-configured servers win
+   * on name collision (a plugin server is dropped when a database-backed server
+   * already claims the same name).
+   */
+  setPluginServers(provider: () => McpServerConfig[]): void
   syncFromStore(): Promise<void>
   dispose(): Promise<void>
 }
 
 export function createMcpService(store: McpStore, client: McpClient): McpService {
+  let pluginServersProvider: (() => McpServerConfig[]) | null = null
+
+  function mergedServers(): McpServerConfig[] {
+    const userServers = store.getAll()
+    const pluginServers = pluginServersProvider?.() ?? []
+    if (pluginServers.length === 0) return userServers
+    const claimed = new Set(userServers.map((server) => server.name))
+    const merged = [...userServers]
+    for (const server of pluginServers) {
+      if (claimed.has(server.name)) continue
+      claimed.add(server.name)
+      merged.push(server)
+    }
+    return merged
+  }
+
   async function syncFromStore(): Promise<void> {
-    await client.syncServers(store.getAll())
+    await client.syncServers(mergedServers())
   }
 
   return {
@@ -76,6 +100,9 @@ export function createMcpService(store: McpStore, client: McpClient): McpService
     reconnectServer: (serverName) => client.reconnectServer(serverName),
     toolsForServer: (serverName) => client.toolsForServer(serverName),
     onConnectionStatesChanged: (listener) => client.onConnectionStatesChanged(listener),
+    setPluginServers(provider) {
+      pluginServersProvider = provider
+    },
     syncFromStore,
     dispose: () => client.dispose()
   }

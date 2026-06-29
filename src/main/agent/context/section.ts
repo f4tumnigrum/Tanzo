@@ -15,6 +15,8 @@ export interface BuildInput {
   cwd: string
   capabilities: ModelCapabilities
   goalInjection?: GoalInjection | null
+  /** Plugin names the user `@mentioned` this turn, for a focused hint. */
+  pluginMention?: string[] | null
 }
 
 export interface ContextSection {

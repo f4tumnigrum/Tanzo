@@ -121,10 +121,7 @@ export interface AgentService {
   submitUserMessage(chatId: string, message: string): Promise<void>
   submitMessage(chatId: string, message: TanzoUIMessage): Promise<void>
   editMessage(chatId: string, messageId: string, text: string): Promise<void>
-  respondApprovals(
-    chatId: string,
-    responses: ChatApprovalResponse[]
-  ): Promise<{ started: boolean }>
+  respondApprovals(chatId: string, responses: ChatApprovalResponse[]): Promise<{ started: boolean }>
   compact(chatId: string, options?: { instructions?: string }): Promise<CompactionOutcome>
   contextSnapshot(chatId: string): Promise<TanzoDataParts['context'] | null>
   spawnTask(input: SpawnTaskRequest): SubagentTask

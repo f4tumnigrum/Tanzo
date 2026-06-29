@@ -210,10 +210,7 @@ export type QuestionReply =
 export interface ChatApi {
   submit(chatId: string, message: TanzoUIMessage): Promise<void>
   editMessage(chatId: string, messageId: string, text: string): Promise<void>
-  respondApprovals(
-    chatId: string,
-    responses: ChatApprovalResponse[]
-  ): Promise<{ started: boolean }>
+  respondApprovals(chatId: string, responses: ChatApprovalResponse[]): Promise<{ started: boolean }>
   cancel(chatId: string): Promise<void>
   steer(chatId: string, text: string): Promise<void>
   enqueue(chatId: string, text: string): Promise<void>

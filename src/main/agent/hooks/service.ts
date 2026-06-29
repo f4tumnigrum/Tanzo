@@ -39,6 +39,12 @@ export interface HookServiceDeps {
   userDir?: string
   sessionMeta: (chatId: string) => HookSessionMeta | undefined
   logger?: { warn(msg: string, meta?: Record<string, unknown>): void }
+  /**
+   * Lazily provides hook config files contributed by active plugins. Evaluated
+   * on every refresh so plugin enable/disable/install takes effect. These are
+   * registered as `managed` sources and therefore run without manual trust.
+   */
+  pluginSources?: () => { source: HookSource; path: string }[]
 }
 
 export interface HookService {
@@ -87,7 +93,11 @@ export function createHookService(deps: HookServiceDeps): HookService {
   let lastCwd: string | undefined
 
   function refresh(cwd: string): HookEntry[] {
-    const result = discoverHooks({ cwd, ...(deps.userDir ? { userDir: deps.userDir } : {}) })
+    const result = discoverHooks({
+      cwd,
+      ...(deps.userDir ? { userDir: deps.userDir } : {}),
+      ...(deps.pluginSources ? { pluginSources: deps.pluginSources() } : {})
+    })
     for (const warning of result.warnings) deps.logger?.warn('hooks config', { warning })
     entries = result.entries
     lastCwd = cwd

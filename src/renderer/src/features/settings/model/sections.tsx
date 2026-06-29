@@ -1,8 +1,18 @@
 import type { ComponentType } from 'react'
-import { BarChart3, Cat, Palette, Plug, Server, ShieldCheck, Sparkles, Webhook } from 'lucide-react'
+import {
+  BarChart3,
+  Blocks,
+  Cat,
+  Palette,
+  Plug,
+  Server,
+  ShieldCheck,
+  Sparkles,
+  Webhook
+} from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { EmbeddedScaffoldProvider } from '@/components/layout/page-scaffold'
 import McpPage from '@/features/mcp/page'
+import PluginsPage from '@/features/plugins/page'
 import ProvidersPage from '@/features/providers/page'
 import SkillsPage from '@/features/skills/page'
 import UsagePage from '@/features/usage/page'
@@ -14,6 +24,7 @@ import { SettingsThemeTab } from '../ui/settings-theme-tab'
 export type SettingsSectionId =
   | 'theme'
   | 'skills'
+  | 'plugins'
   | 'providers'
   | 'mcp'
   | 'usage'
@@ -31,16 +42,6 @@ export interface SettingsSectionDef {
   HeaderActions?: ComponentType
 }
 
-function embed(Page: ComponentType): ComponentType {
-  return function EmbeddedPage() {
-    return (
-      <EmbeddedScaffoldProvider>
-        <Page />
-      </EmbeddedScaffoldProvider>
-    )
-  }
-}
-
 export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
   {
     id: 'theme',
@@ -54,7 +55,15 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
     labelKey: 'nav.items.skills',
     defaultLabel: 'Skills',
     icon: Sparkles,
-    Component: embed(SkillsPage),
+    Component: SkillsPage,
+    embedded: true
+  },
+  {
+    id: 'plugins',
+    labelKey: 'nav.items.plugins',
+    defaultLabel: 'Plugins',
+    icon: Blocks,
+    Component: PluginsPage,
     embedded: true
   },
   {
@@ -62,7 +71,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
     labelKey: 'nav.items.providers',
     defaultLabel: 'Providers',
     icon: Plug,
-    Component: embed(ProvidersPage),
+    Component: ProvidersPage,
     embedded: true
   },
   {
@@ -70,7 +79,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
     labelKey: 'nav.items.mcp',
     defaultLabel: 'MCP',
     icon: Server,
-    Component: embed(McpPage),
+    Component: McpPage,
     embedded: true
   },
   {
@@ -78,7 +87,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
     labelKey: 'nav.items.usage',
     defaultLabel: 'Usage',
     icon: BarChart3,
-    Component: embed(UsagePage),
+    Component: UsagePage,
     embedded: true
   },
   {

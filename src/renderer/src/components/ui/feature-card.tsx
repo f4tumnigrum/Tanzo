@@ -5,11 +5,9 @@ import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import {
   Card as UiCard,
-  CardAction as UiCardAction,
   CardContent as UiCardContent,
   CardDescription as UiCardDescription,
   CardFooter as UiCardFooter,
-  CardHeader as UiCardHeader,
   CardTitle as UiCardTitle
 } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
@@ -76,24 +74,24 @@ export function CardHeader({ title, badge, actions, children, className }: CardH
   }
 
   return (
-    <UiCardHeader className={cn('gap-1 p-0', className)}>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5">
-          <UiCardTitle className="truncate text-sm leading-tight">{title}</UiCardTitle>
+    <div className={cn('flex flex-col gap-1', className)}>
+      <div className="flex items-start gap-1.5">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          <UiCardTitle className="min-w-0 truncate text-sm leading-tight">{title}</UiCardTitle>
           {badge}
         </div>
-        {children}
+        {actions ? (
+          <div
+            className="flex shrink-0 items-center"
+            onClick={stopCardClickPropagation}
+            onMouseDown={stopCardClickPropagation}
+          >
+            {actions}
+          </div>
+        ) : null}
       </div>
-      {actions ? (
-        <UiCardAction
-          className="self-start"
-          onClick={stopCardClickPropagation}
-          onMouseDown={stopCardClickPropagation}
-        >
-          {actions}
-        </UiCardAction>
-      ) : null}
-    </UiCardHeader>
+      {children}
+    </div>
   )
 }
 
@@ -130,7 +128,7 @@ interface CardFooterProps extends React.HTMLAttributes<HTMLDivElement> {
 export function CardFooter({ children, showArrow = true, className }: CardFooterProps) {
   return (
     <UiCardFooter className={cn('min-h-5 justify-between gap-2 px-0 pt-0 pb-0', className)}>
-      <div className="flex items-center gap-1.5">{children}</div>
+      <div className={cn('flex items-center gap-1.5', !showArrow && 'w-full')}>{children}</div>
       {showArrow && (
         <ArrowRight className="size-3.5 shrink-0 text-muted-foreground/30 transition-all group-hover/feature-card:translate-x-0.5 group-hover/feature-card:text-muted-foreground/60" />
       )}

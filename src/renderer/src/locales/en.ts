@@ -8,10 +8,75 @@ export const en = {
       items: {
         chat: 'Chat',
         skills: 'Skills',
+        plugins: 'Plugins',
         providers: 'Providers',
         mcp: 'MCP Servers',
         usage: 'Usage',
         settings: 'Settings'
+      }
+    },
+    browser: {
+      toggle: 'Toggle browser',
+      back: 'Back',
+      forward: 'Forward',
+      reload: 'Reload',
+      maximize: 'Maximize',
+      restore: 'Restore split view',
+      close: 'Close browser',
+      address: 'Address',
+      addressPlaceholder: 'Search or enter address',
+      clear: 'Clear',
+      error: {
+        title: "This page couldn't be loaded",
+        code: 'Error {{code}}',
+        retry: 'Try again'
+      },
+      tabs: {
+        new: 'New tab',
+        close: 'Close tab'
+      },
+      picker: {
+        pick: 'Pick element',
+        picking: 'Click an element… (Esc to cancel)',
+        copyAll: 'Copy all',
+        copied: 'Copied',
+        closePanel: 'Close panel',
+        groups: {
+          color: 'Color',
+          typography: 'Typography',
+          layout: 'Layout',
+          spacing: 'Spacing',
+          border: 'Border',
+          effects: 'Effects'
+        },
+        fields: {
+          textColor: 'Text',
+          background: 'Background',
+          gradient: 'Gradient',
+          borderColor: 'Border',
+          fontFamily: 'Family',
+          fontSize: 'Size',
+          fontWeight: 'Weight',
+          lineHeight: 'Line height',
+          letterSpacing: 'Tracking',
+          textAlign: 'Align',
+          textTransform: 'Transform',
+          display: 'Display',
+          flexDirection: 'Direction',
+          justifyContent: 'Justify',
+          alignItems: 'Align items',
+          padding: 'Padding',
+          margin: 'Margin',
+          gap: 'Gap',
+          borderWidth: 'Width',
+          borderStyle: 'Style',
+          borderRadius: 'Radius',
+          opacity: 'Opacity',
+          boxShadow: 'Shadow',
+          filter: 'Filter',
+          backdropFilter: 'Backdrop',
+          transform: 'Transform'
+        }
       }
     },
     usage: {
@@ -221,6 +286,12 @@ export const en = {
             compact: 'Compact the conversation context',
             goal: 'Set, change, or clear an autonomous goal',
             agent: 'Switch the current conversation agent'
+          }
+        },
+        mentions: {
+          groups: {
+            plugin: 'Plugins',
+            file: 'Files'
           }
         }
       },
@@ -713,6 +784,10 @@ export const en = {
       },
       metrics: {
         total: 'Total'
+      },
+      pagination: {
+        showing: 'Showing {{start}}–{{end}} of {{total}}',
+        goToPage: 'Go to page {{page}}'
       },
       status: {
         configured: 'Configured',
@@ -1495,6 +1570,124 @@ export const en = {
         open: 'Open'
       }
     },
+    plugins: {
+      page: {
+        title: 'Plugins',
+        search: {
+          placeholder: 'Search plugins'
+        },
+        stats: {
+          installed: 'installed',
+          enabled: 'enabled',
+          available: 'available'
+        },
+        actions: {
+          reload: 'Reload'
+        },
+        sections: {
+          installed: 'Installed',
+          available: 'Available',
+          availableFrom: 'Available · {{name}}'
+        },
+        empty: {
+          title: 'No plugins found',
+          description:
+            'Tanzo discovers plugins from local marketplaces in ~/.agents/plugins and the active workspace. Add a marketplace.json to install Codex-compatible plugins.'
+        }
+      },
+      status: {
+        error: 'error'
+      },
+      actions: {
+        install: 'Install',
+        uninstall: 'Uninstall',
+        toggle: 'Toggle plugin'
+      },
+      card: {
+        noDescription: 'No description provided.'
+      },
+      contributes: {
+        skills: 'Skills',
+        mcp: '{{count}} MCP',
+        hooks: 'Hooks'
+      },
+      detail: {
+        version: 'Version',
+        category: 'Category',
+        path: 'Path',
+        contributes: 'Contributions',
+        about: 'About',
+        keywords: 'Keywords',
+        skillsPrefix: 'Skills are prefixed',
+        hooksActive: 'Lifecycle hooks active',
+        noContributions: 'This plugin contributes no skills, MCP servers, or hooks.',
+        mentionHint: 'Mention @{{name}} in chat to focus the model on this plugin for that turn.'
+      },
+      uninstall: {
+        title: 'Uninstall plugin?',
+        description:
+          'This removes "{{name}}" from the local plugin cache. You can reinstall it from its marketplace later.',
+        confirm: 'Uninstall'
+      },
+      toast: {
+        installed: 'Plugin installed',
+        uninstalled: 'Plugin uninstalled',
+        updateFailed: 'Failed to update plugin',
+        installFailed: 'Failed to install plugin',
+        uninstallFailed: 'Failed to uninstall plugin',
+        reloadFailed: 'Failed to reload plugins'
+      },
+      marketplace: {
+        add: {
+          action: 'Add marketplace',
+          title: 'Add marketplace',
+          source: {
+            label: 'Source',
+            placeholder: 'owner/repo, a git URL, or a local path',
+            hint: 'A GitHub shorthand (owner/repo), git/SSH URL, or local directory containing a marketplace.json.'
+          },
+          ref: {
+            label: 'Ref',
+            placeholder: 'branch, tag, or commit'
+          },
+          sparse: {
+            label: 'Sparse paths',
+            placeholder: 'comma-separated paths'
+          },
+          submit: 'Add',
+          errors: {
+            sourceRequired: 'Enter a marketplace source.',
+            addFailed: 'Failed to add marketplace'
+          }
+        },
+        manage: {
+          action: 'Marketplaces',
+          title: 'Marketplaces',
+          type: {
+            git: 'Git',
+            local: 'Local'
+          },
+          actions: {
+            upgrade: 'Upgrade',
+            remove: 'Remove'
+          },
+          empty: {
+            title: 'No marketplaces added',
+            description:
+              'Add a git or local marketplace to discover plugins beyond the default ~/.agents/plugins and workspace catalogs.'
+          }
+        },
+        toast: {
+          added: 'Added marketplace "{{name}}"',
+          alreadyAdded: 'Marketplace "{{name}}" is already added',
+          removed: 'Removed marketplace "{{name}}"',
+          removeFailed: 'Failed to remove marketplace',
+          upgraded: 'Upgraded marketplace "{{name}}"',
+          upToDate: 'Marketplace "{{name}}" is up to date',
+          upgradeFailed: 'Failed to upgrade marketplace'
+        }
+      }
+    },
     skills: {
       page: {
         title: 'Skills',
@@ -1524,7 +1717,8 @@ export const en = {
       scope: {
         user: 'User',
         workspace: 'Workspace',
-        builtin: 'Built-in'
+        builtin: 'Built-in',
+        plugin: 'Plugin'
       },
       status: {
         enabled: 'enabled',

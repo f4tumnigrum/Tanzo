@@ -11,7 +11,7 @@ import { cn } from '@/lib/utils'
 import { SlashCommandMenu } from './slash-command-menu'
 import { useSlashMenu } from './use-slash-menu'
 import { MentionMenu } from './mention-menu'
-import { useMentionMenu } from './use-mention-menu'
+import { useMentionMenu, type PluginMentionOption } from './use-mention-menu'
 import { useAttachments } from './use-attachments'
 import { composeSurfaceClass, toolbarBaseButtonClass } from './surface-style'
 import { SteeringControls } from './steering-controls'
@@ -75,6 +75,9 @@ export interface ChatInputProps {
 
   workspaceRoot?: string | null
 
+  /** Plugins offered as `@mention` suggestions alongside files. */
+  pluginMentions?: PluginMentionOption[]
+
   draft?: string
   onDraftChange?: (draft: string) => void
 }
@@ -88,6 +91,7 @@ export function ChatInput({
   className,
   slashCommands = [],
   workspaceRoot = null,
+  pluginMentions,
   draft,
   onDraftChange
 }: ChatInputProps): React.JSX.Element {
@@ -144,18 +148,20 @@ export function ChatInput({
 
   const {
     mentionMenuOpen,
-    mentionEntries,
+    mentionItems,
     mentionHighlight,
     setMentionHighlight,
     selectMention,
     syncMention,
-    handleMentionKeyDown
+    handleMentionKeyDown,
+    resetHighlightOnQueryChange: resetMentionHighlightOnQueryChange
   } = useMentionMenu({
     value,
     setValue,
     textareaRef,
     workspaceRoot,
-    isStreaming
+    isStreaming,
+    plugins: pluginMentions
   })
 
   const queueable = isStreaming && Boolean(onQueue)
@@ -208,8 +214,9 @@ export function ChatInput({
       const nextValue = event.target.value
       setValue(nextValue)
       resetHighlightOnQueryChange(nextValue)
+      resetMentionHighlightOnQueryChange(nextValue)
     },
-    [resetHighlightOnQueryChange, setValue]
+    [resetHighlightOnQueryChange, resetMentionHighlightOnQueryChange, setValue]
   )
 
   const handleKeyDown = useCallback(
@@ -291,7 +298,7 @@ export function ChatInput({
       {!slashMenuOpen && mentionMenuOpen ? (
         <div className="pointer-events-none absolute inset-x-0 bottom-full z-30 flex flex-col items-center gap-0">
           <MentionMenu
-            entries={mentionEntries}
+            items={mentionItems}
             highlightedIndex={mentionHighlight}
             onHighlight={setMentionHighlight}
             onSelect={selectMention}

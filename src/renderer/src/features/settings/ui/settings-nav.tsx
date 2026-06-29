@@ -21,15 +21,17 @@ export function SettingsNav({ className }: SettingsNavProps): React.JSX.Element 
         <button
           type="button"
           className={cn(
-            'flex h-7 flex-1 items-center gap-1.5 rounded-[var(--radius-md)] px-2.5',
-            'text-sm text-foreground/55',
-            'hover:text-foreground active:text-foreground',
+            'flex h-7 flex-1 items-center justify-center gap-1.5 rounded-[var(--radius-md)]',
+            'bg-[color-mix(in_oklab,var(--foreground)_5%,transparent)] dark:bg-[color-mix(in_oklab,var(--foreground)_7%,transparent)]',
+            'text-sm text-foreground/65',
+            'hover:bg-[color-mix(in_oklab,var(--foreground)_8%,transparent)] hover:text-foreground dark:hover:bg-[color-mix(in_oklab,var(--foreground)_10%,transparent)]',
+            'active:bg-[color-mix(in_oklab,var(--foreground)_11%,transparent)]',
             'transition-colors duration-150',
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50'
           )}
           onClick={() => navigate('/')}
         >
-          <ChevronLeft className="size-3.5" />
+          <ChevronLeft className="size-3" />
           {t('common.actions.back')}
         </button>
       </header>

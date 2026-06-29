@@ -36,19 +36,40 @@ const ariaMap = {
   restore: 'common.window.restore'
 } as const
 
-export function WindowControls({ className }: { className?: string }) {
-  const { t } = useTranslation()
+/**
+ * Single source of truth for whether the custom traffic-light overlay renders
+ * on this platform. macOS hides its native buttons and Windows is frameless, so
+ * both draw the custom controls; Linux keeps its native frame and draws nothing.
+ * Anything that needs to reserve space for the overlay (e.g. a header inset)
+ * should gate on this so it never reserves space where no controls exist.
+ */
+export function useWindowControlsVisible(): boolean {
   const [platform, setPlatform] = useState<Platform>('unknown')
-  const [maximized, setMaximized] = useState(false)
   const controls = window.electron?.windowControls
 
   useEffect(() => {
     if (!controls) return
     let active = true
-
     void window.electron?.getPlatform().then((info) => {
       if (active) setPlatform(info.platform as Platform)
     })
+    return () => {
+      active = false
+    }
+  }, [controls])
+
+  return Boolean(controls) && (platform === 'darwin' || platform === 'win32')
+}
+
+export function WindowControls({ className }: { className?: string }) {
+  const { t } = useTranslation()
+  const [maximized, setMaximized] = useState(false)
+  const controls = window.electron?.windowControls
+  const visible = useWindowControlsVisible()
+
+  useEffect(() => {
+    if (!controls) return
+    let active = true
 
     const sync = () => {
       void controls.isMaximized().then((value) => {
@@ -64,7 +85,7 @@ export function WindowControls({ className }: { className?: string }) {
     }
   }, [controls])
 
-  if (!controls || (platform !== 'darwin' && platform !== 'win32')) return null
+  if (!controls || !visible) return null
 
   const buttons: ButtonSpec[] = [
     {

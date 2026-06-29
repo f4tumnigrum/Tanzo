@@ -1,5 +1,7 @@
-import { useState } from 'react'
-import { ChevronRight } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
 
@@ -9,6 +11,25 @@ interface CollapsibleGridProps<T> {
   renderItem: (item: T, index: number) => React.ReactNode
   getItemKey: (item: T) => string | number
   defaultOpen?: boolean
+  /** When set, paginate the grid and show a pager once items exceed this size. */
+  pageSize?: number
+}
+
+const PAGINATION_MAX_VISIBLE = 5
+
+/** Build a windowed page list with leading/trailing ellipses (1-based). */
+function buildPageNumbers(currentPage: number, totalPages: number): (number | 'ellipsis')[] {
+  if (totalPages <= PAGINATION_MAX_VISIBLE + 2) {
+    return Array.from({ length: totalPages }, (_, index) => index + 1)
+  }
+  const pages: (number | 'ellipsis')[] = [1]
+  const windowStart = Math.max(2, currentPage - 1)
+  const windowEnd = Math.min(totalPages - 1, currentPage + 1)
+  if (windowStart > 2) pages.push('ellipsis')
+  for (let page = windowStart; page <= windowEnd; page += 1) pages.push(page)
+  if (windowEnd < totalPages - 1) pages.push('ellipsis')
+  pages.push(totalPages)
+  return pages
 }
 
 export function CollapsibleGrid<T>({
@@ -16,13 +37,33 @@ export function CollapsibleGrid<T>({
   items,
   renderItem,
   getItemKey,
-  defaultOpen = true
+  defaultOpen = true,
+  pageSize
 }: CollapsibleGridProps<T>) {
+  const { t } = useTranslation()
   const [isOpen, setIsOpen] = useState(defaultOpen)
+  const [requestedPage, setRequestedPage] = useState(0)
+
+  const pageCount = pageSize ? Math.ceil(items.length / pageSize) : 1
+  // Clamp during render so a shrinking item count (e.g. on filter) never leaves
+  // the view on an out-of-range page, without an effect-driven state sync.
+  const page = Math.min(requestedPage, Math.max(0, pageCount - 1))
+
+  const visibleItems = useMemo(() => {
+    if (!pageSize) return items
+    const start = page * pageSize
+    return items.slice(start, start + pageSize)
+  }, [items, page, pageSize])
+
+  const pageNumbers = useMemo(() => buildPageNumbers(page + 1, pageCount), [page, pageCount])
 
   if (items.length === 0) {
     return null
   }
+
+  const showPager = pageSize !== undefined && pageCount > 1
+  const rangeStart = pageSize ? page * pageSize + 1 : 1
+  const rangeEnd = pageSize ? Math.min((page + 1) * pageSize, items.length) : items.length
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen} className="group/section">
@@ -79,10 +120,65 @@ export function CollapsibleGrid<T>({
       >
         <div className="pt-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {items.map((item, index) => (
+            {visibleItems.map((item, index) => (
               <div key={getItemKey(item)}>{renderItem(item, index)}</div>
             ))}
           </div>
+          {showPager ? (
+            <div className="flex flex-col gap-2 px-1 pt-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-[0.6875rem] tabular-nums text-muted-foreground">
+                {t('common.pagination.showing', {
+                  start: rangeStart,
+                  end: rangeEnd,
+                  total: items.length
+                })}
+              </p>
+              <div className="flex items-center justify-end gap-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="rounded-xl"
+                  disabled={page === 0}
+                  onClick={() => setRequestedPage(Math.max(0, page - 1))}
+                  aria-label={t('common.actions.prev')}
+                >
+                  <ChevronLeft className="size-4" />
+                </Button>
+                {pageNumbers.map((item, index) =>
+                  item === 'ellipsis' ? (
+                    <span key={`ellipsis-${index}`} className="px-1 text-xs text-muted-foreground">
+                      …
+                    </span>
+                  ) : (
+                    <Button
+                      key={item}
+                      type="button"
+                      variant={item === page + 1 ? 'secondary' : 'ghost'}
+                      size="icon-sm"
+                      className="rounded-xl text-[0.6875rem]"
+                      onClick={() => setRequestedPage(item - 1)}
+                      aria-label={t('common.pagination.goToPage', { page: item })}
+                      aria-current={item === page + 1 ? 'page' : undefined}
+                    >
+                      {item}
+                    </Button>
+                  )
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="rounded-xl"
+                  disabled={page >= pageCount - 1}
+                  onClick={() => setRequestedPage(Math.min(pageCount - 1, page + 1))}
+                  aria-label={t('common.actions.next')}
+                >
+                  <ChevronRight className="size-4" />
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </div>
       </CollapsibleContent>
     </Collapsible>

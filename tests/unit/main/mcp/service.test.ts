@@ -91,4 +91,27 @@ describe('mcp/service', () => {
     await service.dispose()
     expect(fakeClient.dispose).toHaveBeenCalled()
   })
+
+  it('merges plugin-contributed servers, with user servers winning on name collision', async () => {
+    const fakeStore = store()
+    const fakeClient = client()
+    const service = createMcpService(fakeStore as never, fakeClient as never)
+
+    // No provider: only user servers sync.
+    await service.syncFromStore()
+    expect(fakeClient.syncServers).toHaveBeenLastCalledWith(fakeStore.servers)
+
+    service.setPluginServers(() => [
+      // Collides with the user's `local` server: must be dropped.
+      { name: 'local', transport: 'stdio', enabled: true },
+      // Unique plugin server: must be appended.
+      { name: 'plugin-fs', transport: 'stdio', enabled: true }
+    ])
+
+    await service.syncFromStore()
+    const merged = fakeClient.syncServers.mock.calls.at(-1)?.[0] as { name: string }[]
+    expect(merged.map((server) => server.name)).toEqual(['local', 'plugin-fs'])
+    // The surviving `local` is the user's database-backed row (has an id).
+    expect(merged.find((server) => server.name === 'local')).toMatchObject({ id: 'server-1' })
+  })
 })
