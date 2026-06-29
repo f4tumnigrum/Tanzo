@@ -27,7 +27,9 @@ export function createPluginsIndexSection(reader: PluginsIndexReader): ContextSe
     render: () => {
       const plugins = reader.list()
       if (plugins.length === 0) return null
-      const lines = plugins.map((p) => (p.description ? `- ${p.name}: ${p.description}` : `- ${p.name}`))
+      const lines = plugins.map((p) =>
+        p.description ? `- ${p.name}: ${p.description}` : `- ${p.name}`
+      )
       return [
         '<plugins>',
         'Plugins are local bundles of skills and MCP servers enabled in this session. When a plugin is relevant to the task, prefer its capabilities over standalone ones that do the same thing.',

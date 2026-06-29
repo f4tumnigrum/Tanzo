@@ -12,10 +12,7 @@ describe('agent/context/sections/plugins-index', () => {
 
   it('renders enabled plugins as a name + description catalog', async () => {
     const section = createPluginsIndexSection({
-      list: () => [
-        { name: 'sales', description: 'Sales workflows' },
-        { name: 'bare' }
-      ]
+      list: () => [{ name: 'sales', description: 'Sales workflows' }, { name: 'bare' }]
     })
     const text = (await section.render(input)) as string
     expect(text).toContain('<plugins>')

@@ -8,7 +8,10 @@ const ACTIVE = [
   { name: 'design', hasSkills: false, mcpServerNames: ['figma'] }
 ]
 
-function render(section: ReturnType<typeof createPluginsMentionSection>, pluginMention: string[] | null) {
+function render(
+  section: ReturnType<typeof createPluginsMentionSection>,
+  pluginMention: string[] | null
+) {
   return section.render({ chatId: 'c1', pluginMention } as unknown as BuildInput)
 }
 

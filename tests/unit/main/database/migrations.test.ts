@@ -39,9 +39,9 @@ describe('database/migrations on real sqlite', () => {
     runMigrations(db, [tanzoMigrations])
 
     expect(
-      db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get([
-        'plugin_states'
-      ])
+      db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+        .get(['plugin_states'])
     ).toEqual({ name: 'plugin_states' })
     expect(
       db

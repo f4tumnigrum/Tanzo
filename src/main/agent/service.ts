@@ -143,9 +143,7 @@ export function createAgentService(deps: AgentServiceDeps): AgentService {
         void text
         tasks.resumeByChat(chatId)
       },
-      ...(deps.recordPluginMentions
-        ? { recordPluginMentions: deps.recordPluginMentions }
-        : {})
+      ...(deps.recordPluginMentions ? { recordPluginMentions: deps.recordPluginMentions } : {})
     }
   )
 
