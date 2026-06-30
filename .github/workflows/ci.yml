@@ -67,7 +67,7 @@ jobs:
         include:
           - name: macOS
             os: macos-latest
-            command: pnpm build:mac
+            command: pnpm build && pnpm exec electron-builder --mac --publish never
             artifact-name: Tanzo-macOS
             artifact-path: |
               dist/*.dmg
@@ -76,7 +76,7 @@ jobs:
               dist/latest-mac.yml
           - name: Windows
             os: windows-latest
-            command: pnpm build:win
+            command: pnpm build && pnpm exec electron-builder --win --publish never
             artifact-name: Tanzo-Windows
             artifact-path: |
               dist/*.exe
@@ -84,7 +84,7 @@ jobs:
               dist/latest.yml
           - name: Linux
             os: ubuntu-latest
-            command: pnpm build:linux
+            command: pnpm build && pnpm exec electron-builder --linux --publish never
             artifact-name: Tanzo-Linux
             artifact-path: |
               dist/*.AppImage
