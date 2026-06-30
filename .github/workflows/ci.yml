@@ -144,6 +144,20 @@ jobs:
       contents: write
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract tag annotation
+        id: notes
+        run: |
+          {
+            echo 'body<<TANZO_EOF'
+            git tag -l --format='%(contents)' "${GITHUB_REF_NAME}"
+            echo 'TANZO_EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Download package artifacts
         uses: actions/download-artifact@v4
         with:
@@ -153,5 +167,6 @@ jobs:
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
+          body: ${{ steps.notes.outputs.body }}
           files: dist/artifacts/**
           prerelease: ${{ contains(github.ref_name, '-') }}
