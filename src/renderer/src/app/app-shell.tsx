@@ -6,7 +6,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/componen
 import { cn } from '@/lib/utils'
 import { ConversationSidebar } from '@/features/chat/ui/conversation/conversation-sidebar'
 import { SettingsNav } from '@/features/settings/ui/settings-nav'
-import { WindowControls } from '@/components/ui/window-controls'
+import { WindowControls, useWindowControlsVisible } from '@/components/ui/window-controls'
 import { useChatNavigation } from '@/features/chat/model/use-chat-navigation'
 import { AppShellContext, type AppShellContextValue } from './app-shell-context'
 
@@ -25,6 +25,7 @@ export function AppShell({ children }: AppShellProps): React.JSX.Element {
 
   const isSettings = pathname.startsWith('/settings')
   const navigation = useChatNavigation()
+  const windowControlsVisible = useWindowControlsVisible()
 
   useEffect(() => {
     const group = groupRef.current
@@ -62,9 +63,11 @@ export function AppShell({ children }: AppShellProps): React.JSX.Element {
       {/* A single persistent traffic-light overlay pinned to the window's
           top-left corner. It never unmounts as the sidebar collapses/expands,
           so the controls never flash. */}
-      <div className="app-titlebar pointer-events-none absolute left-0 top-0 z-50 flex h-11 items-center px-5">
-        <WindowControls className="app-no-drag pointer-events-auto" />
-      </div>
+      {windowControlsVisible ? (
+        <div className="app-no-drag pointer-events-auto fixed left-0 top-0 z-[1000] flex h-11 w-[108px] items-center px-5">
+          <WindowControls className="app-no-drag pointer-events-auto" />
+        </div>
+      ) : null}
       <ResizablePanelGroup
         id="app-shell"
         orientation="horizontal"
@@ -84,7 +87,9 @@ export function AppShell({ children }: AppShellProps): React.JSX.Element {
           className="min-h-0 min-w-0 transition-[flex-basis] duration-200 ease-linear"
         >
           <div className="sidebar-surface flex h-full min-h-0 w-full min-w-0 flex-col">
-            <div className="app-titlebar h-11 shrink-0" />
+            <div className="app-titlebar h-11 shrink-0">
+              <div className="app-no-drag h-full w-[108px]" aria-hidden="true" />
+            </div>
             <div className="min-h-0 flex-1">
               {isSettings ? (
                 <SettingsNav />

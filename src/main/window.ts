@@ -51,7 +51,7 @@ export function createWindow(): BrowserWindow {
   const effect = detectNativeWindowEffect(process.platform, release())
 
   const macOptions: BrowserWindowConstructorOptions = {
-    titleBarStyle: 'hiddenInset',
+    titleBarStyle: 'hidden',
     transparent: true,
     vibrancy: 'under-window',
     visualEffectState: 'active'

@@ -149,12 +149,22 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Fetch annotated tag
+        run: |
+          git fetch --force --tags origin "+refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
+
       - name: Extract tag annotation
         id: notes
         run: |
+          object_type=$(git cat-file -t "${GITHUB_REF_NAME}")
+          if [ "$object_type" = "tag" ]; then
+            body=$(git for-each-ref --format='%(contents)' "refs/tags/${GITHUB_REF_NAME}")
+          else
+            body=$(git log -1 --pretty=%B "${GITHUB_REF_NAME}")
+          fi
           {
             echo 'body<<TANZO_EOF'
-            git tag -l --format='%(contents)' "${GITHUB_REF_NAME}"
+            printf '%s\n' "$body"
             echo 'TANZO_EOF'
           } >> "$GITHUB_OUTPUT"
 

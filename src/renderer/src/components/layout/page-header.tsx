@@ -57,7 +57,7 @@ function WindowControlsInset() {
   const { sidebarCollapsed } = useAppShell()
   const controlsVisible = useWindowControlsVisible()
   if (!sidebarCollapsed || !controlsVisible) return null
-  return <div className="w-[68px] shrink-0" aria-hidden="true" />
+  return <div className="app-no-drag w-[68px] shrink-0" aria-hidden="true" />
 }
 
 export const pageHeaderIconBtnCls = cn(

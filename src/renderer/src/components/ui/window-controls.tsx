@@ -122,7 +122,7 @@ export function WindowControls({ className }: { className?: string }) {
           type="button"
           onClick={onPress}
           aria-label={t(ariaMap[ariaKey])}
-          className="relative grid size-4 place-items-center rounded-full transition-all duration-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1"
+          className="app-no-drag relative grid size-4 place-items-center rounded-full transition-all duration-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1"
         >
           <span
             className="absolute inset-0 rounded-full bg-muted-foreground/20 shadow-[inset_0_0_0_0.5px_rgba(0,0,0,0.12)] transition-all duration-200 group-hover/window-controls:bg-[var(--dot-color)] dark:shadow-[inset_0_0_0_0.5px_rgba(255,255,255,0.08)]"
