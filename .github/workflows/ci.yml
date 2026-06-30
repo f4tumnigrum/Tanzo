@@ -89,7 +89,6 @@ jobs:
             artifact-path: |
               dist/*.AppImage
               dist/*.deb
-              dist/*.snap
               dist/latest-linux.yml
 
     steps:

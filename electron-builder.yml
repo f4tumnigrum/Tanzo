@@ -34,7 +34,6 @@ dmg:
 linux:
   target:
     - AppImage
-    - snap
     - deb
   maintainer: Lumin Studio
   category: Utility
