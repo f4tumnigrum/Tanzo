@@ -633,3 +633,170 @@ export const exitPlanModeOutputSchema = z.union([
   z.object({ acknowledged: z.literal(true), message: z.string() }),
   toolErrorSchema
 ])
+
+// --- Embedded browser tools ---------------------------------------------------
+
+const refField = z
+  .string()
+  .min(1)
+  .describe('Element ref from the latest browserSnapshot, e.g. "e12" or "@e12".')
+
+export const browserSnapshotInputSchema = z
+  .object({
+    selector: z
+      .string()
+      .min(1)
+      .optional()
+      .describe('Optional CSS selector to scope the snapshot to one element subtree.'),
+    interactive: z
+      .boolean()
+      .optional()
+      .describe(
+        'Default true: list only actionable elements (buttons, links, inputs…). ' +
+          'Set false to also include headings, cells, and other text content (larger output).'
+      )
+  })
+  .strict()
+
+export const browserSnapshotOutputSchema = z.union([
+  z.object({
+    title: z.string(),
+    url: z.string(),
+    tree: z.string(),
+    nodeCount: z.number(),
+    truncated: z.boolean()
+  }),
+  toolErrorSchema
+])
+
+export const browserNavigateInputSchema = z
+  .object({
+    url: z.string().min(1).describe('Absolute http(s) URL to load in the active browser tab.')
+  })
+  .strict()
+
+export const browserNavigateOutputSchema = z.union([z.object({ url: z.string() }), toolErrorSchema])
+
+export const browserClickInputSchema = z.object({ ref: refField }).strict()
+
+export const browserClickOutputSchema = z.union([
+  z.object({ ok: z.literal(true) }),
+  toolErrorSchema
+])
+
+export const browserTypeInputSchema = z
+  .object({
+    ref: refField,
+    text: z.string().describe('Text to enter into the field.'),
+    clear: z
+      .boolean()
+      .optional()
+      .describe('Clear the field before typing instead of appending. Defaults to true.')
+  })
+  .strict()
+
+export const browserTypeOutputSchema = browserClickOutputSchema
+
+export const browserScrollInputSchema = z
+  .object({
+    dx: z.number().optional().describe('Horizontal pixels to scroll (positive = right).'),
+    dy: z.number().optional().describe('Vertical pixels to scroll (positive = down).')
+  })
+  .strict()
+
+export const browserScrollOutputSchema = z.union([
+  z.object({ scrollX: z.number(), scrollY: z.number() }),
+  toolErrorSchema
+])
+
+export const browserBackInputSchema = z.object({}).strict()
+export const browserForwardInputSchema = z.object({}).strict()
+export const browserNavStateOutputSchema = z.union([
+  z.object({ ok: z.literal(true) }),
+  toolErrorSchema
+])
+
+export const browserReadTextInputSchema = z
+  .object({
+    ref: refField
+      .optional()
+      .describe('Optional ref to read text from; omit to read the whole page.')
+  })
+  .strict()
+
+export const browserReadTextOutputSchema = z.union([
+  z.object({ title: z.string(), url: z.string(), text: z.string() }),
+  toolErrorSchema
+])
+
+export const browserScreenshotInputSchema = z.object({}).strict()
+export const browserScreenshotOutputSchema = z.union([
+  z.object({ dataUrl: z.string(), width: z.number(), height: z.number() }),
+  toolErrorSchema
+])
+
+export const browserTabsInputSchema = z.object({}).strict()
+export const browserTabsOutputSchema = z.union([
+  z.object({
+    tabs: z.array(
+      z.object({
+        tabId: z.string(),
+        url: z.string(),
+        title: z.string(),
+        active: z.boolean()
+      })
+    )
+  }),
+  toolErrorSchema
+])
+
+export const browserActivateTabInputSchema = z
+  .object({ tabId: z.string().min(1).describe('Tab id from browserTabs.') })
+  .strict()
+export const browserActivateTabOutputSchema = z.union([
+  z.object({ tabId: z.string() }),
+  toolErrorSchema
+])
+
+export const browserWaitForInputSchema = z
+  .object({
+    ms: z
+      .number()
+      .int()
+      .min(0)
+      .max(30_000)
+      .describe('Milliseconds to wait (capped at 30000) for the page to settle.')
+  })
+  .strict()
+export const browserWaitForOutputSchema = browserClickOutputSchema
+
+export const browserSelectInputSchema = z
+  .object({
+    ref: refField,
+    value: z
+      .string()
+      .describe('Option to select, matched against its value, label, or visible text.')
+  })
+  .strict()
+export const browserSelectOutputSchema = browserClickOutputSchema
+
+export const browserPressKeyInputSchema = z
+  .object({
+    key: z
+      .enum([
+        'Enter',
+        'Tab',
+        'Escape',
+        'Backspace',
+        'ArrowDown',
+        'ArrowUp',
+        'ArrowLeft',
+        'ArrowRight'
+      ])
+      .describe('Key to press on the focused element.')
+  })
+  .strict()
+export const browserPressKeyOutputSchema = browserClickOutputSchema
+
+export const browserHoverInputSchema = z.object({ ref: refField }).strict()
+export const browserHoverOutputSchema = browserClickOutputSchema

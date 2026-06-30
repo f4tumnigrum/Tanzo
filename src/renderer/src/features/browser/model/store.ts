@@ -7,6 +7,10 @@ const DEFAULT_HOME = 'https://www.google.com'
 let tabSeq = 0
 const nextTabId = (): string => `tab-${Date.now().toString(36)}-${(tabSeq++).toString(36)}`
 
+function notifyActiveTab(tabId: string | null): void {
+  void window.electron?.browser?.setActiveTab(tabId)
+}
+
 export interface BrowserTab {
   id: string
   /** The URL used to seed the webview's initial load. Never rebound after mount. */
@@ -75,11 +79,13 @@ export const useBrowserUiStore = create<BrowserUiStore>()(
           const normalized = normalizeAddressInput(url)
           if (!normalized) return
           const tab = makeTab(normalized)
+          notifyActiveTab(tab.id)
           set((state) => ({ open: true, tabs: [...state.tabs, tab], activeTabId: tab.id }))
         },
 
         newTab: (url) => {
           const tab = makeTab(normalizeAddressInput(url ?? '') ?? DEFAULT_HOME)
+          notifyActiveTab(tab.id)
           set((state) => ({ tabs: [...state.tabs, tab], activeTabId: tab.id }))
           return tab.id
         },
@@ -92,18 +98,24 @@ export const useBrowserUiStore = create<BrowserUiStore>()(
             // Closing the last tab leaves a fresh blank one so the panel is never empty.
             if (tabs.length === 0) {
               const fresh = makeTab(DEFAULT_HOME)
+              notifyActiveTab(fresh.id)
               return { tabs: [fresh], activeTabId: fresh.id }
             }
             let activeTabId = state.activeTabId
             if (activeTabId === id) {
               const neighbor = tabs[Math.min(idx, tabs.length - 1)]
               activeTabId = neighbor.id
+              notifyActiveTab(activeTabId)
             }
             return { tabs, activeTabId }
           }),
 
         setActiveTab: (id) =>
-          set((state) => (state.activeTabId === id ? state : { activeTabId: id })),
+          set((state) => {
+            if (state.activeTabId === id) return state
+            notifyActiveTab(id)
+            return { activeTabId: id }
+          }),
 
         updateTab: (id, patch) =>
           set((state) => {

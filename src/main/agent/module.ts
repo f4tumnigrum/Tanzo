@@ -9,12 +9,14 @@ import {
 import type { PermissionMode } from '@shared/policy'
 import { gitEventChannel, type GitChangedEvent } from '@shared/git'
 import { PET_CHANNELS, type PetPresencePayload } from '@shared/pet'
+import { BROWSER_CHANNELS } from '@shared/browser-control'
 import { deriveStatus, type ThreadGoal, type ThreadGoalStatus } from '@shared/goal'
 import type { SqlDatabase } from '../database/types'
 import { createLogger } from '../logger'
 import type { McpService } from '../mcp/service'
 import type { ProviderService } from '../provider/service'
 import { createAgentIdentity } from './agents'
+import { createBrowserController } from './browser/controller'
 import { createContextEngine } from './context'
 import { createContextEngineDeps } from './context/deps'
 import { createGitService } from './git/service'
@@ -69,6 +71,8 @@ export interface AgentModuleOptions {
   workspaceRoot: string
   getWindows: () => BrowserWindow[]
   getChatWindows?: () => BrowserWindow[]
+  /** Built-in tool ids the user disabled in settings; read fresh on each build. */
+  disabledTools?: () => readonly string[]
 }
 
 interface WebContentsLike {
@@ -328,6 +332,16 @@ export function createAgentModule(options: AgentModuleOptions): AgentModule {
   const git = createGitService({ broadcast: gitBroadcast, logger })
   const changeSet = createChangeSetService({ userDataPath: app.getPath('userData') })
   const questions = createQuestionBroker()
+  const browser = createBrowserController({
+    requestOpen: (url) => {
+      const windows = (options.getChatWindows ?? options.getWindows)().filter(isUsableWindow)
+      if (windows.length === 0) return false
+      for (const window of windows) {
+        window.webContents.send(BROWSER_CHANNELS.openRequest, { url })
+      }
+      return true
+    }
+  })
 
   // Tracks explicit plugin @mentions in user messages for one-shot, per-turn
   // capability hints. Only mentions matching an active plugin's skill namespace
@@ -394,7 +408,9 @@ export function createAgentModule(options: AgentModuleOptions): AgentModule {
       goal: {
         get: (chatId) => goalService.get(chatId),
         markOutcome: (chatId, status) => goalService.markOutcome(chatId, status) !== null
-      }
+      },
+      browser,
+      disabledTools: () => options.disabledTools?.() ?? []
     }
   }
 
@@ -444,7 +460,8 @@ export function createAgentModule(options: AgentModuleOptions): AgentModule {
         changeSet,
         skills,
         plugins,
-        streams
+        streams,
+        browser
       })
     },
     async close() {

@@ -32,6 +32,7 @@ export interface WebviewElement extends HTMLElement {
   canGoBack(): boolean
   canGoForward(): boolean
   getTitle(): string
+  getWebContentsId(): number
   executeJavaScript(code: string, userGesture?: boolean): Promise<unknown>
 }
 

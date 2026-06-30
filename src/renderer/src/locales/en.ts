@@ -603,6 +603,34 @@ export const en = {
             activationFailed: 'Skill activation failed.'
           }
         },
+        browser: {
+          label: 'Browser',
+          url: 'url',
+          activeTab: 'active',
+          emptySnapshot: 'No interactive elements found.',
+          emptyText: 'No text content.',
+          screenshotAlt: 'Screenshot of the active browser tab',
+          actions: {
+            browserSnapshot: 'Snapshot',
+            browserNavigate: 'Navigate',
+            browserClick: 'Click',
+            browserType: 'Type',
+            browserScroll: 'Scroll',
+            browserBack: 'Back',
+            browserForward: 'Forward',
+            browserReadText: 'Read text',
+            browserScreenshot: 'Screenshot',
+            browserTabs: 'List tabs',
+            browserActivateTab: 'Activate tab',
+            browserWaitFor: 'Wait',
+            browserSelect: 'Select',
+            browserPressKey: 'Press key',
+            browserHover: 'Hover'
+          },
+          errors: {
+            failed: 'Browser action failed.'
+          }
+        },
         subagent: {
           label: 'Subagent',
           run: 'Subagent',
@@ -1202,7 +1230,58 @@ export const en = {
           theme: 'Theme',
           permissions: 'Permissions',
           hooks: 'Hooks',
-          pet: 'Pet'
+          pet: 'Pet',
+          tools: 'Tools'
+        }
+      },
+      tools: {
+        intro:
+          'Turn built-in tools on or off for the agent. Disabled tools are removed from every agent, including sub-agents.',
+        enabledCount: '{{count}}/{{total}}',
+        toggleCategory: 'Toggle all tools in this category',
+        readOnly: 'read-only',
+        categories: {
+          files: {
+            title: 'Files',
+            description: 'Read and edit files in the workspace.'
+          },
+          search: {
+            title: 'Search',
+            description: 'Find files and search file contents.'
+          },
+          shell: {
+            title: 'Shell',
+            description: 'Run shell commands.'
+          },
+          browser: {
+            title: 'Browser',
+            description:
+              'Drive the built-in browser: navigate, read, fill forms, click, screenshot.'
+          }
+        },
+        descriptions: {
+          fileRead: 'Read a line-numbered window from a file.',
+          fileEdit: 'Replace exact text in one file.',
+          multiEdit: 'Apply several ordered edits to one file atomically.',
+          fileWrite: 'Create or overwrite a file.',
+          glob: 'Find files by glob pattern.',
+          grep: 'Search file contents with ripgrep.',
+          shell: 'Run a shell command.',
+          browserSnapshot: 'Capture an accessibility snapshot with @eN refs.',
+          browserReadText: 'Read the visible text of the page or an element.',
+          browserScreenshot: 'Capture a screenshot of the active tab.',
+          browserTabs: 'List the open browser tabs.',
+          browserNavigate: 'Open a URL (opens the browser automatically).',
+          browserClick: 'Click an element by ref.',
+          browserType: 'Type text into a field by ref.',
+          browserSelect: 'Choose a dropdown option by ref.',
+          browserPressKey: 'Press Enter, Tab, Escape, or an arrow key.',
+          browserHover: 'Hover an element to reveal menus or tooltips.',
+          browserScroll: 'Scroll the page.',
+          browserBack: 'Go back in history.',
+          browserForward: 'Go forward in history.',
+          browserActivateTab: 'Switch the active browser tab.',
+          browserWaitFor: 'Wait for the page to settle.'
         }
       },
       permissions: {

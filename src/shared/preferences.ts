@@ -97,6 +97,8 @@ export interface UserPreferences {
   petPosition: PetPosition | null
   petScale: number
   wallpaper: WallpaperSettings
+  /** Built-in tool ids the user has disabled; filtered out of the agent's tool set. */
+  disabledTools: string[]
 }
 
 export const PET_SCALE_MIN = 0.5
@@ -129,7 +131,8 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
   petId: null,
   petPosition: null,
   petScale: PET_SCALE_DEFAULT,
-  wallpaper: DEFAULT_WALLPAPER
+  wallpaper: DEFAULT_WALLPAPER,
+  disabledTools: []
 }
 
 export const PREFERENCES_CHANNELS = {
@@ -160,6 +163,7 @@ export type PreferencesPatch = Partial<
     | 'petId'
     | 'petPosition'
     | 'petScale'
+    | 'disabledTools'
   >
 > & {
   wallpaper?: WallpaperAppearancePatch

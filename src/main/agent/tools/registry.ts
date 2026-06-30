@@ -44,7 +44,11 @@ const READ_ONLY_SUBAGENT_TOOLS = new Set([
   'report',
   'shellPoll',
   'shellList',
-  'web_search'
+  'web_search',
+  'browserSnapshot',
+  'browserReadText',
+  'browserScreenshot',
+  'browserTabs'
 ])
 
 function isReadOnlySubagentToolPattern(pattern: string): boolean {
@@ -110,6 +114,15 @@ export function createBuildTools(deps: ToolDeps): BuildTools {
       ...(isSubagent ? subagentReportTools(deps, chatId) : {}),
       ...(isMainAgent ? goalTools(deps, chatId) : {}),
       ...(shouldIncludeExitPlanMode ? { exitPlanMode: exitPlanModeTool() } : {})
+    }
+    // Drop tools the user disabled in settings. This applies before the agent's
+    // allowedTools filter so a disabled tool is unavailable to every agent,
+    // regardless of its allowlist.
+    const disabled = new Set(deps.disabledTools())
+    if (disabled.size > 0) {
+      for (const key of Object.keys(merged)) {
+        if (disabled.has(key)) delete merged[key]
+      }
     }
     const allowed = def.allowedTools
     if (allowed === null) return merged

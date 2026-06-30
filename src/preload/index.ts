@@ -1,6 +1,7 @@
 import { contextBridge } from 'electron'
 import log from 'electron-log/preload'
 import { activityApi, chatApi, changeSetApi, gitApi, goalApi, policyApi } from './agent'
+import { browserApi } from './browser'
 import { hooksApi } from './hooks'
 import { mcpApi } from './mcp'
 import { petApi } from './pet'
@@ -29,6 +30,7 @@ const tanzoApi = {
   slashCommand: slashCommandApi,
   fileMention: fileMentionApi,
   pet: petApi,
+  browser: browserApi,
   process: { versions: process.versions }
 }
 

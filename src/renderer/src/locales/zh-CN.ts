@@ -601,6 +601,34 @@ export const zhCN = {
             activationFailed: '启用技能失败。'
           }
         },
+        browser: {
+          label: '浏览器',
+          url: '网址',
+          activeTab: '当前',
+          emptySnapshot: '未找到可交互元素。',
+          emptyText: '没有文本内容。',
+          screenshotAlt: '当前浏览器标签页截图',
+          actions: {
+            browserSnapshot: '快照',
+            browserNavigate: '导航',
+            browserClick: '点击',
+            browserType: '输入',
+            browserScroll: '滚动',
+            browserBack: '后退',
+            browserForward: '前进',
+            browserReadText: '读取文本',
+            browserScreenshot: '截图',
+            browserTabs: '列出标签页',
+            browserActivateTab: '切换标签页',
+            browserWaitFor: '等待',
+            browserSelect: '选择',
+            browserPressKey: '按键',
+            browserHover: '悬停'
+          },
+          errors: {
+            failed: '浏览器操作失败。'
+          }
+        },
         subagent: {
           label: '子代理',
           run: '子代理',
@@ -1197,7 +1225,56 @@ export const zhCN = {
           theme: '主题',
           permissions: '权限',
           hooks: '钩子',
-          pet: '桌面宠物'
+          pet: '桌面宠物',
+          tools: '工具'
+        }
+      },
+      tools: {
+        intro: '为 agent 开启或关闭内置工具。关闭的工具会从所有 agent（包括子代理）中移除。',
+        enabledCount: '{{count}}/{{total}}',
+        toggleCategory: '开关此类别的所有工具',
+        readOnly: '只读',
+        categories: {
+          files: {
+            title: '文件',
+            description: '读取和编辑工作区文件。'
+          },
+          search: {
+            title: '搜索',
+            description: '查找文件、搜索文件内容。'
+          },
+          shell: {
+            title: 'Shell',
+            description: '执行 shell 命令。'
+          },
+          browser: {
+            title: '浏览器',
+            description: '操控内置浏览器：导航、读取、填表、点击、截图。'
+          }
+        },
+        descriptions: {
+          fileRead: '按行读取文件的一段内容。',
+          fileEdit: '替换文件中的精确文本。',
+          multiEdit: '对单个文件原子地应用多处有序编辑。',
+          fileWrite: '创建或覆盖文件。',
+          glob: '按 glob 模式查找文件。',
+          grep: '用 ripgrep 搜索文件内容。',
+          shell: '执行 shell 命令。',
+          browserSnapshot: '抓取带 @eN ref 的无障碍快照。',
+          browserReadText: '读取页面或元素的可见文本。',
+          browserScreenshot: '截取当前标签页。',
+          browserTabs: '列出已打开的标签页。',
+          browserNavigate: '打开网址（自动打开浏览器）。',
+          browserClick: '按 ref 点击元素。',
+          browserType: '按 ref 向字段输入文本。',
+          browserSelect: '按 ref 选择下拉选项。',
+          browserPressKey: '按 Enter、Tab、Esc 或方向键。',
+          browserHover: '悬停元素以显示菜单或提示。',
+          browserScroll: '滚动页面。',
+          browserBack: '后退。',
+          browserForward: '前进。',
+          browserActivateTab: '切换当前标签页。',
+          browserWaitFor: '等待页面稳定。'
         }
       },
       permissions: {

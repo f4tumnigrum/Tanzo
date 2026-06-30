@@ -96,6 +96,35 @@ export function BrowserView({ tab }: { tab: BrowserTab }): React.JSX.Element {
   const [picked, setPicked] = useState<PickedElementRaw | null>(null)
   const [navSeq, setNavSeq] = useState(0)
 
+  // Register this guest's WebContents id with the main-process BrowserController
+  // so agent browser tools can drive the exact tab the user sees. The id is
+  // stable once the guest is attached; we (re)register on dom-ready and refresh
+  // url/title as the page navigates. Unregister on unmount.
+  useEffect(() => {
+    const view = webviewRef.current
+    if (!view) return undefined
+    const api = window.electron?.browser
+    if (!api) return undefined
+
+    const register = (): void => {
+      try {
+        void api.registerTab({
+          tabId,
+          webContentsId: view.getWebContentsId(),
+          url: view.getURL(),
+          title: view.getTitle()
+        })
+      } catch {
+        // Guest not attached yet; dom-ready will fire again.
+      }
+    }
+    view.addEventListener('dom-ready', register)
+    return () => {
+      view.removeEventListener('dom-ready', register)
+      void api.unregisterTab(tabId)
+    }
+  }, [tabId])
+
   // Wire guest navigation events to local chrome state and the store.
   useEffect(() => {
     const view = webviewRef.current
@@ -115,13 +144,36 @@ export function BrowserView({ tab }: { tab: BrowserTab }): React.JSX.Element {
         setAddress(url)
         setPageUrl(url)
         updateTab(tabId, { url })
+        // Keep the controller's tab record fresh so listTabs reports the live URL.
+        try {
+          window.electron?.browser?.registerTab({
+            tabId,
+            webContentsId: view.getWebContentsId(),
+            url,
+            title: view.getTitle()
+          })
+        } catch {
+          // Guest detached mid-navigation; ignore.
+        }
       }
       setLoadError(null)
       syncNav()
     }
     const handleTitle = (event: Event): void => {
       const title = (event as unknown as { title?: string }).title
-      if (typeof title === 'string') updateTab(tabId, { title })
+      if (typeof title === 'string') {
+        updateTab(tabId, { title })
+        try {
+          window.electron?.browser?.registerTab({
+            tabId,
+            webContentsId: view.getWebContentsId(),
+            url: view.getURL(),
+            title
+          })
+        } catch {
+          // Guest detached while updating metadata; ignore.
+        }
+      }
     }
     const handleStart = (): void => {
       setLoading(true)

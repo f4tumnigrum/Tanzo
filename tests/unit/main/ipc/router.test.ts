@@ -20,6 +20,16 @@ function ipcTarget() {
 }
 
 describe('main/ipc/router', () => {
+  it('can pass the invoke event to handlers that opt in', () => {
+    const { handlers, target } = ipcTarget()
+    const event = { sender: { id: 7 } }
+    registerIpcHandlers(target as never, [
+      ['demo:event', (received: unknown, value: unknown) => ({ received, value }), { passEvent: true }]
+    ])
+
+    expect(handlers.get('demo:event')?.(event, 'x')).toEqual({ received: event, value: 'x' })
+  })
+
   it('passes successful sync and async results through untouched', async () => {
     const { handlers, target } = ipcTarget()
     registerIpcHandlers(target as never, [

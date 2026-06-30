@@ -105,6 +105,29 @@ describe('main/agent/tools/message-schemas', () => {
         truncated: false
       })
     ).toMatchObject({ sessionId: 'session-1', status: 'running' })
+    expect(inputSchema('browserNavigate').parse({ url: 'https://example.com/' })).toEqual({
+      url: 'https://example.com/'
+    })
+    expect(() => inputSchema('browserNavigate').parse({})).toThrow()
+    expect(inputSchema('browserType').parse({ ref: '@e1', text: 'hello' })).toEqual({
+      ref: '@e1',
+      text: 'hello'
+    })
+    expect(() => inputSchema('browserWaitFor').parse({ ms: 30_001 })).toThrow()
+    expect(outputSchema('browserTabs').parse({
+      tabs: [{ tabId: 'tab-1', url: 'https://example.com/', title: 'Example', active: true }]
+    })).toEqual({
+      tabs: [{ tabId: 'tab-1', url: 'https://example.com/', title: 'Example', active: true }]
+    })
+    expect(
+      outputSchema('browserSnapshot').parse({
+        title: 'Example',
+        url: 'https://example.com/',
+        tree: '@e1 [button] "Go"',
+        nodeCount: 1,
+        truncated: false
+      })
+    ).toMatchObject({ nodeCount: 1 })
     expect(
       outputSchema('skill').parse({
         instructions: 'body',

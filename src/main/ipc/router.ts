@@ -1,8 +1,12 @@
-import type { IpcMain } from 'electron'
+import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 import { encodeIpcError, TanzoValidationError } from '@shared/errors'
 
 export type IpcHandler = (...args: unknown[]) => unknown
-export type IpcRegistration = readonly [channel: string, handler: IpcHandler]
+export type IpcRegistration = readonly [
+  channel: string,
+  handler: IpcHandler,
+  options?: { readonly passEvent?: boolean }
+]
 
 export interface IpcRouterOptions {
   logger?: { warn(message: string, meta?: Record<string, unknown>): void }
@@ -32,10 +36,10 @@ export function registerIpcHandlers(
   options: IpcRouterOptions = {}
 ): () => void {
   for (const [channel] of registrations) ipcMain.removeHandler(channel)
-  for (const [channel, handler] of registrations) {
-    ipcMain.handle(channel, (_event, ...args: unknown[]) => {
+  for (const [channel, handler, registrationOptions] of registrations) {
+    ipcMain.handle(channel, (event: IpcMainInvokeEvent, ...args: unknown[]) => {
       try {
-        const result = handler(...args)
+        const result = registrationOptions?.passEvent ? handler(event, ...args) : handler(...args)
         return result instanceof Promise
           ? result.catch((error) => {
               options.logger?.warn('ipc handler failed', { channel, error })

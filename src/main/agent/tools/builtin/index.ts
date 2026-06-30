@@ -9,6 +9,23 @@ import { fileWriteTool } from './file-write'
 import { globTool } from './glob'
 import { grepTool } from './grep'
 import { shellTool } from './shell'
+import {
+  browserActivateTabTool,
+  browserBackTool,
+  browserClickTool,
+  browserForwardTool,
+  browserNavigateTool,
+  browserReadTextTool,
+  browserScreenshotTool,
+  browserScrollTool,
+  browserSnapshotTool,
+  browserTabsTool,
+  browserTypeTool,
+  browserWaitForTool,
+  browserSelectTool,
+  browserPressKeyTool,
+  browserHoverTool
+} from './browser-tools'
 
 type BuiltinDefs = {
   [K in keyof TanzoTools]?: Tool<TanzoTools[K]['input'], TanzoTools[K]['output']>
@@ -22,6 +39,21 @@ export function builtinTools(_def: AgentDefinition, deps: ToolDeps): ToolSet {
     fileWrite: fileWriteTool(deps),
     glob: globTool(deps),
     grep: grepTool(deps),
-    shell: shellTool(deps)
+    shell: shellTool(deps),
+    browserSnapshot: browserSnapshotTool(deps),
+    browserNavigate: browserNavigateTool(deps),
+    browserClick: browserClickTool(deps),
+    browserType: browserTypeTool(deps),
+    browserScroll: browserScrollTool(deps),
+    browserBack: browserBackTool(deps),
+    browserForward: browserForwardTool(deps),
+    browserReadText: browserReadTextTool(deps),
+    browserScreenshot: browserScreenshotTool(deps),
+    browserTabs: browserTabsTool(deps),
+    browserActivateTab: browserActivateTabTool(deps),
+    browserWaitFor: browserWaitForTool(deps),
+    browserSelect: browserSelectTool(deps),
+    browserPressKey: browserPressKeyTool(deps),
+    browserHover: browserHoverTool(deps)
   } satisfies BuiltinDefs
 }

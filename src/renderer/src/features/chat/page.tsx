@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils'
 import { Spinner } from '@/components/ui/spinner'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
-import { BrowserPanel, useBrowserUiStore } from '@/features/browser'
+import { BrowserPanel, useBrowserUiStore, useBrowserOpenRequests } from '@/features/browser'
 import { useChatNavigation } from './model/use-chat-navigation'
 import { ChatEmpty } from './ui/chat-empty'
 import { ActiveChat } from './ui/active-chat'
@@ -22,6 +22,7 @@ export default function ChatPage(): React.JSX.Element {
   const browserOpen = useBrowserUiStore((s) => s.open)
   const browserMaximized = useBrowserUiStore((s) => s.maximized)
   const toggleBrowser = useBrowserUiStore((s) => s.toggle)
+  useBrowserOpenRequests()
   const chatPaneRef = usePanelRef()
   const navigation = useChatNavigation()
   const { activeChatId, activeConversation, currentWorkspace, defaultWorkspace } = navigation

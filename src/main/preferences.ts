@@ -29,6 +29,7 @@ import {
   type WallpaperSettings
 } from '@shared/preferences'
 import { createLogger } from './logger'
+import { TOOL_CATALOG_IDS } from '@shared/tool-catalog'
 
 const log = createLogger('preferences')
 
@@ -182,6 +183,21 @@ function normalizePetScale(value: unknown): number {
   return Math.min(Math.max(value, PET_SCALE_MIN), PET_SCALE_MAX)
 }
 
+function normalizeDisabledTools(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  // Keep only known tool ids so stale ids from older versions are dropped.
+  const known = new Set(TOOL_CATALOG_IDS)
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (const item of value) {
+    if (typeof item === 'string' && known.has(item) && !seen.has(item)) {
+      seen.add(item)
+      result.push(item)
+    }
+  }
+  return result
+}
+
 function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
   return Math.min(Math.max(value, min), max)
@@ -246,7 +262,8 @@ function normalizePreferences(value: unknown): UserPreferences {
     petId: typeof parsed.petId === 'string' && parsed.petId.trim().length > 0 ? parsed.petId : null,
     petPosition: normalizePetPosition(parsed.petPosition),
     petScale: normalizePetScale(parsed.petScale),
-    wallpaper: normalizeWallpaper(parsed.wallpaper)
+    wallpaper: normalizeWallpaper(parsed.wallpaper),
+    disabledTools: normalizeDisabledTools(parsed.disabledTools)
   }
 }
 

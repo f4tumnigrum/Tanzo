@@ -227,6 +227,80 @@ export type TanzoTools = {
     input: { plan: string }
     output: { acknowledged: true; message: string } | ToolError
   }
+  browserSnapshot: {
+    input: { selector?: string; interactive?: boolean }
+    output:
+      | { title: string; url: string; tree: string; nodeCount: number; truncated: boolean }
+      | ToolError
+  }
+  browserNavigate: {
+    input: { url: string }
+    output: { url: string } | ToolError
+  }
+  browserClick: {
+    input: { ref: string }
+    output: { ok: true } | ToolError
+  }
+  browserType: {
+    input: { ref: string; text: string; clear?: boolean }
+    output: { ok: true } | ToolError
+  }
+  browserScroll: {
+    input: { dx?: number; dy?: number }
+    output: { scrollX: number; scrollY: number } | ToolError
+  }
+  browserBack: {
+    input: Record<string, never>
+    output: { ok: true } | ToolError
+  }
+  browserForward: {
+    input: Record<string, never>
+    output: { ok: true } | ToolError
+  }
+  browserReadText: {
+    input: { ref?: string }
+    output: { title: string; url: string; text: string } | ToolError
+  }
+  browserScreenshot: {
+    input: Record<string, never>
+    output: { dataUrl: string; width: number; height: number } | ToolError
+  }
+  browserTabs: {
+    input: Record<string, never>
+    output:
+      | { tabs: Array<{ tabId: string; url: string; title: string; active: boolean }> }
+      | ToolError
+  }
+  browserActivateTab: {
+    input: { tabId: string }
+    output: { tabId: string } | ToolError
+  }
+  browserWaitFor: {
+    input: { ms: number }
+    output: { ok: true } | ToolError
+  }
+  browserSelect: {
+    input: { ref: string; value: string }
+    output: { ok: true } | ToolError
+  }
+  browserPressKey: {
+    input: {
+      key:
+        | 'Enter'
+        | 'Tab'
+        | 'Escape'
+        | 'Backspace'
+        | 'ArrowDown'
+        | 'ArrowUp'
+        | 'ArrowLeft'
+        | 'ArrowRight'
+    }
+    output: { ok: true } | ToolError
+  }
+  browserHover: {
+    input: { ref: string }
+    output: { ok: true } | ToolError
+  }
 }
 
 export type ShellSessionStatus = 'running' | 'exited' | 'failed' | 'stopped'

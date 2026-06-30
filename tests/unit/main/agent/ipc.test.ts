@@ -9,6 +9,7 @@ import { SKILL_CHANNELS } from '@shared/skills'
 import { PLUGIN_CHANNELS } from '@shared/plugins'
 import { ACTIVITY_CHANNELS } from '@shared/activity'
 import { CHANGE_SET_CHANNELS } from '@shared/change-set'
+import { BROWSER_CHANNELS } from '@shared/browser-control'
 import { registerAgentIpc } from '@main/agent/ipc'
 
 vi.mock('ai', () => ({
@@ -172,7 +173,12 @@ function deps() {
     skills,
     plugins,
     streams,
-    changeSet
+    changeSet,
+    browser: {
+      registerTab: vi.fn(),
+      unregisterTab: vi.fn(),
+      setActiveTab: vi.fn()
+    }
   }
 }
 
@@ -185,6 +191,11 @@ const userMessage: TanzoUIMessage = {
 function registeredChatChannelCount(): number {
   return Object.entries(CHAT_CHANNELS).filter(([key]) => key !== 'event' && key !== 'taskEvent')
     .length
+}
+
+function registeredBrowserChannelCount(): number {
+  // openRequest is a main → renderer push channel, not an ipcMain.handle target.
+  return Object.entries(BROWSER_CHANNELS).filter(([key]) => key !== 'openRequest').length
 }
 
 describe('agent/ipc', () => {
@@ -202,7 +213,8 @@ describe('agent/ipc', () => {
         Object.keys(PLUGIN_CHANNELS).length +
         Object.keys(ACTIVITY_CHANNELS).length +
         Object.keys(GIT_CHANNELS).length +
-        Object.keys(CHANGE_SET_CHANNELS).length
+        Object.keys(CHANGE_SET_CHANNELS).length +
+        registeredBrowserChannelCount()
     )
 
     await handlers.get(CHAT_CHANNELS.submit)?.(null, 'chat-1', userMessage)
@@ -387,7 +399,8 @@ describe('agent/ipc', () => {
         Object.keys(ACTIVITY_CHANNELS).length +
         Object.keys(GIT_CHANNELS).length +
         Object.keys(CHANGE_SET_CHANNELS).length +
-        Object.keys(PLUGIN_CHANNELS).length) *
+        Object.keys(PLUGIN_CHANNELS).length +
+        registeredBrowserChannelCount()) *
         2
     )
   })

@@ -1,5 +1,6 @@
 import { toolRendererRegistry } from '../registry'
 import { askQuestionRenderer } from './ask-question'
+import { browserRenderer } from './browser'
 import { dynamicRenderer } from './dynamic'
 import { fileEditRenderer } from './file-edit'
 import { fileReadRenderer } from './file-read'
@@ -30,7 +31,22 @@ toolRendererRegistry.registerMany({
   report: subagentRenderer,
   todo: todoRenderer,
   updateGoal: goalRenderer,
-  askQuestion: askQuestionRenderer
+  askQuestion: askQuestionRenderer,
+  browserSnapshot: browserRenderer,
+  browserNavigate: browserRenderer,
+  browserClick: browserRenderer,
+  browserType: browserRenderer,
+  browserScroll: browserRenderer,
+  browserBack: browserRenderer,
+  browserForward: browserRenderer,
+  browserReadText: browserRenderer,
+  browserScreenshot: browserRenderer,
+  browserTabs: browserRenderer,
+  browserActivateTab: browserRenderer,
+  browserWaitFor: browserRenderer,
+  browserSelect: browserRenderer,
+  browserPressKey: browserRenderer,
+  browserHover: browserRenderer
 })
 
 toolRendererRegistry.registerComponents({
@@ -43,7 +59,8 @@ toolRendererRegistry.registerComponents({
   SubagentCard: subagentRenderer,
   TodoCard: todoRenderer,
   GoalCard: goalRenderer,
-  AskQuestionCard: askQuestionRenderer
+  AskQuestionCard: askQuestionRenderer,
+  BrowserCard: browserRenderer
 })
 
 toolRendererRegistry.registerDynamicPrefix('mcp', dynamicRenderer)
@@ -61,5 +78,6 @@ export {
   skillRenderer,
   subagentRenderer,
   todoRenderer,
-  askQuestionRenderer
+  askQuestionRenderer,
+  browserRenderer
 }

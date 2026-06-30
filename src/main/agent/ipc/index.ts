@@ -2,6 +2,7 @@ import type { IpcMain } from 'electron'
 import { createLogger } from '../../logger'
 import { registerIpcHandlers } from '../../ipc/router'
 import { activityHandlers } from './activity'
+import { browserHandlers } from './browser'
 import { chatHandlers } from './chat'
 import { changeSetHandlers } from './change-set'
 import { gitHandlers } from './git'
@@ -22,7 +23,8 @@ function allHandlers(deps: AgentIpcDeps): IpcRegistration[] {
     ...pluginHandlers(deps),
     ...activityHandlers(deps),
     ...gitHandlers(deps),
-    ...changeSetHandlers(deps)
+    ...changeSetHandlers(deps),
+    ...browserHandlers(deps)
   ]
 }
 

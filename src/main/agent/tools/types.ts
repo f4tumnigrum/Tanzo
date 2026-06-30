@@ -10,6 +10,7 @@ import type { SkillsStore } from '../skills/types'
 import type { AgentService } from '../runtime/types'
 import type { AgentStore } from '../store-types'
 import type { QuestionBroker } from '../question/broker'
+import type { BrowserController } from '../browser/controller'
 
 export interface GoalToolAccess {
   get(chatId: string): ThreadGoal | null
@@ -43,4 +44,7 @@ export interface ToolDeps {
   reportTaskPhase: AgentService['reportTaskPhase']
   submitTaskResult: AgentService['submitTaskResult']
   goal: GoalToolAccess
+  browser: BrowserController
+  /** Built-in tool ids the user disabled in settings; filtered out at build time. */
+  disabledTools: () => readonly string[]
 }

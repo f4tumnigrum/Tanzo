@@ -204,7 +204,8 @@ if (singleInstanceLock)
       mcpService: mcpModule.service,
       workspaceRoot: defaultWorkspaceRoot(),
       getWindows: () => BrowserWindow.getAllWindows(),
-      getChatWindows: () => (mainWindow && !mainWindow.isDestroyed() ? [mainWindow] : [])
+      getChatWindows: () => (mainWindow && !mainWindow.isDestroyed() ? [mainWindow] : []),
+      disabledTools: () => getPreferences().disabledTools
     })
     agentModule.registerIpc(ipcMain)
     markStartup('agent.module')

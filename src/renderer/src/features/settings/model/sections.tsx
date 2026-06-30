@@ -8,7 +8,8 @@ import {
   Server,
   ShieldCheck,
   Sparkles,
-  Webhook
+  Webhook,
+  Wrench
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import McpPage from '@/features/mcp/page'
@@ -20,6 +21,7 @@ import { SettingsHooksTab, SettingsHooksHeaderActions } from '../ui/settings-hoo
 import { SettingsPermissionsTab } from '../ui/settings-permissions-tab'
 import { SettingsPetTab } from '../ui/settings-pet-tab'
 import { SettingsThemeTab } from '../ui/settings-theme-tab'
+import { SettingsToolsTab } from '../ui/settings-tools-tab'
 
 export type SettingsSectionId =
   | 'theme'
@@ -31,6 +33,7 @@ export type SettingsSectionId =
   | 'permissions'
   | 'hooks'
   | 'pet'
+  | 'tools'
 
 export interface SettingsSectionDef {
   id: SettingsSectionId
@@ -111,6 +114,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
     defaultLabel: 'Pet',
     icon: Cat,
     Component: SettingsPetTab
+  },
+  {
+    id: 'tools',
+    labelKey: 'settings.page.tabs.tools',
+    defaultLabel: 'Tools',
+    icon: Wrench,
+    Component: SettingsToolsTab
   }
 ]
 

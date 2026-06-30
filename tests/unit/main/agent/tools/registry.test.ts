@@ -57,7 +57,28 @@ function deps(): ToolDeps {
     goal: {
       get: vi.fn(() => null),
       markOutcome: vi.fn(() => false)
-    }
+    },
+    browser: {
+      snapshot: vi.fn(),
+      navigate: vi.fn(),
+      click: vi.fn(),
+      type: vi.fn(),
+      scroll: vi.fn(),
+      goBack: vi.fn(),
+      goForward: vi.fn(),
+      readText: vi.fn(),
+      screenshot: vi.fn(),
+      listTabs: vi.fn(() => []),
+      activateTab: vi.fn(),
+      waitFor: vi.fn(),
+      select: vi.fn(),
+      pressKey: vi.fn(),
+      hover: vi.fn(),
+      registerTab: vi.fn(),
+      unregisterTab: vi.fn(),
+      setActiveTab: vi.fn()
+    } as never,
+    disabledTools: () => []
   } as unknown as ToolDeps
 }
 
@@ -134,7 +155,28 @@ function planDeps(): ToolDeps {
     cancelTask: vi.fn(),
     reportTaskPhase: vi.fn(),
     submitTaskResult: vi.fn(),
-    goal: { get: vi.fn(), markOutcome: vi.fn() }
+    goal: { get: vi.fn(), markOutcome: vi.fn() },
+    browser: {
+      snapshot: vi.fn(),
+      navigate: vi.fn(),
+      click: vi.fn(),
+      type: vi.fn(),
+      scroll: vi.fn(),
+      goBack: vi.fn(),
+      goForward: vi.fn(),
+      readText: vi.fn(),
+      screenshot: vi.fn(),
+      listTabs: vi.fn(() => []),
+      activateTab: vi.fn(),
+      waitFor: vi.fn(),
+      select: vi.fn(),
+      pressKey: vi.fn(),
+      hover: vi.fn(),
+      registerTab: vi.fn(),
+      unregisterTab: vi.fn(),
+      setActiveTab: vi.fn()
+    } as never,
+    disabledTools: () => []
   } as unknown as ToolDeps
 }
 
@@ -164,12 +206,37 @@ describe('main/agent/tools/registry', () => {
         'shellStart',
         'shellPoll',
         'askQuestion',
+        'browserSnapshot',
+        'browserNavigate',
+        'browserClick',
         'spawn'
       ])
     )
     expect(tools.mcp__server__readThing.metadata).toMatchObject({
       tanzo: { kind: 'read', source: { mcp: 'server' } }
     })
+  })
+
+  it('removes tools the user disabled in settings', async () => {
+    const baseDeps = deps()
+    const withDisabled = {
+      ...baseDeps,
+      disabledTools: () => ['shell', 'browserNavigate', 'browserClick']
+    }
+    const tools = await createBuildTools(withDisabled)({
+      def: def(),
+      chatId: 'c1',
+      depth: 0,
+      mode: 'default'
+    })
+
+    const keys = Object.keys(tools)
+    expect(keys).not.toContain('shell')
+    expect(keys).not.toContain('browserNavigate')
+    expect(keys).not.toContain('browserClick')
+    // Untouched tools remain available.
+    expect(keys).toContain('browserSnapshot')
+    expect(keys).toContain('fileRead')
   })
 
   it('filters allowed tools by exact name, MCP server prefix, and glob patterns', async () => {
