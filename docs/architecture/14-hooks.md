@@ -1,95 +1,120 @@
-# 14 · 钩子系统（Hooks）
+# 14 · Hooks
 
-> 适用范围：与 Codex / Claude Code 兼容的用户可配置子进程钩子系统。最后核对：`src/main/agent/hooks/*`、`src/shared/hooks.ts`、`src/main/agent/ipc/hooks.ts`、`src/preload/hooks.ts`、`src/renderer/src/features/settings/ui/settings-hooks-tab.tsx`。
+> Scope: the Codex / Claude Code–compatible subprocess hooks — event triggers, the payload contract, the trust
+> model, and settings. Last verified against `src/main/agent/hooks/*` and `src/shared/hooks.ts` at v0.2.4.
 
-## 1. 当前状态
+## 1. What hooks are
 
-Hooks 是已落地的 Agent 子系统，不再只是设计稿：
+Hooks are user- or plugin-provided subprocesses that Tanzo runs at lifecycle points. A `PreToolUse` hook can
+block or rewrite a tool call; a `UserPromptSubmit` hook can block a prompt or inject context; `PostToolUse` /
+`Stop` hooks can feed a message back to the agent. They are deliberately compatible with Codex / Claude Code
+hooks so existing hook scripts largely work.
 
-- **配置解析**接受 Codex/Claude 事件集合：`PreToolUse`、`PermissionRequest`、`PostToolUse`、`PreCompact`、`PostCompact`、`SessionStart`、`UserPromptSubmit`、`SubagentStart`、`SubagentStop`、`Stop`。
-- **v1 实际触发**：`SessionStart`、`UserPromptSubmit`、`PreToolUse`、`PostToolUse`、`Stop`，以及 Tanzo 自用的 `Notification` 类型保留在 `HOOK_EVENTS_V1`。
-- **配置格式**当前只读 `hooks.json`；TOML `[hooks]` 未接入。
-- **设置 UI 已存在**：Settings → Hooks 通过 `HOOKS_CHANNELS` 列表、重载、启停、信任、预览。
-- **信任状态**落 `app_settings`，不新增专用表。
+## 2. Event types
 
-## 2. 兼容契约
+`src/shared/hooks.ts` defines two sets:
 
-对脚本可见的线协议沿用 Codex/Claude 形态：
+- **Full Tanzo set** (`HOOK_EVENTS`, `:1-11`): `PreToolUse`, `PermissionRequest`, `PostToolUse`, `PreCompact`,
+  `PostCompact`, `SessionStart`, `UserPromptSubmit`, `SubagentStart`, `SubagentStop`, `Stop`.
+- **v1 / Claude Code–compatible set** (`HOOK_EVENTS_V1`, `:16-22`): `SessionStart`, `UserPromptSubmit`,
+  `PreToolUse`, `PostToolUse`, `Stop`, `Notification`.
 
-1. 配置事件键为 PascalCase，handler 是 `{ type:"command", command, commandWindows?, timeout?, async?, statusMessage? }`。
-2. 执行时把事件载荷作为 **stdin JSON** 写给子进程，输入键为 `snake_case`，包含 `hook_event_name`。
-3. stdout 输出为 `camelCase` JSON；未知字段按事件解析器拒绝或忽略到受控结果。
-4. 退出码语义：`0` 解析 stdout，`2` 用 stderr 表示阻断/反馈，其它为非阻断失败。
+Config keys are snake_case (`pre_tool_use`, `post_tool_use`, …) mapped in `hooks/config.ts`.
 
-`updatedInput` 与 `updatedMCPToolOutput` 当前接受但不改写实际工具入参/输出；服务会记录保守告警。这是 v1 的明确裁剪。
+> Some events in the full set (`PermissionRequest`, `PreCompact` / `PostCompact`, `SubagentStart` /
+> `SubagentStop`) are declared but do not all have a corresponding payload type or dispatcher yet — treat them
+> as reserved unless you can find a dispatch site.
 
-## 3. 主进程模块结构
+## 3. Subprocess execution (`hooks/executor.ts`)
+
+Hooks are spawned with Node `child_process.spawn` using the resolved shell:
+
+- `detached: platform !== 'win32'` (`executor.ts:75`) — a process group on Unix, killed with
+  `process.kill(-pid, 'SIGKILL')`; Windows uses `taskkill … /t /f`.
+- Timeout: default 600 000 ms (`DEFAULT_TIMEOUT_MS`, `executor.ts:8`), minimum 1 000 ms; a per-entry `timeout`
+  field overrides.
+- stdout/stderr are each capped at 1 MB (`MAX_CAPTURE_BYTES`, `executor.ts:9`).
+- stdin: the JSON payload is written then the stream is closed.
+
+## 4. Payload contract (`hooks/types.ts`)
+
+stdin is always `JSON.stringify(HookInput)`. Common fields: `session_id`, `turn_id`, `transcript_path`, `cwd`,
+`model`, `permission_mode`. Event-specific additions:
+
+- `PreToolUse`: `tool_name`, `tool_input`, `tool_use_id`.
+- `PostToolUse`: `tool_name`, `tool_input`, `tool_response`, `tool_use_id`.
+- `UserPromptSubmit`: `prompt`.
+- `SessionStart`: `source: 'startup' | 'resume' | 'clear' | 'compact'`.
+- `Stop`: `stop_hook_active`, `last_assistant_message`.
+
+The `permission_mode` wire values map internal modes to Claude Code names (`hooks/service.ts`):
+`default → 'default'`, `plan → 'plan'`, `yolo → 'dontAsk'`, `dangerous → 'bypassPermissions'`.
+
+## 5. Output / exit-code contract (`hooks/output-parser.ts`)
+
+- Exit 0 with no stdout → pass-through (no effect).
+- Exit 0 with JSON stdout → parsed against a per-event Zod schema.
+- Exit 2 → stderr text becomes a block/deny reason (`PreToolUse` / `UserPromptSubmit` = deny; `PostToolUse` /
+  `Stop` = feedback message).
+- Other non-zero → an error entry, logged.
+
+`PreToolUse` JSON understands `decision: 'approve' | 'block'`, `reason`, and
+`hookSpecificOutput.permissionDecision: 'allow' | 'deny' | 'ask'` with a reason and `additionalContext`.
+Universal fields include `continue: false` (non-PreToolUse → stop the agent), `stopReason`, `suppressOutput`,
+and `systemMessage`. Note: `hookSpecificOutput.updatedInput` (PreToolUse) and `updatedMCPToolOutput`
+(PostToolUse) are currently parsed but ignored with a warning.
+
+## 6. Tool-name aliases (Codex / Claude Code compatibility)
+
+`hooks/tool-aliases.ts` matches Tanzo tool names against both native names and their Claude Code aliases:
 
 ```text
-src/main/agent/hooks/
-  types.ts             事件名、线协议输入/输出、HookEntry、HookOutcome
-  config.ts            hooks.json 解析、matcher 编译、schema 守卫
-  discovery.ts         项目/用户/app 配置发现与分层合并
-  trust.ts             内容哈希、enabled/trusted/modified/untrusted 判断
-  store.ts             trust/enabled 状态写入 app_settings
-  executor.ts          带 stdin 的子进程执行器，复用 shell 解析与 safeChildEnv
-  dispatcher.ts        匹配 handler、执行、按声明顺序聚合结果
-  output-parser.ts     按事件解释 stdout/stderr/exitCode
-  pending-context.ts   per-chat 待注入上下文缓冲
-  context-section.ts   把 pending context 暴露给 ContextEngine
-  tool-aliases.ts      Tanzo↔Codex/Claude 工具名静态别名（见 §7）
-  service.ts           HookService 对运行时与 UI 的统一入口
+shell / shellStart → Bash
+fileEdit           → Edit
+multiEdit          → MultiEdit, Edit
+fileWrite          → Write
+fileRead           → Read
+glob / grep        → Glob / Grep
 ```
 
-执行器独立于普通 shell 工具：hooks 需要 stdin，因此不能复用 `shell/runner.ts` 的 `stdio: ['ignore','pipe','pipe']` 形态。
+`matchNamesForTool(toolName)` returns `[toolName, ...aliases]`, so a hook whose `matcher` targets `Bash` fires
+for Tanzo's `shell`. Combined with `HOOK_EVENTS_V1`, this makes Claude Code hook configs largely portable.
 
-## 4. 发现、信任与存储
+## 7. Trust model (`hooks/trust.ts`)
 
-`createHookService` 使用 `createHooksStore(db)`，并从 `agent/module.ts` 注入 `userDir` 与 session metadata。
+Every hook entry has a `contentHash` = SHA-256 of `{ command, commandWindows, event, matcher }`
+(`hooks/config.ts`). Trust status:
 
-- **项目层**：对话 cwd 下的 `.tanzo/hooks.json`。
-- **用户层**：`~/.tanzo/hooks.json` 与 app userData 下的 agent 目录。
-- **信任门**：只有 enabled 且 trusted/managed 的 hook 会执行；新 hook 或命令内容变化后保持可见但 inert，直到用户信任。
-- **持久化**：enabled/trusted/contentHash 写 `app_settings`，与 settings/preferences 的轻量键值策略一致。
+| Status | Condition |
+|---|---|
+| `managed` | source is `managed` (plugin-contributed) — always active |
+| `trusted` | the stored hash equals the current `contentHash` |
+| `modified` | a stored hash exists but no longer matches (the command changed) |
+| `untrusted` | no stored hash |
 
-## 5. 生命周期缝点
+`isActive(entry, state) = isEnabled && (managed || trusted)` (`trust.ts:17-20`). Neither `untrusted` nor
+`modified` hooks execute — editing a trusted hook's command silently disarms it until re-approved.
+`setTrusted(key, contentHash)` approves the hook at its current content; `setEnabled(key, enabled)` toggles it
+without changing trust.
 
-| 事件 | 当前缝点 | 效果 |
-|---|---|---|
-| `SessionStart` | `ChatInbox.submitMessage` 首次提交路径 | 可追加上下文；阻断会拒绝本次提交 |
-| `UserPromptSubmit` | `ChatInbox.submitMessage` 用户消息入口 | 可追加上下文；可阻断用户 prompt |
-| `PreToolUse` | `agent/module.ts` 包裹 `policy.decide` | 在标准策略前短路 deny；不能放宽策略 |
-| `PostToolUse` | 工具执行后反馈路径 | 追加上下文/反馈到后续 step；不改写工具输出 |
-| `Stop` | `AgentService.run` 完成后 | fire-and-forget；阻断续接不是 v1 行为 |
+## 8. Discovery and settings
 
-上下文注入由 `hooks/pending-context.ts` 暂存，再由 `hooks/context-section.ts` 作为 `ContextSection` 注入 `ContextEngine`。这让 hooks 追加内容走同一套 Section × Provider 缓存/布局路径。
+Config discovery layers, lowest → highest precedence (`hooks/discovery.ts`):
 
-## 6. IPC 与 renderer
+1. `{userDir}/hooks.json` (custom user dir) — source `user`.
+2. `~/.tanzo/hooks.json` — source `user`.
+3. `.tanzo/hooks.json` (cwd) — source `project`.
+4. Plugin-contributed configs — source `managed` (auto-trusted, no user approval needed).
 
-共享契约在 `src/shared/hooks.ts`：
+Trust/enabled state is stored in the shared `app_settings` table under the key prefix `hooks.state:`, scoped by
+`workspaceId` (or the app scope), with value `{ enabled, trustedHash? }` (`hooks/store.ts`). There is no
+dedicated hooks table. See [22 Persistence](./22-persistence.md).
 
-```ts
-HOOKS_CHANNELS = {
-  list: 'hooks:list',
-  reload: 'hooks:reload',
-  setEnabled: 'hooks:set-enabled',
-  setTrusted: 'hooks:set-trusted',
-  preview: 'hooks:preview'
-}
-```
+## 9. Context injection
 
-preload 在 `src/preload/hooks.ts` 暴露 `window.electron.hooks`；renderer 的 `platform/electron/hooks-client.ts` 包 `withDecodedIpcErrors`；Settings 页面通过 `settings-hooks-tab.tsx` 提供启停、信任、reload 与 preview。
+`hooks/context-section.ts`: a hook's `additionalContext` and `feedback` strings are buffered per chatId
+(`PendingHookContext`) and drained into the system prompt as a volatile `<hook-context>…</hook-context>`
+section on each step. This is the extra section mounted via `contextEngine`'s `extraSections`. See
+[11 Context Engineering](./11-context-engineering.md).
 
-## 7. 工具名匹配
-
-Codex/Claude matcher 常写 `Bash`、`Edit`、`Write`、`Read` 等名；Tanzo 工具名是 `shell`、`fileEdit`、`fileWrite`、`fileRead`。`hooks/tool-aliases.ts` 维护静态别名，使 matcher 可命中 Tanzo 实际工具名或兼容别名。
-
-## 8. 风险与不变量
-
-- [ ] hooks 是任意代码执行入口；未信任 hook 必须 inert。
-- [ ] `PreToolUse` 只能收紧策略，永不覆盖内置 deny 或审批规则为 allow。
-- [ ] stdin/exitCode/stdout/stderr 语义必须保持 Codex/Claude 兼容。
-- [ ] hooks context 只通过 ContextEngine 注入，避免绕开 prompt 布局与缓存策略。
-- [ ] v1 不支持改写工具入参/输出，也不触发 PermissionRequest/Compact/Subagent 事件。
-
-下一篇 → [20 供应商运行时](./20-providers.md)
+Next → [20 Providers](./20-providers.md)

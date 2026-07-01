@@ -1,83 +1,114 @@
-# 20 · 供应商运行时
+# 20 · Providers
 
-> 适用范围：`ProviderRuntime`、五家适配器、模型解析、凭证与密钥安全、Provider Options。最后核对：`src/main/provider/*`、`src/shared/provider.ts`。
+> Scope: `ProviderRuntime`, the five adapters, model resolution, credential/secret security, provider options,
+> and SSE filtering. Last verified against `src/main/provider/*` and `src/shared/provider.ts` at v0.2.4.
 
-## 1. 模块结构
+## 1. The adapter registry
 
-`module.ts`：`createProviderStore(db)` + `createProviderService(store, createSecretCodec())` → `registerProviderIpc(ipcMain, service)`。service 内部构造 `ProviderRuntime`（`runtime.ts`）并委派给按供应商分的适配器：注册表在 `adapter.ts`（`ADAPTERS`/`getAdapter`），五家实现在 `adapters/<provider>.ts`。
-
-## 2. ProviderRuntime（`runtime.ts:7`）
-
-```ts
-interface ProviderRuntime {
-  resolveLanguageModel(modelRef: string): LanguageModel
-  invalidate(providerId?: ProviderId): void
-}
-createProviderRuntime(deps: { loadCredentials(providerId, keyId?): Credentials })
-```
-
-### 2.1 模型解析管线（config → ai-sdk LanguageModel）
-
-1. `modelRef` 是规范字符串 `"<providerId>:<modelId>"`（如 `anthropic:claude-...`）。`parseModelRef`（`runtime.ts:27`）校验前缀属于 `PROVIDER_IDS` 且 modelId 非空，否则 `PROVIDER_MODEL_REF_INVALID`。
-2. service 入口 `resolveLanguageModel`（`service.ts:912`）先 `ensureUsableLanguageModel`（调用点 `service.ts:921`，定义 `service.ts:623`）：模型须存在于 `provider_models`（family `language`）且 `enabled`，否则 `PROVIDER_MODEL_NOT_FOUND` / `PROVIDER_MODEL_DISABLED`。
-3. runtime 调 `loadCredentials(providerId)` → `getAdapter(providerId).createLanguageModel(modelId, credentials)`。
-4. 结果经 `wrapLanguageModel({ model, middleware: MIDDLEWARE })`（当前 `MIDDLEWARE` 为空）。
-5. **缓存不变量**：LRU 键 `[providerId, modelId, credentialFingerprint]`（`\u001f` 连接）。`credentialFingerprint` 是凭证条目排序后的 sha256。上限 32 条。`invalidate(providerId?)` 按前缀或全量清除——key 变更/删除/激活时由 service 调用。
-
-## 3. 适配器模式（`adapter-types.ts:27`）
+All five adapters are registered in a compile-time record (`provider/adapter.ts:12-18`):
 
 ```ts
-interface ProviderAdapter {
-  providerId: ProviderId
-  validateCredentials(credentials): boolean
-  createLanguageModel(modelId, credentials): LanguageModel
-  createEmbeddingModel?(...)  createImageModel?(...)
-  createTranscriptionModel?(...)  createSpeechModel?(...)
-  fetchModels(credentials, family): Promise<RemoteModel[]>
-  testConnection(credentials): Promise<ConnectionTestResult>
+ADAPTERS = {
+  openai:              openaiAdapter,
+  anthropic:           anthropicAdapter,
+  google:              googleAdapter,
+  deepseek:            deepseekAdapter,
+  'openai-compatible': openaiCompatibleAdapter
 }
 ```
 
-`Credentials = Record<string, string>`。注册表 `ADAPTERS: Record<ProviderId, ProviderAdapter>`（`adapter.ts:12`），未知 id 抛 `PROVIDER_UNKNOWN`。
+`getAdapter(providerId)` does a direct lookup and throws `TanzoNotFoundError('PROVIDER_UNKNOWN')` for unknown
+ids (`adapter.ts:20-27`). A `ProviderAdapter` (`adapter-types.ts:27-36`) must implement
+`validateCredentials`, `createLanguageModel(modelId, credentials)` (returning a Vercel AI SDK `LanguageModel`),
+`fetchModels`, and `testConnection`, with optional embedding/image/transcription/speech factories.
 
-五家适配器：
+Per-adapter SDK instantiation:
 
-| 适配器 | SDK 工厂 | LanguageModel 调用 | language 外能力 |
-|---|---|---|---|
-| openai | `createOpenAI` | `provider(modelId)` | embedding/image/transcription/speech |
-| anthropic | `createAnthropic` | `provider(modelId)` | 仅 language；分页 `/models` |
-| google | `createGoogleGenerativeAI` | `provider(modelId)` | embedding/image；按 `supportedGenerationMethods` 过滤 |
-| deepseek | `createDeepSeek` | `.chat(modelId)` | 仅 language |
-| openai-compatible | `createOpenAICompatible` | `.chatModel(modelId)` | embedding/image；需 `baseUrl` 而非 apiKey |
+| Adapter | SDK package | Factory |
+|---|---|---|
+| openai | `@ai-sdk/openai` | `createOpenAI(…)(modelId)` |
+| anthropic | `@ai-sdk/anthropic` | `createAnthropic(…)(modelId)` |
+| google | `@ai-sdk/google` | `createGoogleGenerativeAI(…)(modelId)` |
+| deepseek | `@ai-sdk/deepseek` | `createDeepSeek(…).chat(modelId)` |
+| openai-compatible | `@ai-sdk/openai-compatible` | `createOpenAICompatible(…).chatModel(modelId)` |
 
-共享助手：`adapter-utils.ts`（`bearer`/`credentialText`/`mapIdModels`/`testByFetching`/`TIMEOUTS`）、`http.ts`（`fetchJson`/`ensureUrlProtocol`）、`sse-filter.ts` 的 `filterResponsesApiSseFetch()`（修补 OpenAI Responses-API 畸形 SSE，openai 与 openai-compatible 共用）。
+## 2. `ProviderRuntime`
 
-模型元数据：`model-metadata.ts` 抓 `https://models.dev/api.json`（缓存 1h）回填 `contextWindow`/`maxOutput`/能力标志（仅映射 openai/anthropic/google/deepseek）。
+`createProviderRuntime(deps)` (`provider/runtime.ts:44-87`) exposes
+`{ resolveLanguageModel(modelRef), invalidate(providerId?) }` and keeps an LRU cache capped at 32 entries. The
+cache key is `providerId ⟶ modelId ⟶ credentialFingerprint` (a SHA-256 over sorted credential pairs). On a
+miss it calls `getAdapter(providerId).createLanguageModel(modelId, credentials)` and wraps the result with
+`wrapLanguageModel({ model, middleware: MIDDLEWARE })` (`MIDDLEWARE` is currently empty). `invalidate` clears
+all entries or only those for one provider (called when keys/models change).
 
-## 4. Provider Options（`options.ts` + `options/*.ts`）
+The runtime is created inside `ProviderService`, which supplies `loadCredentials`; the module
+(`provider/module.ts:21-39`) wires `ProviderStore` (SQLite) → `ProviderService(store, createSecretCodec())`.
 
-- `OPTION_SCHEMAS` 是五家 `ProviderOptionSchema[]` 的并集。每个 `options/<provider>.ts` 声明面向 UI 的 schema，`fields[].path` 是进 ai-sdk `ProviderOptions` 的点路径；含编译期 `_typecheck` 对真实 ai-sdk 选项类型校验。
-- `ProviderDefaultsState` 三桶：`callDefaults`、`providerOptions`、`rawProviderOptions`（`shared/provider.ts:215`）。
-- `mergeProviderOptions(defaults, providerId, family)`（`options.ts:84`）→ `scopedProviderOptions`：把松散键嵌到正确 `providerKey` 下，再深合并 `rawProviderOptions`（raw 优先）。
-- **安全不变量**：`UNSAFE_OPTION_KEYS = {__proto__, constructor, prototype}` 在每次合并/净化时剥离。`canonicalProviderOptionKey` 把 `'openai-compatible'` 映射为 `'openaiCompatible'`。
-- service 暴露 `getProviderOptions`、`getCallSettings` 供 agent 运行时使用。
+## 3. Model-id resolution
 
-## 5. 凭证与密钥安全
+A model ref is `"providerId:modelId"`, split at the first colon. The canonical provider ids are
+`['openai', 'anthropic', 'google', 'deepseek', 'openai-compatible']` (`src/shared/provider.ts`).
 
-- **静态加密**：`SecretCodec`（`secret.ts:7`）用 Electron `safeStorage`。密文前缀 `safe:`（OS 加密）或 `plain:`（base64 回退，**默认禁用**）。模块用 `createSecretCodec()` 无明文回退——加密不可用时抛 `PROVIDER_SECRET_ENCRYPTION_UNAVAILABLE`。
-- **存储表**：API key 存 `provider_keys.encrypted_value`；非 apiKey 密钥字段存 `provider_connections.secret_fields_encrypted_json`；公开字段存 `public_fields_json`。
-- **掩码不变量**：密钥绝不以明文跨 IPC。`maskSecret`（`service.ts:76`）只露前 4 字符 + 圆点；`buildConnectionInfo` 掩码表单值；`isMask` 检测掩码提交，重存掩码时保留原值。`ProviderKeySummary` 只带 `maskedKey`。
-- 活跃 key 选择：`selectActiveKey` 未设时回落第一把；`loadCredentialSnapshot` 每次使用 touch `lastUsedAt`。
+`parseModelRef` (`runtime.ts:27-42`) validates the prefix against `PROVIDER_IDS` and requires a non-empty model
+id (throwing `PROVIDER_MODEL_REF_INVALID` on failure). The full path in `ProviderService.resolveLanguageModel`:
 
-## 6. ProviderService 与通道
+1. `parseModelRef(modelRef)`.
+2. `ensureUsableLanguageModel(providerId, modelId)` — queries the `provider_models` table; throws
+   `PROVIDER_MODEL_NOT_FOUND` if missing or `PROVIDER_MODEL_DISABLED` if disabled.
+3. Delegates to `runtime.resolveLanguageModel(modelRef)` → cache-or-create.
 
-`ProviderApi`（`shared/provider.ts:299`）+ 运行时方法（`resolveLanguageModel`/`getModelMetadata`/`getProviderOptions`/`getCallSettings`）。`PROVIDER_CHANNELS`（`shared/provider.ts:1`，前缀 `provider:`），`ipc.ts` 用 zod 校验。
+## 4. Credential / secret security
 
-## 7. 供应商不变量
+Secrets are handled by a `SecretCodec` (`provider/secret.ts`) built from Electron `safeStorage`:
 
-- [ ] `modelRef` = `"<providerId>:<modelId>"`，前缀属于 5 个 `PROVIDER_IDS`。
-- [ ] 密钥不以明文跨 IPC；只露 `maskedKey`；存储需 OS `safeStorage`（无明文回退）。
-- [ ] LanguageModel 缓存按凭证指纹键；key 变更必须 `invalidate(providerId)`（service 在每次 key 变更时调）。
-- [ ] Provider Options 剥离原型污染键；raw 选项深合并时覆盖 scoped。
+- `encrypt(plaintext)`: if `safeStorage.isEncryptionAvailable()`, store as `safe:` + base64 of
+  `safeStorage.encryptString(...)`. Otherwise, only if `allowPlaintextFallback` (default `false`), store as
+  `plain:` + base64; else throw `PROVIDER_SECRET_ENCRYPTION_UNAVAILABLE`.
+- `decrypt(ciphertext)`: `safe:` → `safeStorage.decryptString`; `plain:` → base64 decode; otherwise throw.
 
-下一篇 → [21 MCP 集成](./21-mcp.md)
+The encrypted string is stored in SQLite (`provider_keys.encrypted_value`, `provider_connections`); only
+encrypted values are persisted.
+
+**Keys never cross IPC in plaintext** — this is enforced, not incidental:
+
+- `maskSecret(value)` and `maskEncryptedSecret(codec, ciphertext)` (`service.ts`) decrypt on the main process,
+  mask, and return only the masked form.
+- `buildConnectionInfo` always sends masked `formValues` to the renderer; `keySummary` returns a
+  `ProviderKeySummary` whose `maskedKey` is the mask.
+- `decryptCredentials()` is called only inside the main-process `loadCredentials()`; the decrypted `Credentials`
+  object is consumed by adapter factories and is never serialized into any IPC return value.
+- The IPC handlers in `provider/ipc.ts` return `ProviderWorkspace`, `ProviderKeySummary[]`, `ModelRefreshResult`,
+  … — all masked, never raw keys.
+
+See [50 Cross-Cutting](./50-cross-cutting.md).
+
+## 5. Provider options
+
+`ProviderDefaultsState` (`src/shared/provider.ts`) has three buckets:
+
+- `callDefaults` — raw call settings (temperature, max tokens, …), returned directly by
+  `getCallSettings(providerId, family)`.
+- `providerOptions` — scoped to the provider key during merge.
+- `rawProviderOptions` — merged verbatim (bypasses scoping).
+
+`mergeProviderOptions(defaults, providerId, family)` (`provider/options.ts`) routes fields that match a known
+schema `providerKey` into that namespace, deep-merges `rawProviderOptions`, and guards against prototype
+pollution (`UNSAFE_OPTION_KEYS = { __proto__, constructor, prototype }`). Per-provider option schemas live in
+`provider/options/*.ts` (e.g. anthropic `thinking.budgetTokens`, openai `reasoningEffort`, google
+`thinkingConfig`). The `'openai-compatible'` key is canonicalized to `'openaiCompatible'`.
+
+## 6. SSE filtering (`provider/sse-filter.ts`)
+
+`filterResponsesApiSseFetch(baseFetch)` wraps the fetch used by the openai and openai-compatible adapters, and
+applies **only** to URLs ending in `/responses` (the OpenAI Responses API):
+
+- **Non-streaming JSON**: normalizes the body — synthesizes missing `output` item ids, defaults missing
+  `annotations` / `summary` arrays.
+- **Streaming SSE**: buffers the byte stream, splits on frame boundaries, keeps frames whose `type` begins with
+  `response.` or equals `error`, and drops everything else.
+
+Why: the SDK's OpenAI adapter was written for Chat Completions streaming; the Responses API emits named event
+types plus fields the SDK does not expect. The filter removes incompatible frames so the parser does not choke,
+and fills in required fields.
+
+Next → [21 MCP](./21-mcp.md)

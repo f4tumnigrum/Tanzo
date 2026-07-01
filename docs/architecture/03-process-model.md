@@ -1,60 +1,85 @@
-# 03 · 进程模型
+# 03 · Process Model
 
-> 适用范围：Electron 三进程切分、启动/关闭时序、窗口与安全基线。最后核对：`src/main/index.ts`、`src/main/window.ts`、`src/main/pet-window.ts`、`electron.vite.config.ts`、`electron-builder.yml`。
+> Scope: the Electron three-process split, startup/shutdown sequences, window and security baseline. Last
+> verified against `src/main/index.ts`, `src/main/window.ts`, `src/main/pet-window.ts`,
+> `electron.vite.config.ts`, `electron-builder.yml` at v0.2.4.
 
-## 1. 三进程职责
+## 1. Three-process responsibilities
 
-| 进程 | 职责 | 不可做 |
+| Process | Responsibility | Must not |
 |---|---|---|
-| **main** (Node) | 所有副作用与真源：模型调用、文件/shell、SQLite、MCP、策略、窗口生命周期 | 不渲染 UI |
-| **preload** | 受控桥接：通过 `contextBridge` 暴露 `window.electron`，仅由 `invoke()` / `subscribe()` 两原语构成 | 不含业务逻辑 |
-| **renderer** (React) | 呈现与交互，内存态重建 | 不落盘消息、不直接访问 Node |
+| **main** (Node) | All side effects and truth: model calls, files/shell, SQLite, MCP, policy, window lifecycle | Render UI |
+| **preload** | Controlled bridge: exposes `window.electron` via `contextBridge`, built only from the two primitives `invoke()` / `subscribe()` | Contain business logic |
+| **renderer** (React) | Rendering and interaction; in-memory reconstruction | Persist messages; access Node directly |
 
-renderer 与 main 之间没有第二条通路：所有跨进程调用都经 preload 的 `window.electron`，且 renderer 侧统一收敛在 `platform/electron/*` 客户端层。详见 [04 跨进程契约](./04-ipc-and-contracts.md)、[30 渲染层](./30-renderer.md)。
+There is no second path between `renderer` and `main`: every cross-process call goes through preload's
+`window.electron`, and on the renderer side is funneled through the `platform/electron/*` client layer. See
+[04 IPC & Contracts](./04-ipc-and-contracts.md) and [30 Renderer](./30-renderer.md).
 
-## 2. 启动时序
+## 2. Startup sequence
 
-入口 `src/main/index.ts`。分两段：
+Entry point `src/main/index.ts`, in two phases.
 
-### 2.1 `app.ready` 之前（模块求值期）
+### 2.1 Before `app.ready` (module-evaluation phase)
 
-按源码顺序同步执行：
+Executed synchronously in source order:
 
-1. `fixPath()` —— 修正 GUI 启动进程的 `PATH`（`index.ts:33`）。
-2. `registerWallpaperScheme()` —— 注册特权协议 `tanzo-asset://`。**必须在 `app.ready` 前**，因为 `protocol.registerSchemesAsPrivileged` 只在 ready 前有效（`index.ts:35`，`wallpaper.ts:24`）。这是一条硬约束。
-3. `initializeLogger()` + `createLogger('main')`（`index.ts:37-38`）。
-4. `app.requestSingleInstanceLock()` —— 未获取锁的重复实例 `app.exit(0)`；已运行实例收到 `second-instance` 时聚焦主窗口（`index.ts:147-156`）。**单实例是不变量。**
+1. `fixPath()` — repair `PATH` for GUI-launched processes (`index.ts:34`).
+2. `registerWallpaperScheme()` — register the privileged protocol `tanzo-asset://`. **Must run before
+   `app.ready`**, because `protocol.registerSchemesAsPrivileged` is only effective before ready
+   (`index.ts:36`). This is a hard constraint.
+3. `initializeLogger()` + `createLogger('main')` (`index.ts:38-39`).
+4. `app.requestSingleInstanceLock()` — a duplicate instance that fails to acquire the lock calls `app.exit(0)`;
+   the already-running instance focuses the main window on `second-instance` (`index.ts:181-190`).
+   **Single-instance is an invariant.**
 
-`markStartup(step, extra)` 是一个轻量启动剖析器，记录每步耗时，贯穿整个 ready 流程（`index.ts:42-51`）。
+`markStartup(step, extra)` is a lightweight startup profiler that records the duration of each step throughout
+the ready flow (`index.ts:76-85`).
 
-### 2.2 `app.whenReady().then(...)`（`index.ts:158-271`）
+### 2.2 `reserveLoopbackPort()` → `app.whenReady()` → `bootstrap()` (`index.ts:306-316`)
 
-按序：
+Before `bootstrap`, an **ephemeral loopback port** is reserved and, if allocation succeeds, opened as
+Chromium's remote-debugging endpoint bound to `127.0.0.1` only (`index.ts:49-72`). This drives browser
+automation via chrome-devtools-mcp over CDP; a random port (never fixed) avoids collisions and shrinks the
+guessing window, and Electron's DevTools endpoint enforces a Host-header check. `0` means the feature is
+disabled.
 
-1. `Menu.setApplicationMenu(null)` —— 无原生菜单。
-2. `setAppUserModelId('com.luminstudio.tanzo')`。
-3. `ensureMacDockIcon()`（darwin）。
-4. `installDevProcessLifecycle()` —— 仅 dev：每秒轮询 `process.ppid`，父进程（`electron-vite dev` 运行器）变化/退出则退出。
-5. `browser-window-created` → `optimizer.watchWindowShortcuts`。
-6. **无 DB 依赖的独立注册**：`initPreferences()` + `registerPreferencesIpc()`；`registerSystemIpc()`；`registerWallpaperProtocol()` + `registerWallpaperIpc()`；`nativeTheme.on('updated', broadcastSystemPreferences)`。
-7. **模块工厂链**（每个 `.registerIpc(ipcMain)`）：
-   - `databaseModule = createDatabaseModule({ userDataPath, migrations: [tanzoMigrations] })` —— 最先，无 IPC。
-   - `mcpModule = createMcpModule({ db, getWindows })`。
-   - `providerModule = createProviderModule({ db })`。
-   - `agentModule = createAgentModule({ db, providerService, mcpService, workspaceRoot, getWindows, getChatWindows })` —— 消费 provider/mcp 的 `service`（`index.ts:201-209`）。
-   - `slashCommandModule = createSlashCommandModule({ skills: agentModule.skills })` —— 依赖 agent 的技能库。
-   - `fileMentionModule`、`petAssetsModule`（无依赖）。
-8. `registerPetWindowIpc({ ..., setActiveChatId: agentModule.presence.setActiveChatId })`。
-9. `showMainWindow()` —— 惰性创建主窗口。
-10. `syncPetWindow()` —— 按 `getPreferences().petEnabled` 协调 pet 窗口存在性；`onPreferencesChanged` 使其响应式。
-11. `void mcpModule.initialize()` —— 异步 fire-and-forget，UI 起来后才连 MCP 服务器。
-12. `app.on('activate', showMainWindow)`。
+`bootstrap()` (`index.ts:192-304`) then runs in order:
 
-## 3. 关闭时序
+1. `Menu.setApplicationMenu(null)` — no native menu.
+2. `setAppUserModelId('com.luminstudio.tanzo')`.
+3. `ensureMacDockIcon()` (darwin).
+4. `installDevProcessLifecycle()` — dev only: polls `process.ppid` every second and quits if the parent (the
+   `electron-vite dev` runner) changes or exits (`index.ts:106-133`).
+5. `browser-window-created` → `optimizer.watchWindowShortcuts`.
+6. **Independent registrations with no DB dependency**: `initPreferences()` + `registerPreferencesIpc()`;
+   `registerSystemIpc()`; `registerWallpaperProtocol()` + `registerWallpaperIpc()`;
+   `nativeTheme.on('updated', broadcastSystemPreferences)` (`index.ts:206-213`).
+7. **The module-factory chain** (each `.registerIpc(ipcMain)`):
+   - `databaseModule = createDatabaseModule({ userDataPath, migrations: [tanzoMigrations] })` — first, no IPC
+     (`index.ts:215`).
+   - `mcpModule = createMcpModule({ db, getWindows, remoteDebuggingPort })` (`index.ts:221`).
+   - `providerModule = createProviderModule({ db })` (`index.ts:229`).
+   - `agentModule = createAgentModule({ db, providerService, mcpService, workspaceRoot, getWindows,
+     getChatWindows, disabledTools })` — consumes the provider/mcp `service` (`index.ts:235`).
+   - `slashCommandModule = createSlashCommandModule({ skills: agentModule.skills })` — depends on the agent's
+     skills store (`index.ts:247`).
+   - `fileMentionModule`, `petAssetsModule` — no dependencies (`index.ts:251-256`).
+8. `registerPetWindowIpc({ …, setActiveChatId: (id) => agentModule?.presence.setActiveChatId(id) })`
+   (`index.ts:259`).
+9. `showMainWindow()` — lazily creates the main window (`index.ts:266`).
+10. `syncPetWindow()` — reconciles the pet window's existence against `getPreferences().petEnabled`;
+    `onPreferencesChanged` makes it reactive (`index.ts:269-292`).
+11. `void mcpModule.initialize()` — async fire-and-forget; MCP servers connect only after the UI is up
+    (`index.ts:294`).
+12. `app.on('activate', showMainWindow)`.
 
-`before-quit`（`index.ts:273-292`）由 `isQuitting` 守卫，`preventDefault()` 后异步拆解，顺序刻意：
+## 3. Shutdown sequence
 
-```
+`before-quit` (`index.ts:318-337`) is guarded by `isQuitting`; after `preventDefault()` it tears down
+asynchronously in a deliberate order:
+
+```text
 destroyPetWindow
   → slashCommandModule.close() → fileMentionModule.close()
   → await agentModule.close()  → await mcpModule.close()
@@ -62,28 +87,38 @@ destroyPetWindow
   → app.exit(0)
 ```
 
-DB 最后关（所有人依赖它）；agent/mcp 异步拆解需 `await`。`agentModule.close()` 内部：反注册 IPC → 释放 presence → 取消所有运行中对话 → `settleRuns(3000)` → 关闭 shell 会话。失败路径 `app.exit(1)`。
+The DB closes last (everyone depends on it); agent/mcp teardown is async and awaited. `agentModule.close()`
+internally: unregister IPC → dispose presence → `git.unwatchAll()` → cancel all running conversations →
+`settleRuns(3000)` → close shell sessions (`src/main/agent/module.ts:468`). The failure path calls
+`app.exit(1)`.
 
-`window-all-closed`：非 darwin 退出；darwin 保活。主窗口 `close` 在 macOS 上隐藏而非关闭——标准 mac 单窗口行为。
+`window-all-closed`: quit on non-darwin; stay alive on darwin. On macOS the main window's `close` hides
+instead of closing — standard single-window mac behavior (`index.ts:147-160`).
 
-## 4. 窗口模型
+## 4. Window model
 
-两类窗口，同一 preload，不同 HTML 入口。
+Two window kinds, the same preload, different HTML entries.
 
-### 4.1 主窗口（`window.ts:47-109`）
+### 4.1 Main window (`window.ts:48-114`)
 
-- 惰性创建，尺寸 `initialBounds()`（夹到工作区 82%×86%，最小 1024×680）。
-- 平台 chrome：macOS `titleBarStyle: 'hiddenInset'` + `transparent` + `vibrancy: 'under-window'`；Windows `frame: false` + 亚克力/实色。无边框自定义标题栏。
-- 加载 dev 的 `ELECTRON_RENDERER_URL` 或 prod 的 `../renderer/index.html`。
+- Lazily created, sized by `initialBounds()` (clamped to 82% × 86% of the work area, minimum 1024 × 680).
+- Platform chrome: on macOS `titleBarStyle: 'hidden'` + `transparent` + `vibrancy: 'under-window'`; on Windows
+  `frame: false` + acrylic/solid. A custom frameless title bar in either case.
+- Loads dev's `ELECTRON_RENDERER_URL` or prod's `../renderer/index.html`.
 
-### 4.2 Pet 窗口（`pet-window.ts:148-214`）
+### 4.2 Pet window (`pet-window.ts`)
 
-- 浮动、透明、无边框覆盖层：`alwaysOnTop`、`skipTaskbar`（非 mac）、不可缩放/移动/全屏。
-- 置顶层级 mac `'screen-saver'`、其它 `'pop-up-menu'`；mac 上 `setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })`。
-- **点击穿透 + 命中矩形轮询**：默认 `setIgnoreMouseEvents(true, { forward: true })`，90ms 轮询根据光标是否落在 renderer 上报的 `hitRect`（或拖拽中）切换可交互。renderer 通过 `pet:set-hit-rect` / `pet:set-dragging` 驱动。
-- 生命周期耦合：主窗口 `closed` 同时销毁 pet 窗口——pet 不能比主窗口活得久。
+- A floating, transparent, frameless overlay: `alwaysOnTop`, `skipTaskbar` (non-mac), not resizable/movable/
+  fullscreen-able.
+- Stacking level `'screen-saver'` on mac, `'pop-up-menu'` elsewhere; on mac
+  `setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })`.
+- **Click-through + hit-rect polling**: defaults to `setIgnoreMouseEvents(true, { forward: true })`, and every
+  ~90 ms toggles interactivity based on whether the cursor is inside the renderer-reported `hitRect` (or a drag
+  is in progress). The renderer drives this via `pet:set-hit-rect` / `pet:set-dragging`.
+- Lifecycle coupling: the main window's `closed` also destroys the pet window — the pet cannot outlive the main
+  window (`index.ts:155-159`).
 
-### 4.3 安全基线（两窗口一致，不变量）
+### 4.3 Security baseline (identical for both windows — an invariant)
 
 ```ts
 webPreferences: {
@@ -91,33 +126,41 @@ webPreferences: {
   contextIsolation: true,
   nodeIntegration: false,
   sandbox: true,
+  webviewTag: true,          // main window hosts <webview> guests for browser automation
   backgroundThrottling: false
 }
 ```
 
-- **导航白名单**：`setWindowOpenHandler` 拒绝所有 `window.open`，`http(s)` 转外部浏览器；`will-navigate` 仅允许 renderer 源（dev 同源 / prod `file://` 解析进 `../renderer`）。
-- 两窗口共用安全 `webPreferences`，是一条须保持的安全不变量。详见 [50 横切关注点](./50-cross-cutting.md)。
+- **Navigation allowlist**: `setWindowOpenHandler` denies all `window.open` and sends `http(s)` to the external
+  browser; `will-navigate` allows only the renderer origin (dev same-origin / prod `file://` resolved into
+  `../renderer`) (`window.ts:96-105`).
+- `installEmbeddedBrowserHardening(window)` hardens the `<webview>` guests used by browser automation
+  (`window.ts:85`). See [50 Cross-Cutting](./50-cross-cutting.md).
+- Both windows share the safe `webPreferences`; this is a security invariant to preserve.
 
-## 5. 双渲染入口
+## 5. Dual renderer entries
 
-`electron.vite.config.ts` 是标准 electron-vite 三入口（main / preload / renderer），renderer 有**两个 HTML 输入**：
+`electron.vite.config.ts` is a standard electron-vite three-target build (main / preload / renderer), and the
+renderer has **two HTML inputs**:
 
 ```ts
 input: {
-  main: resolve('src/renderer/index.html'),  // 主窗口
-  pet:  resolve('src/renderer/pet.html')      // pet 覆盖层
+  main: resolve('src/renderer/index.html'),  // main window
+  pet:  resolve('src/renderer/pet.html')      // pet overlay
 }
 ```
 
-这与 §4 的两类窗口一一对应。构建细节见 [40 构建与发布](./40-build-and-release.md)。
+These map one-to-one to the two window kinds in §4. Path aliases: `@` / `@renderer` → `src/renderer/src`,
+`@shared` → `src/shared`. Build details are in [40 Build & Release](./40-build-and-release.md).
 
-## 6. 进程模型不变量
+## 6. Process-model invariants
 
-- [ ] `registerWallpaperScheme()` 在 `app.ready` 前调用。
-- [ ] 单实例锁；重复实例立即退出并聚焦已有实例。
-- [ ] 两窗口都 `contextIsolation: true` + `sandbox: true` + `nodeIntegration: false`。
-- [ ] 导航白名单：外链走系统浏览器，内部导航限 renderer 源。
-- [ ] 关闭顺序：窗口 → 轻量模块 → agent/mcp(await) → provider → database。
-- [ ] pet 窗口不超出主窗口生命周期。
+- [ ] `registerWallpaperScheme()` is called before `app.ready`.
+- [ ] Single-instance lock; a duplicate instance exits immediately and focuses the existing one.
+- [ ] Both windows use `contextIsolation: true` + `sandbox: true` + `nodeIntegration: false`.
+- [ ] Navigation allowlist: external links go to the system browser; internal navigation is limited to the
+      renderer origin.
+- [ ] Shutdown order: windows → light modules → agent/mcp (await) → provider → database.
+- [ ] The pet window never outlives the main window.
 
-下一篇 → [04 跨进程契约](./04-ipc-and-contracts.md)
+Next → [04 IPC & Contracts](./04-ipc-and-contracts.md)

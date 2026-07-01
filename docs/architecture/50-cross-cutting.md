@@ -1,69 +1,83 @@
-# 50 · 横切关注点
+# 50 · Cross-Cutting Concerns
 
-> 适用范围：错误模型、日志、遥测、安全姿态、i18n、主题、偏好。最后核对：`src/shared/errors.ts`、`src/main/logger.ts`、`agent/telemetry/*`、`agent/security/*`、`src/main/preferences.ts`。
+> Scope: the error model, logging, telemetry, security posture, i18n, and theming — concerns that span every
+> subsystem. Last verified against `src/shared/errors.ts`, `src/main/logger.ts`, `src/main/agent/telemetry/*`,
+> `src/main/agent/security/*`, `src/main/safe-env.ts`, `src/renderer/src/i18n.ts`, and
+> `src/renderer/src/common/theme/*` at v0.2.4.
 
-## 1. 错误模型
+## 1. Error model
 
-跨进程统一的 `TanzoError` 体系（`src/shared/errors.ts`）：
+`src/shared/errors.ts` is the single error contract used across all three processes:
 
-- 基类带 `code`、`recoverable`、`details`；子类 `Invariant`/`Configuration`/`Validation`/`NotFound`/`Operation`/`Integration`/`Auth`/`Timeout`。
-- `ERROR_CODES` 集中注册表。
-- 跨 IPC 经 `encodeIpcError`/`decodeIpcError`（标记 `__TANZO_IPC_ERROR__:` + JSON），renderer 客户端层 `withDecodedIpcError` 还原。
-- Zod 校验失败统一为 `TanzoValidationError('IPC_INPUT_INVALID')`。
+- **Hierarchy**: base `TanzoError extends Error` with `{ code, recoverable, details }`, and subclasses
+  `Invariant / Configuration / Validation / NotFound / Operation / Integration / Auth / Timeout`
+  (`TanzoTimeoutError` defaults `recoverable: true`). A central `ERROR_CODES` map names codes for chat,
+  runtime, agent, policy, database, and AI-SDK domains, plus `UNEXPECTED_ERROR`.
+- **IPC transport**: because Electron IPC can only carry an `Error.message` string, `encodeIpcError` wraps a
+  serialized error behind the marker `__TANZO_IPC_ERROR__:`, and `decodeIpcError` parses it back on the
+  renderer. The router (`src/main/ipc/router.ts`) encodes both sync throws and rejected promises, and normalizes
+  Zod errors to `IPC_INPUT_INVALID`. `details` are sanitized via a JSON round-trip. See
+  [04 IPC & Contracts](./04-ipc-and-contracts.md).
+- **Renderer consumption**: client wrappers (`platform/electron/ipc-errors.ts`) re-throw a decoded `TanzoError`,
+  and UI code branches on `error instanceof TanzoError ? error.code`.
 
-约定：跨边界抛 `TanzoError` 子类而非裸 `Error`；`recoverable` 标志指导 UI 是否提供重试。git domain 用 `GitResult<T>` 包裹而非抛异常（[04 跨进程契约](./04-ipc-and-contracts.md) §5.3）。
+## 2. Logging (`electron-log`)
 
-## 2. 日志
+- **Main** (`src/main/logger.ts`): uses `electron-log/main`. `initializeLogger` sets a file level of `info`
+  (5 MB max, `main.log`), a console level of `warn` when packaged / `debug` in dev, scope padding, and a global
+  uncaught-error catcher that logs without a dialog. `createLogger(scope)` yields scoped loggers (default scope
+  `main`); subsystems create their own (`'agent.module'`, `'policy'`, `'agent.ipc'`, …).
+- **Renderer** (`src/renderer/src/common/logger.ts`): uses `electron-log/renderer`, with per-scope loggers
+  (default `renderer`). This is why `electron-log` is excluded from preload externalization (see
+  [40 Build & Release](./40-build-and-release.md)).
 
-`src/main/logger.ts` 基于 `electron-log`。`initializeLogger()` 在 ready 前调用，`createLogger(scope)` 产出带作用域的 logger。preload 刻意打包 `electron-log`（[40 构建与发布](./40-build-and-release.md) §1）以便预加载期可记日志。
+## 3. Telemetry
 
-## 3. 遥测（`agent/telemetry/*`）
+Telemetry (`src/main/agent/telemetry/*`) wraps the AI SDK's telemetry integration and fans normalized events out
+to four sinks: a UI sink (transient `data-telemetry` chunk), a logger sink, a memory sink, and a DB sink that
+persists `tool-finish` events into `tool_executions`. Token/usage accounting is kept separately on `runs` /
+`run_steps`. The Usage panel reads it back via `repositories/activity-repo.ts`. See
+[22 Persistence](./22-persistence.md) and [23 Workspace Integrations](./23-workspace-integrations.md).
 
-`createAgentTelemetry` 适配 ai-sdk 的 `Telemetry` 集成，规整事件经多 sink 分发：
+## 4. Security posture
 
-- **UI sink**：`data-telemetry` chunk → renderer，驱动 RunNotice 与 pet presence。
-- **logger sink**：结构化日志。
-- **memory sink**：测试用。
-- **DB sink**（`createDbTelemetrySink`）：把 `tool-finish` 事件写 `tool_executions`，供 Usage 面板。
+Security is defense-in-depth, applied independently at each surface (invariant §3.7 in
+[01 Introduction](./01-introduction.md)):
 
-事件覆盖 onStart/onStepStart/onLanguageModelCall*/onToolExecution*/onChunk/onFinish/onError，含重试跟踪。诊断侧 `diagnostics/prompt-cache.ts` 产 prompt 缓存分段诊断落 `prompt_diagnostics`。
+- **Window sandbox** — both windows use `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`, a
+  navigation allowlist, and `<webview>` hardening. See [03 Process Model](./03-process-model.md).
+- **Path sandbox** — every filesystem surface applies workspace containment + a symlink `realpath` check +
+  credential-path denial (`security/path-safety.ts`, `fs/workspace-fs.ts`, `search/backend.ts`). Even
+  `dangerous` mode still blocks credential paths. See [12 Tools](./12-tools.md).
+- **Stripped shell environment** — `safeChildEnv` (`src/main/safe-env.ts`) removes API keys / secrets / tokens /
+  provider names from the environment of every spawned shell, background session, hook, and stdio MCP server.
+- **Destructive-command interception** — the policy engine's built-in rules deny `rm -rf /`, credential reads,
+  `mkfs`, `dd` to block devices, fork bombs, and similar. See [13 Policy & Approval](./13-policy-and-approval.md).
+- **Credentials never cross IPC in plaintext** — provider secrets are encrypted with Electron `safeStorage` and
+  only ever leave `main` masked. See [20 Providers](./20-providers.md).
+- **Browser automation boundary** — the built-in chrome-devtools-mcp server is launched against a loopback-only
+  debugging port with `--blockedUrlPattern file://**`, so the agent cannot drive the app's own renderers. See
+  [21 MCP](./21-mcp.md).
+- **Approval gate** — sensitive tool calls pass through hooks `PreToolUse` and the policy engine; approval lives
+  in the message. See [13 Policy & Approval](./13-policy-and-approval.md).
 
-## 4. 安全姿态
+## 5. Internationalization
 
-汇总各文档的安全要点（详见对应章节）：
+`src/renderer/src/i18n.ts` supports `en` and `zh-CN` via `i18next` / `react-i18next`. The initial language is
+derived from the system's preferred languages/locale (`resolveLanguage` maps any `zh*` → `zh-CN`, else `en`),
+with `fallbackLng: 'en'` and an English-fallback re-init on error. `getLocale` returns `zh-CN` / `en-US`. The
+active language follows `preferences.language` via `I18nLanguageSync`. Locale resources live in
+`src/renderer/src/locales/`. See [30 Renderer](./30-renderer.md).
 
-| 面 | 措施 | 位置 |
-|---|---|---|
-| 窗口 | `contextIsolation`+`sandbox`+`nodeIntegration:false`，导航白名单 | [03 进程模型](./03-process-model.md) §4.3 |
-| IPC | 错误归一化，Zod 入参校验 | [04 跨进程契约](./04-ipc-and-contracts.md) |
-| 文件/检索/shell | 工作区沙箱 + symlink realpath 复校 + 凭证路径拒绝 | [12 工具系统](./12-tools.md) §4 |
-| 命令 | 破坏性 shell 命令内置策略硬拒（含 stdin 向量） | [13 策略与审批](./13-policy-and-approval.md) §4 |
-| 工具审批 | 集中决策，失败安全降级为 user-approval | [13 策略与审批](./13-policy-and-approval.md) §2 |
-| 凭证 | OS `safeStorage` 加密，明文不跨 IPC，只露掩码 | [20 供应商](./20-providers.md) §5 |
-| Hooks | 任意代码执行入口必须 enabled ∧ trusted 才运行 | [14 钩子系统](./14-hooks.md) |
-| MCP | http/sse 仅允许 `http:`/`https:`、默认禁重定向、env 净化 | [21 MCP 集成](./21-mcp.md) §4 |
-| 协议 | `tanzo-asset://` 特权协议带文件名防穿越 + 扩展名白名单 | `src/main/wallpaper.ts` |
-| 资源 id | wallpaper/pet/技能/slash 根都有 traversal 守卫 | 各模块 |
+## 6. Theming
 
-共享路径安全常量在 `src/main/agent/security/path-safety.ts`，fs/search/policy 三处复用——单一真源、防御性深度。
+Theming is CSS-variable based (`src/renderer/src/common/theme/*`). `applyThemeSettings` writes palette variables
+(`--<key>`) and override variables (`--radius`, `--spacing`, `--font-*`, `--shadow-*`, `--font-size-base`) plus
+`data-*` attributes onto `document.documentElement`; `ThemeInitializer` re-applies them on preference or
+resolved-theme change. Presets use OKLCH color values, and custom themes are snapshot-driven. The dark/light
+resolution is stored in preferences (the source of truth), not react-query. See [30 Renderer](./30-renderer.md).
 
-**新增网络暴露面须显式审查**：当前 Tanzo 不开本地端口（对话走 IPC，见 [04 跨进程契约](./04-ipc-and-contracts.md)）；新增任何监听服务都应评估认证与访问控制。
+---
 
-## 5. i18n
-
-`src/renderer/src/i18n.ts` + `locales/en.ts`、`locales/zh-CN.ts`。启动据系统偏好解析语言，`react-i18next` 提供。`I18nLanguageSync` 保持 `i18n.language` 同步于 `preferences.language`。`lib/i18n-key.ts` 提供类型化键；非 React 代码用默认 `i18n` 导出（如 git 控制器错误串）。新增文案两套语言都要补。
-
-## 6. 主题与偏好
-
-- **偏好真源在 main**（`src/main/preferences.ts`）：JSON 落 `userData/preferences.json`，原子写（临时文件 + rename），每次读写经 `normalizePreferences` 夹紧/校验，损坏文件降级为默认。变更广播到所有窗口 + 进程内监听器（驱动 pet 生命周期与 `themeSource`）。
-- **主题**（renderer，[30 渲染层](./30-renderer.md) §6）：CSS 变量 + 预设，状态全部落 preferences，故跨重启持久。
-
-## 7. 横切不变量
-
-- [ ] 跨边界抛 `TanzoError` 子类，经 encode/decode 保真。
-- [ ] 路径安全常量单一真源，fs/search/policy 复用。
-- [ ] 凭证不以明文跨 IPC / 不落明文。
-- [ ] 偏好在 main 规整、广播；renderer 水合。
-- [ ] 新增网络监听面须评估认证。
-
-← 返回 [文档索引](../README.md)
+This completes the architecture set. Return to the [index](../README.md) for reading paths, or start again at
+[01 Introduction](./01-introduction.md).

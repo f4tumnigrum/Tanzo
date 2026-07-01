@@ -1,58 +1,73 @@
-# Tanzo 架构文档
+# Tanzo Architecture Documentation
 
-> Tanzo 是一个 AI 原生的桌面工作空间（Electron + React 19），用于规划、编码与自动化。本套文档描述其**当前实现**的架构：进程模型、跨进程契约、Agent 运行时、上下文工程、工具与策略、供应商与 MCP、持久化、渲染层与构建发布。
+> Tanzo is an AI-native desktop workspace (Electron + React 19) for planning, coding, and automation.
+> This set of documents describes the architecture of the **current implementation**: the process model,
+> cross-process contracts, the agent runtime, context engineering, tools and policy, providers and MCP,
+> persistence, the renderer, and build/release.
 
-本套文档面向工程读者，目标是让一名新加入的工程师能在不读完全部源码的情况下，建立准确的系统心智模型，并能定位「某个能力在哪里实现」。
+These docs are written for engineers. The goal is that a new contributor can build an accurate mental model
+of the system — and locate *where a given capability is implemented* — without reading all of the source.
 
-## 阅读路径
+**Languages:** English is the primary version at `docs/architecture/`. A Simplified-Chinese mirror lives at
+[`docs/architecture/zh/`](./architecture/zh/) · 中文版见 [`docs/architecture/zh/`](./architecture/zh/)。
 
-- **第一次接触 Tanzo** → 按顺序读 [01 引言与定位](./architecture/01-introduction.md) → [02 系统总览](./architecture/02-system-overview.md) → [03 进程模型](./architecture/03-process-model.md)。
-- **要改对话 / Agent 行为** → [10 Agent 运行时](./architecture/10-agent-runtime.md) → [11 上下文工程](./architecture/11-context-engineering.md) → [12 工具系统](./architecture/12-tools.md) → [13 策略与审批](./architecture/13-policy-and-approval.md) → [14 钩子系统](./architecture/14-hooks.md)。
-- **要改前端 / 渲染** → [04 跨进程契约](./architecture/04-ipc-and-contracts.md) → [30 渲染层架构](./architecture/30-renderer.md)。
-- **要改模型接入 / MCP** → [20 供应商运行时](./architecture/20-providers.md) → [21 MCP 集成](./architecture/21-mcp.md)。
-- **要懂数据落地 / 工作区集成** → [22 持久化](./architecture/22-persistence.md) → [23 工作区集成](./architecture/23-workspace-integrations.md)。
+## Reading paths
 
-## 文档地图
+- **First time with Tanzo** → read in order: [01 Introduction](./architecture/01-introduction.md) →
+  [02 System Overview](./architecture/02-system-overview.md) → [03 Process Model](./architecture/03-process-model.md).
+- **Changing conversation / agent behavior** → [10 Agent Runtime](./architecture/10-agent-runtime.md) →
+  [11 Context Engineering](./architecture/11-context-engineering.md) → [12 Tools](./architecture/12-tools.md) →
+  [13 Policy & Approval](./architecture/13-policy-and-approval.md) → [14 Hooks](./architecture/14-hooks.md).
+- **Changing the frontend / renderer** → [04 IPC & Contracts](./architecture/04-ipc-and-contracts.md) →
+  [30 Renderer](./architecture/30-renderer.md).
+- **Changing model access / MCP** → [20 Providers](./architecture/20-providers.md) →
+  [21 MCP](./architecture/21-mcp.md).
+- **Understanding persistence / workspace integration** → [22 Persistence](./architecture/22-persistence.md) →
+  [23 Workspace Integrations](./architecture/23-workspace-integrations.md).
 
-### 基础（Foundations）
+## Document map
 
-| # | 文档 | 内容 |
+### Foundations
+
+| # | Document | Contents |
 |---|---|---|
-| 01 | [引言与定位](./architecture/01-introduction.md) | 产品定位、设计目标、架构原则与不变量、术语表 |
-| 02 | [系统总览](./architecture/02-system-overview.md) | 高层组件图、端到端数据流、技术栈 |
-| 03 | [进程模型](./architecture/03-process-model.md) | 三进程切分、启动与关闭时序、窗口模型、安全基线 |
-| 04 | [跨进程契约](./architecture/04-ipc-and-contracts.md) | IPC 路由、`@shared` 契约、错误编解码、通道命名约定 |
+| 01 | [Introduction](./architecture/01-introduction.md) | Product framing, design goals, architectural invariants, glossary |
+| 02 | [System Overview](./architecture/02-system-overview.md) | High-level component diagram, end-to-end data flow, tech stack |
+| 03 | [Process Model](./architecture/03-process-model.md) | Three-process split, startup/shutdown sequences, window model, security baseline |
+| 04 | [IPC & Contracts](./architecture/04-ipc-and-contracts.md) | IPC router, `@shared` contracts, error encoding, channel naming |
 
-### Agent 核心（Agent Core）
+### Agent Core
 
-| # | 文档 | 内容 |
+| # | Document | Contents |
 |---|---|---|
-| 10 | [Agent 运行时](./architecture/10-agent-runtime.md) | 模块工厂、`AgentService`/`RunEngine`/`TurnLoop` 分层、`streamText` 内层循环、并发与持久化 |
-| 11 | [上下文工程](./architecture/11-context-engineering.md) | Section × Provider 模型、缓存前沿、预算、压缩与 fork、工具记录规整 |
-| 12 | [工具系统](./architecture/12-tools.md) | 三来源合并、内置工具目录、fs/git/search/shell 沙箱、技能、子代理 |
-| 13 | [策略与审批](./architecture/13-policy-and-approval.md) | `toolApproval` 决策函数、规则优先级、权限模式、内置护栏、审批记忆 |
-| 14 | [钩子系统](./architecture/14-hooks.md) | 与 Codex/Claude Code 兼容的子进程钩子：事件触发、载荷契约、信任模型、设置 UI |
+| 10 | [Agent Runtime](./architecture/10-agent-runtime.md) | Module factory, `AgentService`/`RunEngine`/`TurnLoop` layering, the `streamText` inner loop, concurrency, persistence |
+| 11 | [Context Engineering](./architecture/11-context-engineering.md) | Section × Provider model, cache frontier, budgeting, compaction and fork, tool-record normalization |
+| 12 | [Tools](./architecture/12-tools.md) | Three-source merge, built-in tool catalog, fs/search/shell sandbox, skills, sub-agents |
+| 13 | [Policy & Approval](./architecture/13-policy-and-approval.md) | `toolApproval` decision function, rule priority, permission modes, built-in guardrails, approval memory |
+| 14 | [Hooks](./architecture/14-hooks.md) | Codex/Claude Code–compatible subprocess hooks: events, payload contract, trust model, settings |
 
-### 平台集成（Platform）
+### Platform Integration
 
-| # | 文档 | 内容 |
+| # | Document | Contents |
 |---|---|---|
-| 20 | [供应商运行时](./architecture/20-providers.md) | `ProviderRuntime`、五家适配器、模型解析、凭证与密钥安全、Provider Options |
-| 21 | [MCP 集成](./architecture/21-mcp.md) | 服务器生命周期、工具暴露、Elicitation 往返、传输与重连 |
-| 22 | [持久化](./architecture/22-persistence.md) | SQLite 连接与迁移框架、表与归属、消息存储形态、恢复与隔离 |
-| 23 | [工作区集成](./architecture/23-workspace-integrations.md) | Git、ChangeSet、Slash、文件提及、Usage/Activity、Pet 集成边界 |
+| 20 | [Providers](./architecture/20-providers.md) | `ProviderRuntime`, five adapters, model resolution, credential/secret security, provider options |
+| 21 | [MCP](./architecture/21-mcp.md) | Server lifecycle, tool exposure, Elicitation round-trips, transports and reconnection |
+| 22 | [Persistence](./architecture/22-persistence.md) | SQLite connection and migration framework, tables and ownership, message storage, recovery |
+| 23 | [Workspace Integrations](./architecture/23-workspace-integrations.md) | Git, ChangeSet, Slash commands, file mentions, Usage/Activity, Pet boundaries |
 
-### 前端与交付（Frontend & Delivery）
+### Frontend & Delivery
 
-| # | 文档 | 内容 |
+| # | Document | Contents |
 |---|---|---|
-| 30 | [渲染层架构](./architecture/30-renderer.md) | App Shell、ChatSession、流传输、Part 渲染注册表、状态分层、特性模块 |
-| 40 | [构建与发布](./architecture/40-build-and-release.md) | electron-vite 三入口、typecheck 门禁、electron-builder、测试 |
-| 50 | [横切关注点](./architecture/50-cross-cutting.md) | 错误模型、日志、遥测、安全姿态、i18n、主题 |
+| 30 | [Renderer](./architecture/30-renderer.md) | App shell, ChatSession, streaming, part-renderer registry, state layering, feature modules |
+| 40 | [Build & Release](./architecture/40-build-and-release.md) | electron-vite entries, the typecheck gate, electron-builder, tests, CI |
+| 50 | [Cross-Cutting](./architecture/50-cross-cutting.md) | Error model, logging, telemetry, security posture, i18n, theming |
 
-## 文档维护约定
+## Documentation conventions
 
-- 每篇文档顶部标注**适用范围**与**最后核对时间**。文档描述的是当前代码，不是历史方案或未来计划。
-- 所有断言尽量给出**源码坐标**（`文件:行` 或符号名），便于核对与防漂移。
-- 出现「待核实」标记的内容，表示需要运行时验证或在另一篇文档中展开，不应当作既成事实。
-- 修改架构时，先改代码再改文档；文档与代码冲突时，**以代码为准**并更新文档。
+- Each document begins with its **scope** and a **last verified** note. Docs describe the current code, not
+  historical designs or future plans.
+- Claims carry **source coordinates** (`file:line` or a symbol name) wherever practical, to make them
+  verifiable and resistant to drift.
+- When you change the architecture, change the code first, then the docs. If a doc and the code disagree,
+  **the code wins** — update the doc.

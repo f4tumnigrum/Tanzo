@@ -1,141 +1,141 @@
-# 11 · 上下文工程
+# 11 · Context Engineering
 
-> 适用范围：系统/前导提示如何按 Section × Provider 组装、缓存前沿、token 预算、压缩与 fork、工具记录规整。最后核对：`src/main/agent/context/*`。
+> Scope: the Section × Provider model, the cache frontier, budgeting, compaction and fork, and tool-record
+> normalization. Last verified against `src/main/agent/context/*` and `runtime/compaction-coordinator.ts` at
+> v0.2.4.
 
-## 1. 心智模型
+## 1. Mental model
 
-每一步调用模型前，上下文引擎把一组**声明式 Section** 编译成 prompt 消息，并按当前模型的**供应商策略**放置缓存断点。核心目标：
+Context engineering answers one question per step: *given the transcript so far, what exact prompt do we send
+the model?* It is built from two orthogonal axes:
 
-1. **缓存前沿稳定**——把会变的内容尽量后置或冻结，让供应商的 prompt 缓存命中率最大化。
-2. **预算可控**——按供应商**上报**的 token 用量决定何时压缩，不靠估算。
-3. **声明式清理**——压缩把旧历史塌缩成一段摘要，保留近期步骤。
+- **Sections** (the *what*): declarative units that render the system and leading-user prompt (role, plan mode,
+  environment, git status, skills index, goal, …).
+- **Provider strategies** (the *how*): per-provider prompt layout and caching (the "cache frontier") applied on
+  top of the assembled prompt.
 
-## 2. 引擎与 `build`（`context/index.ts`）
+The entry point is `createContextEngine(deps)` (`context/index.ts:107-255`), exposing `build`, `observeStep`,
+`snapshot`, `shouldCompact`, `compactionTriggerTokens`, `retainedRecentSteps`, and `clear`.
 
-`createContextEngine(deps)` 持有 Section 注册表、`Budget`、`capabilitiesFor`、每对话 `lastUsage` 与 `frozenVolatilePrefixes`。
+## 2. The Section model
 
-```ts
-interface ContextEngine {
-  build(def, chatId, cwd, transcript, stepNumber, options?): Promise<BuiltContext>
-  observeStep(chatId, messageCount, usage): void
-  snapshot(def, chatId, messages): ContextSnapshot
-  shouldCompact(def, chatId, messages): boolean
-  compactionTriggerTokens(def): number
-  retainedRecentSteps(def): number
-  clear(chatId): void
-}
+`ContextSection` (`context/section.ts:22-29`) is
+`{ id, stability: 'stable' | 'volatile', channel: 'system' | 'leading-user', order, prefixCacheScope?,
+render() }`.
+
+The fixed section list is in the registry (`context/registry.ts:24-36`): `role`, `plan-mode`, `tanzo`,
+`skills-index`, `plugins-index`, `env`, `datetime`, `git-status`, `goal`, `plugins-mention`. Additional sections
+can be appended via `deps.extraSections` (`index.ts:108`) — this is how the hooks context section is mounted
+(see [14 Hooks](./14-hooks.md)).
+
+- **`stability`** separates content that is stable across steps (cache-friendly) from content that changes
+  every step (`datetime`, `git-status`, injected context).
+- **`channel`** separates system messages from leading-user messages.
+- **`order`** sorts sections within a stability band.
+- **`prefixCacheScope`** marks a volatile leading-user section as `conversation`-scoped so it can be frozen into
+  the cacheable prefix.
+
+## 3. Assembly and compilation
+
+`compileSections(registry, input, history)` (`context/compile.ts`) renders all sections in parallel, drops
+empties, then splits them:
+
+- **System messages** = stable-system ++ volatile-system, each its own `SystemModelMessage`.
+- **Leading-user**: stable-leading is merged into one user message; volatile-leading is split by
+  `prefixCacheScope === 'conversation'` into a `volatilePrefixUser` block versus a `trailingUser` block.
+- `stableBoundary` = the count of stable-system messages, used as the cache anchor.
+- Provenance is recorded per section/message and symbol-attached (`attachContextProvenance` /
+  `getContextProvenance` in `section.ts`).
+
+The per-turn prompt (`promptMessages`, `index.ts:65-71`) is:
+
+```text
+leadingUser ++ history ++ (stepNumber === 0 ? volatilePrefixUser ++ trailingUser : [])
 ```
 
-ai-sdk 的 `PrepareStepFunction` 包装在 runtime 层（`runtime/stream-runner.ts:290`），其每步调用 `contextEngine.build(...)`（`index.ts`，内部 `compilePlan`）：
+So the volatile prefix/trailing user blocks are injected **only on step 0** of a turn.
 
-1. `projectHistory(messages, capabilities)` 规整工具记录（§6）。
-2. `stepNumber === 0` 且未禁用消费时，按需窥探目标注入（`deps.goal.peekInjection`）。
-3. `compileSections(...)` → `CompiledContext`。
-4. `strategy.applyPromptLayout?.(...)`（仅 DeepSeek）。
-5. `strategy.applyCaching(plan)`（供应商缓存断点）。
-6. 消费目标注入（仅 `consumeGoalInjection !== false` 时；压缩 fork 路径以 `false` 调用 `build`，不消费）。
-7. `promptMessages(plan, stepNumber)` 生成最终 prompt，附 `attachContextProvenance` 溯源。
+## 4. Budgeting
 
-runtime 的 `prepareStep` 还在 `build` 前后追加：排空 steering、对 transcript 规整、对产出消息再次规整、按激活技能过滤工具、记录诊断（`stream-runner.ts:291-319`）。
+Token accounting is **usage-anchored, not estimated** (`context/budget.ts`):
 
-**缓存不变量**：volatile 前缀 + 尾部 user section 只在 `stepNumber === 0` 发出（`promptMessages`，`index.ts:64-70`）。后续步骤只复用 `leadingUser + history`，让缓存前缀稳定。
+- `anchor(chatId, msgCount, inputTokens)` stores the last reported `inputTokens`.
+- `measureUsage` returns `{ inputTokens, source: 'reported' | 'unavailable', exceeds() }` and ignores message
+  content entirely — the number comes from real model usage, fed in by `observeStep` (`index.ts:198-206`) from
+  the stream.
+- `cacheHitRatio` = `cacheReadTokens / inputTokens`.
 
-## 3. Section → CompiledContext（`context/compile.ts`）
+Model capabilities (`context/capabilities.ts`): `contextWindow`, `maxOutputTokens`, `supportsImages`, with
+defaults 128k / 8192.
 
-```ts
-interface ContextSection {
-  id: string
-  stability: 'stable' | 'volatile'
-  channel: 'system' | 'leading-user'
-  order: number
-  prefixCacheScope?: 'conversation'
-  render(input: BuildInput): string | null | Promise<…>
-}
-```
+## 5. Compaction
 
-`compileSections`（`compile.ts:50`）：并行渲染所有 section、丢空、按 `stability` 分组再按 `order` 排序。
+### 5.1 Trigger
 
-- **system 通道**：stable system 在前，volatile system 在后 → `SystemModelMessage[]`。`stableBoundary` = stable system 数（缓存标记用）。
-- **leading-user 通道**：stable leading 合一条 `leadingUser`；volatile leading 按 `prefixCacheScope === 'conversation'` 分成 `volatilePrefixUser`（可缓存的对话级前缀）与 `trailingUser`（每回合重算）。
-- 每桶并行产出 `provenance`。
+`context/compaction-policy.ts`: `compactionTriggerTokens = floor((contextWindow − maxOutputTokens) × 0.9)`, and
+`retainedRecentSteps = 6`. `shouldCompact()` is "reported usage `exceeds(trigger)`" (`index.ts:227-230`).
 
-## 4. Section 目录（`context/sections/*`，`registry.ts:20`）
+At runtime the stop condition `overCompactionTrigger` halts the stream when the last step's
+`usage.inputTokens > trigger` (`build-agent.ts:65-71`, wired in `stream-runner.ts`). After the turn,
+`stream-runner.ts` computes `exceededCompactionTrigger` / `hitCompactionTrigger` and hands them to `onFinally`,
+which `TurnLoop` uses to decide `compaction-retry` versus `post-compact` (see
+[10 Agent Runtime](./10-agent-runtime.md)).
 
-放置由 `order` + `stability` + `channel` 决定，非数组顺序。
+### 5.2 Coordinator
 
-| Section | id | stability | channel | order | 注入 |
-|---|---|---|---|---|---|
-| role | `role` | stable | system | 0 | `def.systemPrompt`（`.trim()`；空则不渲染） |
-| plan-mode | `plan-mode` | volatile | system | 1 | 计划模式指令（仅 `def.kind==='main'` 且模式为 `plan`） |
-| tanzo | `tanzo` | stable | system | 20 | `<tanzo-instructions priority="binding">` 包裹全局+项目指令文件 |
-| skills-index | `skills-index` | stable | system | 30 | `<skills>` 已启用技能 `name: description` 清单 |
-| env | `env` | stable | leading-user | 0 | `<environment>` cwd/platform/os/shell |
-| datetime | `datetime` | volatile | leading-user | 0 | `<datetime>`；`prefixCacheScope: conversation` |
-| git-status | `git-status` | volatile | leading-user | 10 | `<git-status>` 对话起点快照；`prefixCacheScope: conversation` |
-| goal | `goal` | volatile | leading-user | 5 | 目标续接/预算/objective（仅有待注入时） |
-| hooks | `hooks` | volatile | system | 25 | `SessionStart` / `UserPromptSubmit` / `PostToolUse` 追加的上下文，包在 `<hook-context>`（由 `extraSections` 注入，`hooks/context-section.ts`） |
+`runtime/compaction-coordinator.ts` performs the actual compaction: `prepareMessages` (pre-turn, if
+`shouldCompact`), `compactAfterRun` (post-turn, gated by `exceededCompactionTrigger && !hitCompactionTrigger`),
+and a manual `compact`.
 
-`registry.ts` 提供内建 sections；`agent/module.ts` 通过 `createContextEngine({ extraSections: [createHooksContextSection(...)] })` 挂载 hooks section。
+### 5.3 Mechanics
 
-指令文件解析（`context/deps.ts:11`）：项目候选 `TANZO.md`、`.tanzo/TANZO.md`、`AGENTS.md`、`CLAUDE.md`、`.claude/CLAUDE.md`；全局来自 app `userDir` 与 `~`。git 状态经 `execFileSync` 取分支/主分支/用户/porcelain（截 40 行）/近 5 次提交。
+`context/compact/`:
 
-## 5. Provider × Section 缓存模型（`context/providers/*`）
+- `planCompaction` (`compact/compact.ts`) splits the transcript at a cut and canonicalizes the head into model
+  messages; it aborts if the head is empty or all-summary.
+- `findCut` (`compact/segments.ts`) walks step segments from the end, keeping `retainedRecentSteps`, and stops
+  at a prior summary; `partitionAtCut` produces `{ head, tail, archivedIds }` and re-heads the tail with a
+  `step-start`. Step boundaries come from `step-start` parts; a summary is detected via a `data-compaction`
+  part.
+- The summary is produced by a **fork** (below), then `buildCompactionResult` builds an assistant summary
+  message (a `data-compaction` part carrying before/after/reduced tokens) so the next messages are
+  `[summary, ...tail]`.
 
-`strategyFor(modelRef, chatId)`（`providers/index.ts:21`）按 `modelRef` 的供应商前缀分派。
+### 5.4 The compaction fork
 
-```ts
-interface ProviderContextStrategy {
-  cacheKind: 'ephemeral' | 'auto' | 'unsupported'
-  applyPromptLayout?(plan, helpers): CompiledContext
-  applyCaching(plan): CompiledContext   // 引擎 reassign plan = strategy.applyCaching(plan)（index.ts:155）
-}
-```
+`context/compact/fork-agent.ts`: `runCompactionFork` runs a single-step `streamText` with `toolChoice: 'none'`
+and an **empty tool set** (it skips `buildTools` entirely), because the fork only needs to summarize. It uses a
+dedicated compaction model when configured (`def.compactionModelRef ?? def.modelRef`) and streams the partial
+summary to the UI with throttling. The prompt is `[...head, { role: 'user', content: prompt }]`.
 
-| 供应商 | cacheKind | 行为 |
-|---|---|---|
-| anthropic | ephemeral | 显式放 `cacheControl: {type:'ephemeral', ttl}` 断点：最后一条 stable system（`1h`）、stable leading user（`1h`）、history 尾部 2 条（`5m`） |
-| openai | auto | 设 `providerOptions.openai.promptCacheKey = "tanzo:global:<modelRef>"` + `promptCacheRetention: '24h'` |
-| openai-compatible | auto | 同上但写入 `providerOptions.openaiCompatible.*`（非 `openai.*`） |
-| deepseek | auto | `applyPromptLayout` → `freezeVolatilePrefix`：每对话把 volatile 前缀挪进 `leadingUser` 一次（缓存于 `frozenVolatilePrefixes`），此后不变 |
-| google | auto | no-op（passthrough） |
-| 默认 | unsupported | no-op |
+## 6. Provider strategies (the cache frontier)
 
-`clear(chatId)`（`index.ts:234`）丢弃预算锚、上次用量与冻结前缀；每次压缩后调用。
+`context/providers/`: a `ProviderContextStrategy` is
+`{ cacheKind, applyPromptLayout?, applyCaching }` (`providers/strategy.ts`), where `cacheKind` is
+`'ephemeral' | 'auto' | 'unsupported'`. The strategy is selected by the model provider prefix
+(`providers/index.ts:21-38`): anthropic / openai / openai-compatible / google / deepseek / passthrough.
 
-## 6. 预算（`context/budget.ts`）
+In `index.ts` (`:146-160`), the engine applies `applyPromptLayout` first (with `freezeVolatilePrefix`, memoized
+per chat) and then `applyCaching`. The frozen-prefix state is cleared on `clear()`.
 
-token 计量是**基于上报、非估算**。`observeStep`（`index.ts:192`）记录供应商上报的 `inputTokens`（`budget.anchor`）。`measureUsage` 返回上次上报值；`exceeds(n)` 仅在有上报值且超 `n` 时为真。无上报时 `source: 'unavailable'`，自动压缩**不触发**。`cacheHitRatio = cacheReadTokens / inputTokens`。
+- **Anthropic — ephemeral cache frontier** (`providers/anthropic.ts`): marks the last stable-system message
+  with `cacheControl ttl: '1h'`, the last stable leading-user message with `1h`, and the last two history
+  messages with `5m`. `cacheKind: 'ephemeral'`.
+- **OpenAI / OpenAI-compatible** (`providers/openai.ts`): injects `promptCacheKey = tanzo:global:<modelRef>`
+  plus `promptCacheRetention: '24h'`. `cacheKind: 'auto'`.
+- **Google / DeepSeek / passthrough**: `cacheKind: 'unsupported'` (no explicit cache markers).
 
-能力与策略：`createCapabilities`（`capabilities.ts:18`）返回 `{contextWindow, maxOutputTokens, supportsImages}`，原始供应商元数据字段为 `{contextWindow, maxOutput, vision}`（`deps.ts:52-59`）；默认 `128_000` / `8_192`，`maxOutput` 被夹到 `contextWindow`。`computeCompactionPolicy`（`compaction-policy.ts:11`）：
+## 7. Tool-record normalization
 
-```
-inputWindow = max(contextWindow - maxOutputTokens, 0)
-compactionTriggerTokens = floor(inputWindow * 0.9)
-retainedRecentSteps = 6
-```
+`context/tool-transcript.ts` (invoked from `context/project.ts`, called at `index.ts:193`):
 
-## 7. 压缩与 fork（`context/compact/*`）
+- `ensureToolPairing`: for each assistant tool-call block, keep only calls that have a matching `tool-result`
+  (or, in the final block, an approval-response); drop orphan calls and orphan results; remove emptied
+  messages. This prevents dangling `tool_use` / `tool_result` pairs after compaction or edits.
+- `canonicalizeToolContent`: reorder parts inside `tool` messages to match the assistant call order (results
+  before approval-responses).
 
-由 `CompactionCoordinator`（`runtime/compaction-coordinator.ts`）触发，不是引擎直接做。
+The same canonicalization is applied to the compaction head, so a summarized transcript never re-introduces a
+dangling tool pair.
 
-- `prepareMessages`：非 `force` 时查 `engine.shouldCompact`；超阈则压缩。
-- `planCompaction(messages, retainedRecentSteps)`（`compact/compact.ts:30`）：按助手 step 边界切分（`findCut`/`partitionAtCut`，`segments.ts`），`findCut` 保留固定的 `retainedRecentSteps` 步数（非 char/4 token 估算）。返回 `head`（待摘要）、`tail`（保留）、`archivedIds`、`sourceMessages`。
-- `runCompactionFork`（`compact/fork-agent.ts:137`）：一步 `streamText`，`toolChoice: 'none'`、`stopWhen: [isStepCount(1)]`，输入 `[...head, {role:'user', content: COMPACT_PROMPT}]`，流式产出摘要并上报用量。
-- `COMPACT_PROMPT`（`compact/prompt.ts`）：先私有 `<analysis>` 草稿，再 9 段 `<summary>`；`stripAnalysis` 只留摘要。
-- `buildCompactionResult`（`compact/compact.ts:80`）：构造一条合成 `assistant` 摘要消息（标 `data-compaction`；数据形状为 `summaryId/summary/usage`，**无** `metadata.compaction.isSummary`），前置到保留的 tail。
-- `store.finalizeCompaction` 用 `expectedActiveIds` 守卫；底层以 overlay 形式落库（`compaction_overlays` 表；`finalizeCompaction` 在 `message-repo.ts:366`，`expectedActiveIds` 守卫在 `message-repo.ts:307-320`），冲突抛 `CHAT_COMPACTION_STALE` 并优雅跳过。
-
-**子代理自动续接**：流在压缩触发处中途停止时，协调器以 `forceCompaction` 重入，上限 `MAX_CONTEXT_CONTINUATION_PASSES = 10`。
-
-## 8. 工具记录规整（`context/tool-transcript.ts`）
-
-`canonicalizeToolTranscript`（`tool-transcript.ts:244`）依次跑 `ensureToolPairing` 与 `canonicalizeToolContent`，强制**有效供应商 transcript 不变量**：以 `validCallIds`（有 `tool-result` 或 final-block approval response）为准，孤儿 `tool-result`/approval 及未配对的 `tool-call`/`tool-approval-request` part 被剥离；每条工具消息**内部按调用顺序排序** part（非整条消息重排）。注：`tool-approval-request` 并非必须有匹配 response 才保留。`projectHistory`（实时）与 `planCompaction`（压缩源）都跑它。
-
-## 9. 上下文不变量
-
-- [ ] 缓存前缀稳定：volatile 前缀/尾部 section 仅 step 0 发出；DeepSeek 额外每对话冻结前缀。
-- [ ] 预算靠上报 token；无上报则不自动压缩；`findCut` 按固定 `retainedRecentSteps` 选切点。
-- [ ] 工具记录在每次发送与每次压缩前配对规整，剥离孤儿 `tool-result`/未配对调用 part。
-- [ ] anthropic 在 stable 边界放 ephemeral 缓存断点。
-
-下一篇 → [12 工具系统](./12-tools.md)
+Next → [12 Tools](./12-tools.md)

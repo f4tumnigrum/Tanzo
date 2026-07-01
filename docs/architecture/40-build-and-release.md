@@ -1,68 +1,73 @@
-# 40 · 构建与发布
+# 40 · Build & Release
 
-> 适用范围：electron-vite 三入口、typecheck 门禁、electron-builder、测试。最后核对：`electron.vite.config.ts`、`electron-builder.yml`、`package.json`、`vitest.config.ts`。
+> Scope: the electron-vite build, the typecheck gate, electron-builder packaging, tests, and CI. Last verified
+> against `electron.vite.config.ts`, `electron-builder.yml`, `.github/workflows/ci.yml`, `package.json`,
+> `vitest.config.ts` at v0.2.4.
 
-## 1. electron-vite（`electron.vite.config.ts`）
+## 1. electron-vite build
 
-标准三入口配置：
+`electron.vite.config.ts` defines three targets:
 
-- **main**：`externalizeDepsPlugin()`，别名 `@shared → src/shared`。
-- **preload**：`externalizeDepsPlugin({ exclude: ['electron-log'] })`——`electron-log` 刻意打进 preload 而非外置。同 `@shared` 别名。
-- **renderer**：别名 `@`/`@renderer → src/renderer/src` + `@shared`；插件 `tailwindcss()` + `react()`。**两个 HTML 输入**：
+- **main** — `externalizeDepsPlugin()`, alias `@shared`.
+- **preload** — `externalizeDepsPlugin({ exclude: ['electron-log'] })` (electron-log must be bundled into
+  preload rather than externalized).
+- **renderer** — `tailwindcss()` + `react()`, with aliases `@` / `@renderer` → `src/renderer/src` and
+  `@shared` → `src/shared`, and **two HTML rollup inputs**: `main → src/renderer/index.html` and
+  `pet → src/renderer/pet.html`.
 
-```ts
-input: {
-  main: resolve('src/renderer/index.html'),  // 主窗口
-  pet:  resolve('src/renderer/pet.html')      // pet 覆盖层
-}
-```
+At the electron-vite process level there are three entries (main / preload / renderer); the renderer bundles two
+HTML entries. These correspond to the two window kinds in [03 Process Model](./03-process-model.md).
 
-双入口对应 [03 进程模型](./03-process-model.md) §4 的两类窗口，是一条架构不变量。
+## 2. Scripts and the typecheck gate
 
-## 2. 脚本（`package.json`）
+From `package.json`:
 
-| 脚本 | 命令 | 说明 |
-|---|---|---|
-| `dev` | `electron-vite dev` | 开发 |
-| `start` | `electron-vite preview` | 预览构建产物 |
-| `typecheck` | `typecheck:node && typecheck:web` | 两套 tsconfig（main/preload + renderer） |
-| `build` | `node --run typecheck && electron-vite build` | **typecheck 门禁构建** |
-| `build:{mac,win,linux,unpack}` | `build` 后 `electron-builder` | 打包 |
-| `postinstall` | `electron-builder install-app-deps` | 重建原生模块（`better-sqlite3`） |
-| `test` | `vitest run` | 单元/集成测试 |
-| `test:coverage` | `vitest run --coverage` | 覆盖率（`@vitest/coverage-v8`） |
-| `test:node` | `node --import tsx --test spike/*.spike.ts` | spike 验证脚本 |
-| `lint` | `eslint --cache .` | |
-| `format` | `prettier --write .` | |
-| `diagnose:prompt-cache` | `node scripts/prompt-cache-diagnostics.mjs` | prompt 缓存诊断（见 [11 上下文工程](./11-context-engineering.md)） |
+- `pnpm dev` = `electron-vite dev`; `pnpm start` = `electron-vite preview`.
+- `pnpm build` = `node --run typecheck && electron-vite build` — the **typecheck is a hard gate** before any
+  bundle is produced.
+- `pnpm typecheck` = `typecheck:node` + `typecheck:web`, i.e. `tsc --noEmit -p tsconfig.node.json` and
+  `tsconfig.web.json` (both `--composite false`).
+- `pnpm lint` = `eslint --cache .`; `pnpm format` = `prettier --write .`.
+- `pnpm build:{win,mac,linux}` = `node --run build && electron-builder --{win,mac,linux}`.
+- `postinstall` = `electron-builder install-app-deps` (rebuilds native modules like better-sqlite3).
 
-## 3. electron-builder（`electron-builder.yml`）
+## 3. electron-builder packaging
 
-- `appId: com.luminstudio.tanzo`（与 `setAppUserModelId` 一致），`productName: Tanzo`。
-- `asarUnpack: resources/**`——资源从 asar 解包，这是 `pet/module.ts` 能探测 `app.asar.unpacked/resources/pets` 的原因。
-- `npmRebuild: false`（原生依赖经 postinstall 的 `install-app-deps` 处理）。
-- mac：`entitlementsInherit: build/entitlements.mac.plist`；camera/mic/Documents/Downloads 用途字符串在 `extendInfo` 下，`notarize: false`。
-- 目标：mac dmg、win nsis（可选安装目录，非 one-click）、linux AppImage/snap/deb。
+`electron-builder.yml`: `appId: com.luminstudio.tanzo`, `productName: Tanzo`.
 
-## 4. 测试
+- **Windows** — NSIS installer (non-one-click, custom install dir, `installer.nsh`, always creates a desktop
+  shortcut).
+- **macOS** — DMG, with `entitlements.mac.plist` and camera/mic/documents/downloads usage strings;
+  `notarize: false`.
+- **Linux** — AppImage + deb; maintainer "Lumin Studio"; category "Utility".
+- `asarUnpack: resources/**` (assets must be readable outside the asar); `npmRebuild: false`.
 
-- 主测试运行器 `vitest`（`vitest.config.ts`）。
-- `spike/*.spike.ts` 为承重假设的验证脚本（如审批无状态重跑），用 `node --test` + `tsx` 运行。
+## 4. Tests
 
-## 5. 验证流程建议
+`vitest.config.ts`:
 
-改动后按风险递进：
+- Tests: `tests/unit/**/*.{test,spec}.*`, `environment: 'node'`, setup `tests/setup/electron-stub.ts`.
+- Aliases mirror vite plus `@main → src/main`.
+- Coverage (v8) is scoped to `src/main/**` + `src/shared/**` only — the **renderer is not covered** — and
+  excludes `index.ts`, `window.ts`, and migration files.
 
-1. `node --run typecheck`——构建门禁，最快反馈。
-2. `node --run test`——相关单测。
-3. `node --run build`——完整 typecheck + 打包编译。
-4. 涉及原生模块（better-sqlite3）变更后跑 `postinstall`。
+There is also a `test:node` script running `spike/*.spike.ts` via `tsx` for exploratory checks (the `spike/`
+directory is not part of the unit suite). `pnpm test:watch` and `pnpm test:coverage` are the usual variants.
 
-## 6. 构建不变量
+## 5. CI (`.github/workflows/ci.yml`)
 
-- [ ] renderer 双 HTML 入口（`index.html` + `pet.html`）对应两类窗口。
-- [ ] `build` 以 typecheck 为门禁。
-- [ ] 资源走 asar-unpacked（`resources/**`）。
-- [ ] 原生模块经 `install-app-deps` 重建，`npmRebuild: false`。
+Triggers: push to `main` / `develop`, `v*` tags, and pull requests. Node 24, pnpm, with a pnpm-store cache.
+Three jobs:
 
-下一篇 → [50 横切关注点](./50-cross-cutting.md)
+1. **quality** (ubuntu) — `pnpm install --frozen-lockfile`, then `pnpm typecheck`, `pnpm lint`, `pnpm test`.
+   This is the same gate developers run locally.
+2. **package** — `needs: quality`, only on `push`; a matrix of macOS / Windows / Linux running
+   `pnpm build && pnpm exec electron-builder --{mac,win,linux} --publish never` (with
+   `CSC_IDENTITY_AUTO_DISCOVERY: false`), uploading the artifacts.
+3. **release** — `needs: package`, only on `v*` tags; downloads the artifacts and creates a GitHub release via
+   `softprops/action-gh-release`, marking it a prerelease when the tag contains `-`.
+
+So `main`/PR pushes gate on quality; only pushes build installers; only tags publish a release. See
+[50 Cross-Cutting](./50-cross-cutting.md) for the error and logging model that surfaces in these builds.
+
+Next → [50 Cross-Cutting](./50-cross-cutting.md)

@@ -1,79 +1,117 @@
-# 22 · 持久化
+# 22 · Persistence
 
-> 适用范围：SQLite 连接、迁移框架、表与归属、消息存储形态、恢复与隔离。最后核对：`src/main/database/*`、`src/main/agent/store.ts`、`agent/repositories/*`。
+> Scope: the SQLite connection and migration framework, the tables and their ownership, how messages are
+> stored, and recovery/isolation. Last verified against `src/main/database/*` and `src/main/agent/repositories/*`
+> at v0.2.4.
 
-## 1. 连接（`database/connection.ts`）
+## 1. Connection
 
-`openDatabase({databasePath})` 打开 `better-sqlite3`，应用 PRAGMA：`journal_mode=WAL`、`synchronous=NORMAL`、`foreign_keys=ON`、`busy_timeout=5000`、`temp_store=MEMORY`。返回 `{ db: SqlDatabase, raw }`，其中 `SqlDatabase`（`types.ts:7`）是薄封装接口（`exec/prepare/get/all/run/transaction/pragma/close`）——每个 store 都依赖这个接口，与 better-sqlite3 解耦。打开失败 → `DATABASE_OPEN_FAILED`。
+The driver is `better-sqlite3`. `openDatabase({ databasePath })` (`database/connection.ts:22-36`) opens the DB
+and applies these pragmas (`connection.ts:5-11`):
 
-## 2. 模块（`database/module.ts`）
-
-`createDatabaseModule({userDataPath, databaseFileName?, migrations})` 拼路径（默认 `tanzo.sqlite`），打开 DB，运行迁移，返回 `{ db, backupTo, close }`。`backupTo` 用 `raw.backup()`；`close()` 先 `wal_checkpoint(TRUNCATE)` 再关。
-
-## 3. 迁移框架（`database/migrations.ts`）
-
-- 注册表 `_tanzo_migrations(module, version, name, applied_at)`，PK `(module, version)`。
-- `runMigrations(db, modules: ModuleMigrations[])`：每模块断言版本严格递增，跳过已应用版本，**在事务内**应用每个 `Migration.up(db)` 连同注册插入。失败 → `DATABASE_MIGRATION_FAILED`（带模块/版本）。
-
-```ts
-type Migration = { version: number; name: string; up(db): void }
-type ModuleMigrations = { moduleName: string; files: readonly Migration[] }
+```text
+journal_mode = WAL
+synchronous  = NORMAL
+foreign_keys = ON
+busy_timeout = 5000
+temp_store   = MEMORY
 ```
 
-当前唯一注册模块 `tanzoMigrations`，**1 个版本**（`tanzoMigrations`/`INITIAL_SCHEMA` 定义在 `database/schema.ts:381`/`:3`）。v1（`INITIAL_SCHEMA`）一次建出全部表/索引/触发器。框架仍支持多版本增量迁移，后续 schema 变更追加新版本即可。
+The `SqlDatabase` wrapper (`connection.ts:39-71`) exposes `prepare` / `run` / `get` / `all` / `transaction` /
+`pragma` / `close`, where `transaction = raw.transaction(fn)()`. The module `createDatabaseModule`
+(`database/module.ts:24-62`) opens `tanzo.sqlite` under Electron's `userData`, supports `backupTo` via
+`raw.backup`, and on `close()` runs `wal_checkpoint(TRUNCATE)` before closing.
 
-## 4. 表与归属
+## 2. Migration framework
 
-| 表                                                   | 归属                       | 备注                                                                                   |
-| ---------------------------------------------------- | -------------------------- | -------------------------------------------------------------------------------------- |
-| `workspaces`                                         | chat/workspace 层          | UNIQUE `root_path`                                                                     |
-| `app_settings`                                       | preferences/settings/hooks | scope app/workspace；hooks 的 enabled/trusted/contentHash 也存在这里                   |
-| `provider_connections`                               | provider store             | PK `provider_id`（5 id CHECK）                                                         |
-| `provider_keys`                                      | provider store             | UNIQUE `(provider_id,key_id)`；删除触发器清活跃 key                                    |
-| `provider_models`                                    | provider store             | PK `(provider_id,family,model_id)`                                                     |
-| `provider_default_models` / `provider_defaults`      | provider store             | 每 family 一条默认/defaults_json                                                       |
-| `mcp_servers`                                        | mcp store                  | UNIQUE `name`                                                                          |
-| `policy_rules` / `policy_decisions` / `policy_modes` | policy                     | 规则按 priority 索引；模式每对话                                                       |
-| `conversations`                                      | chat                       | 自引 parent，`parent_relation` fork/subagent，`model_ref`/`subagent_model_ref`         |
-| `messages` / `message_revisions`                     | chat                       | PK `(conversation_id,id)`；`seq` 是会话内历史顺序；revisions 记录消息 payload 变更快照 |
-| `compaction_overlays`                                | chat                       | 压缩摘要与覆盖的 `seq` 区间，独立于消息日志                                            |
-| `subagent_tasks`                                     | agent runtime (subagent)   | PK `(root_chat_id,id)`；UNIQUE `chat_id` 与 `(root_chat_id,seq)`；status pending/running/blocked/done/failed/cancelled |
-| `quarantined_messages`                               | chat                       | 畸形消息隔离                                                                           |
-| `queued_messages`                                    | chat                       | 持久化消息队列                                                                         |
-| `runs` / `run_steps` / `prompt_diagnostics`          | agent runtime / telemetry  | token 用量、finish 原因、prompt 缓存诊断                                               |
-| `tool_executions`                                    | activity/telemetry         | 喂 `activity:*` 查询                                                                   |
-| `conversation_goals`                                 | goal                       | 正交状态(user_state + outcome + limit)                                                 |
-| `skill_states`                                       | skills                     | enabled/installed/scope                                                                |
+`database/migrations.ts` maintains a registry table `_tanzo_migrations(module, version, name, applied_at)`. Each
+`ModuleMigrations` is per-module and version-tracked; every migration's `up(db)` runs inside a transaction with
+an applied-row insert, and versions must be strictly increasing.
 
+There is a single module, `tanzoMigrations` (moduleName `'tanzo'`, `database/schema.ts:418`), wired in at
+`src/main/index.ts:217` (`migrations: [tanzoMigrations]`) — the only module registered. Its files are v1
+`initial_schema`, v19 `plugin_states`, v20 `plugin_marketplaces` (the v2–v18 gap reflects a flattened history:
+the initial schema already contains everything through v18).
 
-## 5. AgentStore（`agent/store.ts` + `repositories/*`）
+## 3. Tables and ownership
 
-`AgentStore`（`store-types.ts`）由七个 repository 组成，各自基于 `SqlDatabase`（同步预编译语句 + `db.transaction`）：
+The initial schema (`database/schema.ts`) defines these tables (line numbers are the `CREATE TABLE` sites):
 
-- **conversation-repo**：会话 CRUD；`depthOf`/`rootOf` 沿 parent 链走（上限 64）。
-- **message-repo**：消息 payload 存为版本化 `{ v: 1, message }` JSON。`messages` 是按 `seq` 排序的历史锚点；`message_revisions` 追加 payload 修订并作为读取最新内容的投影来源；压缩结果写入 `compaction_overlays`，摘要不落成真实消息行。
-- **queued-message-repo**：持久化消息队列。
-- **prompt-diagnostic-repo**：`runs`/`run_steps`/`prompt_diagnostics`，run 状态 `running`→`finished`/`failed`。
-- **tool-execution-repo**：每工具调用成功/时长/错误，由 DB 遥测 sink 写。
-- **subagent-task-repo**：子代理任务（`subagent_tasks`），按 `root_chat_id` 归属，状态机 pending/running/blocked/done/failed/cancelled，暴露为 `store.tasks`。
-- **activity-repo**：聚合上述表供 Usage 面板。
+| Table | Line | Owner (writer) |
+|---|---|---|
+| `workspaces` | 4 | agent conversation repo |
+| `app_settings` (scope app/workspace, JSON value) | 14 | shared; hooks state writer `hooks/store.ts` |
+| `provider_connections` | 27 | `provider/store.ts` |
+| `provider_keys` | 42 | `provider/store.ts` |
+| `provider_models` | 74 | `provider/store.ts` |
+| `provider_default_models` | 95 | `provider/store.ts` |
+| `provider_defaults` | 105 | `provider/store.ts` |
+| `mcp_servers` | 117 | `mcp/store.ts` |
+| `policy_rules` | 135 | `policy/policy-store.ts` |
+| `policy_decisions` | 148 | `policy/policy-store.ts` |
+| `conversations` | 159 | `repositories/conversation-repo.ts` |
+| `messages` | 183 | `repositories/message-repo.ts` |
+| `message_revisions` | 196 | `repositories/message-repo.ts` |
+| `compaction_overlays` | 208 | `repositories/message-repo.ts` |
+| `subagent_tasks` | 224 | `repositories/subagent-task-repo.ts` |
+| `runs` | 250 | `repositories/prompt-diagnostic-repo.ts` |
+| `run_steps` | 269 | `repositories/prompt-diagnostic-repo.ts` |
+| `prompt_diagnostics` | 287 | `repositories/prompt-diagnostic-repo.ts` |
+| `conversation_goals` | 309 | `goal/store.ts` |
+| `skill_states` | 329 | `skills/skill-state-db.ts` |
+| `tool_executions` | 340 | `repositories/tool-execution-repo.ts` |
+| `quarantined_messages` | 356 | `repositories/message-repo.ts` |
+| `queued_messages` | 366 | `repositories/queued-message-repo.ts` |
+| `policy_modes` | 374 | `policy/policy-store.ts` |
+| `plugin_states` (v19) | 386 | `plugins/*` |
+| `plugin_marketplaces` (v20) | 405 | `plugins/*` |
 
-`store.ts` 编排 repository，负责 cwd 规整（`realpathSync` 且须为目录）、agent-id 校验、标题派生、fork 逻辑、事务边界。
+The agent repositories are aggregated in `src/main/agent/store.ts` and wired into the module at
+`src/main/agent/module.ts`.
 
-## 6. 消息存储形态与恢复
+> Two common misconceptions, corrected: messages are **not** one JSON blob per conversation (see §4); hooks
+> trust/enabled is **not** its own table — it lives in `app_settings` under `hooks.state:` (see
+> [14 Hooks](./14-hooks.md)).
 
-- **存储**：完整 `TanzoUIMessage` JSON，版本化。**不是**事件溯源，无自定义 reducer——ai-sdk 的归约在内存里完成；main 以 `messages(seq)` 保存顺序锚点，以 `message_revisions` 追加 payload 修订。
-- **写时机**：经 `ChatRunPersistenceRegistry` 在 `onStepFinish`/`onFinish` 触发（[10 Agent 运行时](./10-agent-runtime.md) §5），受 `canPersist()` 守卫。
-- **恢复**：`load` 返回上下文投影（最新 overlay 摘要 + tail），`loadFullHistory` 返回原始历史日志，`loadDisplay` 返回带合成摘要标记的 UI 时间线；校验失败的消息移入 `quarantined_messages` 而非静默丢弃。`loadUnvalidated` 在持久化合并快路径跳过校验。
-- **压缩归档**：`finalizeCompaction` 只追加 overlay，消息日志保持完整；`expectedActiveIds` 仍作为上下文投影的乐观并发守卫。
-- **崩溃恢复**：启动 `sweepInterruptedRuns` 把残留 `running` 标 `failed`；排队消息从 `queued_messages` 重新水合。
+## 4. Message storage (an append-log, not a blob)
 
-## 7. 持久化不变量
+The `messages` table (`schema.ts:183-194`) is
+`(conversation_id, id, seq, role, message_json, metadata_json, created_at)` with PK `(conversation_id, id)` and a
+unique `(conversation_id, seq)`. There is **one row per message**; `message_json` is a versioned envelope
+`{ v: 1, message }`. On save, `message-repo.ts` diffs existing versus incoming and inserts new rows or records
+revisions.
 
-- [ ] WAL + `foreign_keys=ON`；迁移事务化、严格递增、幂等守卫。
-- [ ] 消息存完整 `TanzoUIMessage` JSON（版本化），非事件溯源。
-- [ ] 唯一真源在 main 的 SQLite；renderer 不落盘。
-- [ ] 畸形消息隔离到 `quarantined_messages`，不丢失。
-- [ ] 每个 store 依赖 `SqlDatabase` 接口，与 better-sqlite3 解耦。
+- **Edits** append to `message_revisions` (`schema.ts:196-206`); the load projection prefers the latest revision
+  via a LEFT JOIN.
+- **Compaction summaries** go to `compaction_overlays` (`schema.ts:208-222`), carrying `generation`,
+  `covers_from/to_seq`, `summary_text`, and `usage_json`; `finalizeCompaction` inserts an overlay and renumbers
+  the tail.
+- **`load()`** returns the latest overlay summary plus the tail after its coverage; `loadFullHistory` /
+  `loadDisplay` provide the un-compacted views.
+- **Recovery**: messages are validated with `safeValidateUIMessages`; invalid ones are salvaged or moved to
+  `quarantined_messages` (`schema.ts:356`) so one corrupt message cannot break a whole conversation.
 
-下一篇 → [23 工作区集成](./23-workspace-integrations.md)
+This is the substrate for the runtime's persistence timing (pre-run / per-step / final / approval-partial saves)
+described in [10 Agent Runtime](./10-agent-runtime.md).
+
+## 5. Runs, steps, and telemetry
+
+`runs` and `run_steps` carry token/usage accounting: `run_steps.usage_json` / `input` / `output` / `total` /
+`cache_read` / `cache_write` are updated per step (`repositories/prompt-diagnostic-repo.ts`), and `runs` totals
+are rolled up via SUM on finish. Interrupted runs are swept to `failed` on startup, and old runs are pruned.
+
+The `tool_executions` table is written only by the telemetry DB sink, which persists `tool-finish` events at
+chat scope. Token/usage lives on runs/run_steps, not the telemetry sink. The read/reporting layer for the Usage
+panel (`repositories/activity-repo.ts`) aggregates KPIs, trends, and reliability over
+runs/run_steps/tool_executions/conversations. See [23 Workspace Integrations](./23-workspace-integrations.md)
+and [50 Cross-Cutting](./50-cross-cutting.md).
+
+## 6. What is not in SQLite
+
+- **ChangeSet** checkpoints are git refs plus a `workspace-change-sets.json` file under `userData` — see
+  [23 Workspace Integrations](./23-workspace-integrations.md).
+- **Slash commands** and **file mentions** read the filesystem directly (markdown files and ripgrep).
+- **Skills** and **plugins** load their bundles from disk; only their enabled/state rows live in SQLite
+  (`skill_states`, `plugin_states`).
+
+Next → [23 Workspace Integrations](./23-workspace-integrations.md)

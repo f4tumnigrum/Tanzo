@@ -1,88 +1,126 @@
-# 01 · 引言与定位
+# 01 · Introduction & Positioning
 
-> 适用范围：全局心智模型与设计原则。最后核对：对照 `src/` 当前实现。
+> Scope: the global mental model and design principles. Last verified against `src/` at v0.2.4.
 
-## 1. 产品定位
+## 1. Product framing
 
-Tanzo 是一个**纯 Electron 桌面应用**（非 monorepo packages 拆分），定位为 AI 原生的本地工作空间：在用户本机的工作区里规划、编码与自动化。它围绕一个**对话式 Agent** 构建，Agent 能读写工作区文件、执行 shell、检索代码、调用 MCP 服务器与供应商原生工具，并在用户监督下完成多步任务。
+Tanzo is a **single-package Electron desktop application** (not a monorepo split into packages), positioned as
+an AI-native local workspace: you plan, code, and automate inside your own machine's workspace. It is built
+around a **conversational agent** that can read and write workspace files, run shell commands, search code,
+call MCP servers, and use provider-native tools — completing multi-step tasks under your supervision.
 
-关键事实（来自 `package.json`）：
+Key facts (from `package.json`):
 
-- `name: tanzo`，`main: ./out/main/index.js`，作者 `f4tumnigrum`（`Lumin Studio` 仅作为 appUserModelId `com.luminstudio.tanzo` 与打包 maintainer 出现）。
-- 运行时核心依赖 `ai@7.0.0-beta.183` 与 `@ai-sdk/*` 一系列 beta provider 包；UI 用 React 19、`@tanstack/react-query`、`zustand`、`react-router-dom@7`；持久化用 `better-sqlite3`；检索用 `@vscode/ripgrep`；MCP 用 `@ai-sdk/mcp`。
+- `name: tanzo`, `main: ./out/main/index.js`, author `f4tumnigrum`. (`Lumin Studio` appears only as the
+  `appUserModelId` `com.luminstudio.tanzo` and as the packaging maintainer in `electron-builder.yml`.)
+- The runtime core depends on `ai@7.x-beta` and the `@ai-sdk/*` family of beta provider packages; the UI uses
+  React 19, `@tanstack/react-query`, `zustand`, and `react-router-dom@7`; persistence is `better-sqlite3`;
+  code search is `@vscode/ripgrep`; MCP uses `@ai-sdk/mcp`.
 
-## 2. 设计目标
+## 2. Design goals
 
-1. **深度复用 ai-sdk v7 的 agent 基底**，而不是重新发明消息协议、turn loop 或归约器。
-2. **三进程职责清晰**：main 持有一切真源与副作用，renderer 只做呈现与交互，preload 只做受控桥接。
-3. **能力靠"加 part"生长**：新增一个 agent 能力 = 一个工具（main）+ 一个数据/工具 part 类型（shared）+ 一个渲染组件（renderer），主干零改动。
-4. **安全默认**：窗口沙箱化、路径沙箱、凭证不出进程、破坏性命令拦截、工具审批可控。
-5. **可观测**：每次运行、每个步骤、每次工具调用都有遥测落库，供 Usage 面板回看。
+1. **Reuse the AI SDK v7 agent substrate deeply** instead of reinventing the message protocol, the turn loop,
+   or the reducers.
+2. **Clear three-process responsibilities**: `main` owns all truth and side effects, `renderer` only renders
+   and interacts, `preload` is a controlled bridge and nothing more.
+3. **Capability grows by "adding a part"**: a new agent capability = one tool (`main`) + one data/tool part
+   type (`shared`) + one renderer component, with zero changes to the core loop.
+4. **Secure by default**: sandboxed windows, path sandboxing, credentials that never leave the process,
+   destructive-command interception, and controllable tool approval.
+5. **Observable**: every run, step, and tool call is written to telemetry so the Usage panel can replay it.
 
-## 3. 架构原则与不变量
+## 3. Architectural principles and invariants
 
-这些不变量贯穿全套文档，是判断「改动是否破坏架构」的标尺。
+These invariants run through the whole document set. They are the yardstick for judging whether a change
+breaks the architecture.
 
-### 3.1 一种物质（Substance）
+### 3.1 One substance
 
-对话里流动的一切都是一个 `TanzoUIMessage` 的 `part`：文本、推理、工具调用、文件 diff、计划、子代理进度、遥测，都是 part 的一种类型。类型定义见 `src/shared/agent-message.ts:419`：
+Everything that flows through a conversation is a `part` of a single `TanzoUIMessage`: text, reasoning, tool
+calls, file diffs, plans, sub-agent progress, telemetry — each is one type of part. The type is defined at
+`src/shared/agent-message.ts`:
 
 ```ts
-export type TanzoUIMessage = UIMessage<TanzoMetadata, TanzoDataParts, TanzoToolUI>
+export type TanzoUIMessage = UIMessage<TanzoMetadata, TanzoDataParts, TanzoTools>
 ```
 
-`TanzoTools`（工具词汇，`agent-message.ts:58`）与 `TanzoDataParts`（数据 part 词汇，`agent-message.ts:264`）是两套开放联合，三进程共引。详见 [04 跨进程契约](./04-ipc-and-contracts.md)。
+`TanzoTools` (the tool vocabulary) and `TanzoDataParts` (the data-part vocabulary) are two open unions shared
+across all three processes. See [04 IPC & Contracts](./04-ipc-and-contracts.md).
 
-### 3.2 一道边界（Seam）
+### 3.2 One seam
 
-renderer ↔ main 的对话数据只经由 IPC 的 `chat:*` 通道流动，载荷的核心是 `InferUIMessageChunk<TanzoUIMessage>`（流式 chunk）。设置类控制面（`provider:*`、`policy:*`、`mcp:*` 等）是独立的 CRUD 面，不走对话缝。不开本地端口，不走 localhost-SSE。详见 [04 跨进程契约](./04-ipc-and-contracts.md)。
+Conversation data between `renderer` and `main` flows only through the IPC `chat:*` channels; the payload's
+core is `InferUIMessageChunk<TanzoUIMessage>` (a streaming chunk). Settings-style control planes
+(`provider:*`, `policy:*`, `mcp:*`, …) are independent CRUD surfaces and do not travel over the conversation
+seam. **No local port is opened; there is no localhost SSE.** See
+[04 IPC & Contracts](./04-ipc-and-contracts.md).
 
-### 3.3 内层循环用 ai-sdk `streamText`
+### 3.3 The inner loop is the AI SDK's `streamText`
 
-main 端**不手写 turn loop**。每个回合用 ai-sdk 的 `streamText`（参数由 `buildAgentCall` 组装，`src/main/agent/runtime/build-agent.ts:73`；调用点 `runtime/stream-runner.ts:278`），靠 `stopWhen` + `prepareStep` 跑「调模型 → 执行工具 → 回灌 → 再调」的多步循环。`TurnLoop` 在其外面只包了一层**压缩 / 续航**的外层循环（上限 `MAX_CONTINUATION_PASSES = 10`，`runtime/turn-loop.machine.ts:21`）。详见 [10 Agent 运行时](./10-agent-runtime.md)。
+`main` does **not** hand-write the turn loop. Each turn uses the AI SDK's `streamText` (parameters assembled
+by `buildAgentCall` at `src/main/agent/runtime/build-agent.ts:73`; call site
+`src/main/agent/runtime/stream-runner.ts:278`), driving the "call the model → run tools → feed results back →
+call again" multi-step loop via `stopWhen` + `prepareStep`. `TurnLoop` wraps only a thin **compaction /
+continuation** outer loop around it (cap `MAX_CONTINUATION_PASSES = 10` at
+`src/main/agent/runtime/turn-loop.machine.ts:21`). See [10 Agent Runtime](./10-agent-runtime.md).
 
-### 3.4 审批活在消息里
+### 3.4 Approval lives in the message
 
-工具审批不在 main 维护 pending 状态机。`toolApproval` 决策函数返回 `user-approval` 时该回合自然停止；用户响应被写进消息历史，下一次 `stream` 用含响应的完整历史重跑，SDK 看到已批准的调用直接执行。main 唯一**承载正确性**的跨调用状态是取消用的 `AbortController`。详见 [13 策略与审批](./13-policy-and-approval.md)。
+Tool approval is not a pending state machine held in `main`. When the `toolApproval` decision function returns
+`user-approval`, the turn stops naturally; the user's response is written into the message history, and the
+next `stream` re-runs with the full history including that response. The SDK sees the now-approved call and
+executes it directly. The only cross-call state `main` holds for correctness is the cancellation
+`AbortController`. See [13 Policy & Approval](./13-policy-and-approval.md).
 
-### 3.5 main 是唯一真源
+### 3.5 `main` is the single source of truth
 
-消息只持久化在 main 的 SQLite（`messages` 表，存完整 `TanzoUIMessage[]` 的 JSON）。renderer 永不落盘——它在内存里用 `ChatSession` 重建当前对话，运行结束后从 main 重新拉取对齐。详见 [22 持久化](./22-persistence.md)、[30 渲染层](./30-renderer.md)。
+Messages are persisted only in `main`'s SQLite (an append-log in the `messages` table, plus revisions and
+compaction overlays — see [22 Persistence](./22-persistence.md)). The `renderer` never writes to disk — it
+reconstructs the current conversation in memory via `ChatSession`, and after a run finishes it re-fetches from
+`main` to re-align. See [22 Persistence](./22-persistence.md) and [30 Renderer](./30-renderer.md).
 
-### 3.6 每条对话串行、跨对话并发
+### 3.6 Serial per conversation, concurrent across conversations
 
-每个 `chatId` 的所有变更经 `ChatMailbox` 串行执行；不同对话之间并发。同一时刻每条对话只有一个活跃 run（由 `RunEngine` 的 `inflight` + epoch 强制）。详见 [10 Agent 运行时](./10-agent-runtime.md)。
+All mutations for a given `chatId` execute serially through the `ChatMailbox`; different conversations run
+concurrently. At any instant a conversation has at most one active run (enforced by `RunEngine`'s `inflight`
+map + per-chat epoch). See [10 Agent Runtime](./10-agent-runtime.md).
 
-### 3.7 防御性深度的路径与命令安全
+### 3.7 Defense-in-depth path and command safety
 
-文件、检索、shell、wallpaper、pet 资源等每一处对外暴露的文件系统面都独立施加**工作区沙箱 + 符号链接 realpath 校验 + 凭证路径拒绝**；破坏性 shell 命令由策略引擎的内置规则拦截。共享常量在 `src/main/agent/security/path-safety.ts`。详见 [13 策略与审批](./13-policy-and-approval.md)、[50 横切关注点](./50-cross-cutting.md)。
+Every filesystem surface exposed outward — files, search, shell, wallpaper, pet assets — independently applies
+a **workspace sandbox + symlink `realpath` check + credential-path denial**; destructive shell commands are
+intercepted by the policy engine's built-in rules. Shared constants live at
+`src/main/agent/security/path-safety.ts`. See [13 Policy & Approval](./13-policy-and-approval.md) and
+[50 Cross-Cutting](./50-cross-cutting.md).
 
-## 4. 不变量自检清单
+## 4. Invariant self-check
 
-修改后应能回答：
+After a change, you should be able to answer:
 
-- [ ] 「X 能力在哪实现」→ 答案落在「一个 tool + 一个 part 类型 + 一个渲染组件」或某个 ai-sdk 既有扩展槽。
-- [ ] 对话数据只走 `chat:*` 通道，载荷是 `UIMessageChunk`；控制面走各自独立通道。
-- [ ] main 没有手写 turn loop；ai-sdk `streamText` 是内层执行核心。
-- [ ] main 不持有审批状态机；审批活在消息里。
-- [ ] renderer 不落盘任何消息；唯一真源是 main 的 SQLite。
-- [ ] 每条对话串行（mailbox），单活跃 run（epoch + inflight）。
-- [ ] 凭证不以明文跨 IPC；破坏性命令被内置策略拦截。
+- [ ] "Where is capability X implemented?" → the answer lands in "one tool + one part type + one renderer
+      component" or an existing AI SDK extension slot.
+- [ ] Conversation data travels only over `chat:*`, with a `UIMessageChunk` payload; control planes travel over
+      their own channels.
+- [ ] `main` has no hand-written turn loop; the AI SDK's `streamText` is the inner execution core.
+- [ ] `main` holds no approval state machine; approval lives in the message.
+- [ ] The `renderer` persists no messages; the only source of truth is `main`'s SQLite.
+- [ ] Each conversation is serial (mailbox), with a single active run (epoch + inflight).
+- [ ] Credentials never cross IPC in plaintext; destructive commands are intercepted by built-in policy.
 
-## 5. 术语表
+## 5. Glossary
 
-| 术语 | 含义 |
+| Term | Meaning |
 |---|---|
-| **Substance / 物质** | `TanzoUIMessage`，对话里唯一的消息类型 |
-| **Part** | 一条消息 `parts[]` 里的一项：text / reasoning / tool-* / data-* / file / source |
-| **Chunk** | 流式增量单元 `UIMessageChunk`，跨 IPC 传输，由 ai-sdk 在两端各自归约成消息 |
-| **Seam / 边界** | renderer ↔ main 的对话缝，即 IPC `chat:*` 通道 |
-| **streamText** | ai-sdk 的多步工具循环执行核心；参数由 `buildAgentCall` 组装，靠 `stopWhen` + `prepareStep` 多步推进 |
-| **Run / 运行** | 一次 `streamText` 驱动的对话回合（可能含多步） |
-| **Section** | 上下文工程里组装系统/前导提示的一个声明单元 |
-| **Mailbox** | 每 `chatId` 的串行任务执行器 |
-| **Subagent / 子代理** | 在工具内嵌套启动的子对话，可前台 / 后台 / 并行 |
-| **Skill / 技能** | `SKILL.md` 描述的可渐进披露的能力包 |
-| **Module 工厂** | `createXxxModule(deps) → { service?, registerIpc, close? }` 约定 |
+| **Substance** | `TanzoUIMessage`, the one message type flowing through a conversation |
+| **Part** | One item in a message's `parts[]`: text / reasoning / tool-* / data-* / file / source |
+| **Chunk** | The streaming increment unit `UIMessageChunk`, transported over IPC and reduced back into messages by the AI SDK on each side |
+| **Seam** | The renderer ↔ main conversation seam, i.e. the IPC `chat:*` channels |
+| **streamText** | The AI SDK's multi-step tool-loop execution core; parameters assembled by `buildAgentCall`, advanced by `stopWhen` + `prepareStep` |
+| **Run** | One conversation turn driven by a single `streamText` invocation (may contain multiple steps) |
+| **Section** | A declarative unit that assembles system / leading prompts in context engineering |
+| **Mailbox** | The per-`chatId` serial task executor |
+| **Subagent** | A nested child conversation launched from inside a tool; foreground / background / parallel |
+| **Skill** | A progressively-disclosed capability pack described by `SKILL.md` |
+| **Module factory** | The `createXxxModule(deps) → { service?, registerIpc, close? }` convention |
 
-下一篇 → [02 系统总览](./02-system-overview.md)
+Next → [02 System Overview](./02-system-overview.md)

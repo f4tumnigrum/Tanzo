@@ -1,64 +1,87 @@
-# 21 · MCP 集成
+# 21 · MCP Integration
 
-> 适用范围：MCP 服务器配置、生命周期、工具暴露、Elicitation 往返、传输与重连。最后核对：`src/main/mcp/*`、`src/shared/mcp.ts`。
+> Scope: Model Context Protocol server lifecycle, transports and reconnection, tool exposure to the agent,
+> Elicitation round-trips, and storage. Last verified against `src/main/mcp/*` and `src/shared/mcp.ts` at
+> v0.2.4.
 
-## 1. 概览
+## 1. Module and lifecycle
 
-基于 `@ai-sdk/mcp`（`createMCPClient`、`Experimental_StdioMCPTransport`）。模块装配 `module.ts`。MCP 让 agent 接入外部工具服务器（stdio 或 http/sse 传输），把它们的工具暴露成 agent 可调的 `ToolSet`。
+`createMcpModule({ db, getWindows, remoteDebuggingPort })` builds an `McpService` over an `McpClient`.
+`McpModule.initialize()` (`mcp/module.ts:176-180`) runs `service.syncFromStore()` →
+`client.syncServers(mergedServers())`, then subscribes to connection-state changes and broadcasts them to all
+windows via `MCP_CHANNELS.connectionStatesChanged`. It is fired async after the UI is up (see
+[03 Process Model](./03-process-model.md)).
 
-## 2. 配置与存储
+`syncServers` (`mcp/client.ts:197-246`) reconciles the desired server list against live connections:
+disconnected servers are removed; disabled servers are disconnected but keep a `disconnected` state; unchanged
+connected servers are left alone; new or changed servers are connected. All per-server operations are serialized
+through `#withServerOperation` (a per-name chained promise queue).
 
-- `McpStore`（`store.ts:10`）把服务器存在 `mcp_servers` 表。契约 `McpServerConfig`（`shared/mcp.ts:30`）；`name` UNIQUE（重复 → `MCP_SERVER_NAME_DUPLICATE`）。JSON 列（`args_json`/`headers_json`/`env_json`）读时 zod 校验；`sanitizeServerForTransport` 丢弃与传输类型无关字段。
-- 校验不变量（`store.ts:123`）：name 必填；stdio 需 `command`；http/sse 需 `url`。
+**Connect** (`client.ts:496-593`): state → `connecting`; build the transport; call `createMCPClient({ transport,
+clientName, version, capabilities: { elicitation: {} }, onUncaughtError })` inside a 120 s timeout; register the
+elicitation handler; on success store the connection and set state → `connected` (and refresh the tool count);
+on failure set state → `error` and schedule a reconnect if enabled.
 
-## 3. 生命周期与连接管理（`client.ts`）
+**Disconnect** (`client.ts:617-643`): `connection.client.close()`, then either remove the state or preserve it
+as `disconnected` (keeping `serverInfo` / `instructions`).
 
-`McpClient` 是按服务器 **name** 键的有状态管理器：
+## 2. Transports (`mcp/transport.ts`)
 
-- `syncServers(servers)`（`client.ts:197`）协调配置：移除消失的、断开禁用的、（重）连配置变化（经 `normalizeConnectionConfig` 比较）或未连接的。所有变更经 `#withServerOperation`（每 name 一个 promise 队列）串行——重要并发不变量。
-- `#connect`（`client.ts:496`）：建传输 → `createMCPClient`（`capabilities: { elicitation: {} }` + `onUncaughtError` 丢连接并排程重连）。包 `withTimeout`（连接默认 120s）；迟到解析的 client 被关闭防泄漏。
-- **重连不变量**：指数退避（`1s → 30s`），最多 5 次，**仅远程传输**（`isRemoteTransport`）。stdio 不自动重连。
-- 连接状态经监听器广播（`onConnectionStatesChanged`）；`McpConnectionState` 带 `status`/`toolCount`/`serverInfo`/`instructions`/`error`。
-- 分页安全：tools/resources/prompts 列举上限 100 页 / 10000 项，检测重复游标 → `MCP_PAGINATION_*`。
+`createMcpTransport(config)` supports:
 
-## 4. 传输（`transport.ts`）
+- **stdio**: expands env vars (`mcp/env.ts`), strips sensitive keys via `safeChildEnv`, and on Windows resolves
+  `.bat` / `.cmd` to `cmd.exe /d /c <script>` while blocking args containing CMD metacharacters. Creates an
+  `Experimental_StdioMCPTransport` from `@ai-sdk/mcp/mcp-stdio` with `stderr: 'inherit'` and the resolved cwd.
+- **http / sse**: expands env, validates the URL protocol is `http(s)`, and returns
+  `{ type, url, headers, redirect }` (default `redirect: 'error'`) passed to `createMCPClient`. For outbound
+  network fields (url, headers), only non-sensitive env vars are expanded.
 
-- **stdio**：`Experimental_StdioMCPTransport`，`stderr: 'inherit'`。命令解析经 `resolveStdioLaunchCommand`（处理 Windows PATHEXT/.bat 引号）；环境经 `safeChildEnv` 净化。
-- **http/sse**：校验仅 `http:`/`https:`，`redirect` 默认 `'error'`。
-- **环境变量展开**：`${VAR}` 与 `${VAR:-default}` 语法在启动前对 command/args/cwd/url/headers/env 展开（`env.ts`）。
+## 3. Reconnection (`mcp/client.ts:645-693`)
 
-## 5. 工具暴露给 Agent
+- **Only remote transports** (`http` / `sse`) auto-reconnect; stdio is **not** auto-reconnected.
+- Exponential backoff `delay = min(1000 × 2^(attempt-1), 30000)`, up to `MAX_RECONNECT_ATTEMPTS = 5`; after
+  exhaustion the state becomes `error` ("Reconnect attempts exhausted").
+- Manual `reconnectServer(name)` resets the counter and reconnects with `throwOnFailure: true`.
 
-`toolsForServer(serverName)`（`client.ts:325`）列出工具定义后返回 `client.toolsFromDefinitions(...)`——一个 ai-sdk `ToolSet`。这是 MCP 与 agent 工具循环的桥。agent 侧 `tools/mcp.ts` 把它们命名为 `mcp__<server>__<tool>` 并映射注解到 `kind`（[12 工具系统](./12-tools.md) §2.1）。
+## 4. Tool exposure
 
-UI 用的原始内省：`listTools`/`listResources`/`listPrompts`/`getPrompt`/`readResource`/`listResourceTemplates`，返回共享 `Mcp*Result` 形状。
+`toolsForServer(serverName)` (`client.ts:325-331`): ensures the server is connected (on demand), lists all its
+tools with a cursor-paginated loop (guarded against runaway pagination), and wraps the definitions into the
+Vercel AI SDK `ToolSet` format via `connection.client.toolsFromDefinitions(...)`. The MCP layer does not merge
+across servers — the agent's tool registry does that, namespacing keys as `mcp__<server>__<tool>` and deriving
+each tool's approval `kind` from its `readOnlyHint` / `destructiveHint` annotations. See [12 Tools](./12-tools.md).
 
-## 6. Elicitation 往返（服务器 → 用户 → 服务器）
+## 5. Elicitation round-trips
 
-MCP 服务器向用户索要结构化输入的往返：
+When a server needs input from the user, it sends an elicitation request. The flow (`mcp/module.ts:131-164`):
 
-```
-1. 连接时注册 client.onElicitationRequest(...)（client.ts:540）→ handleElicitationRequest
-2. module.ts:85 handleElicitationRequest 生成 randomUUID requestId，存 resolver 进
-   pendingElicitations，推 mcp:elicitation-requested 给主窗口
-   { requestId, serverName, message, requestedSchema }；无窗口则 resolve {action:'cancel'}
-3. 超时（默认 5 分钟）自动取消
-4. renderer 经 mcp:resolve-elicitation 响应（requestId 须 UUID）→ resolveElicitation 解析
-5. McpElicitResult { action: 'accept'|'decline'|'cancel'; content? } 返回给服务器
-6. close() 时所有待处理 elicitation resolve 为 cancel
-```
+1. The SDK client's `onElicitationRequest` handler fires with `{ serverName, message, requestedSchema }`.
+2. The module generates a UUID `requestId`, stores a promise resolver in `pendingElicitations`, and sends
+   `MCP_CHANNELS.elicitationRequested` to the primary window. If no window exists, it resolves immediately with
+   `{ action: 'cancel' }`.
+3. A timeout (`DEFAULT_ELICITATION_TIMEOUT_MS = 5 × 60_000`) resolves `{ action: 'cancel' }` on expiry.
+4. The renderer replies over `MCP_CHANNELS.resolveElicitation` with `(requestId, result)`; the IPC handler
+   validates the id and `result` and calls `resolveElicitation`, which clears the timer and resolves the
+   promise. The MCP SDK receives `{ action: 'accept' | 'decline' | 'cancel', content? }`.
 
-renderer 侧由全局 `McpElicitationHost`（挂在 App）队列驱动模态消费（[30 渲染层](./30-renderer.md)）。
+The renderer host is `McpElicitationHost` (see [30 Renderer](./30-renderer.md)).
 
-## 7. 通道
+## 6. Storage and server merge
 
-`MCP_CHANNELS`（`shared/mcp.ts:1`，前缀 `mcp:`）。**推送**：`mcp:connection-states-changed`、`mcp:elicitation-requested`（main→renderer，`webContents.send`）；其余为 invoke。
+MCP servers are stored in the `mcp_servers` SQLite table (`mcp/store.ts`), with columns for `id`, `name`
+(UNIQUE), `transport` (`stdio | sse | http`), `command`, `args_json`, `cwd`, `url`, `headers_json`, `redirect`,
+`env_json`, and `enabled`. Array/object fields are JSON blobs, re-parsed with `z.safeParse`.
+`sanitizeServerForTransport` strips columns irrelevant to the transport (e.g. no `command` for http/sse).
+Validation requires a name, a `command` for stdio, and a `url` for http/sse (duplicate names raise
+`MCP_SERVER_NAME_DUPLICATE`). See [22 Persistence](./22-persistence.md).
 
-## 8. MCP 不变量
+Server merge priority (`mcp/service.ts`): user-defined DB servers win all name collisions, then plugin servers
+(`setPluginServers`), then built-in servers (`setBuiltinServers`).
 
-- [ ] 每服务器操作经 promise 队列串行；远程才自动重连（退避上限 5 次），stdio 不重连。
-- [ ] Elicitation 是 5 分钟限时的请求/解析往返，targeting 主窗口；超时/无窗口/关停时取消。
-- [ ] http/sse 仅允许 `http:`/`https:`，默认禁止重定向。
-- [ ] MCP 工具命名空间 `mcp__<server>__<tool>`，注解映射到 read/edit。
+**Built-in browser server** (`mcp/module.ts`): when `remoteDebuggingPort > 0`, a `chrome-devtools` stdio server
+is registered that runs `npx chrome-devtools-mcp@latest --browser-url http://127.0.0.1:<port>
+--experimentalIncludeAllPages --blockedUrlPattern file://**`. The `--blockedUrlPattern file://**` prevents the
+agent from navigating into or injecting into the Electron app's own `file://` renderers — a prompt-injection
+boundary. See [03 Process Model](./03-process-model.md) and [50 Cross-Cutting](./50-cross-cutting.md).
 
-下一篇 → [22 持久化](./22-persistence.md)
+Next → [22 Persistence](./22-persistence.md)

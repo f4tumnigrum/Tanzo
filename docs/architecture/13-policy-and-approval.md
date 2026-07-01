@@ -1,109 +1,136 @@
-# 13 · 策略与审批
+# 13 · Policy & Approval
 
-> 适用范围：`toolApproval` 决策函数、规则优先级、权限模式、内置护栏、审批记忆、无状态重跑。最后核对：`src/main/agent/policy/*`、`runtime/build-agent.ts`、`src/shared/policy.ts`、`src/shared/approval-responses.ts`。
+> Scope: the `toolApproval` decision function, the policy engine (rule priority, permission modes, built-in
+> guardrails, approval memory), and how approval lives in the message history rather than a server state
+> machine. Last verified against `src/main/agent/policy/*`, `src/shared/policy.ts`,
+> `src/shared/approval-responses.ts`, and `src/main/agent/module.ts` at v0.2.4.
 
-## 1. 心智模型
+> Note: `src/main/agent/policy/engine.ts` contains a byte that trips text file-reads (some tools report it as
+> binary). It is ordinary TypeScript; read it with a shell (`sed`/`grep`). Line numbers below are from the file
+> on disk.
 
-工具审批是一个**集中决策点**而非分散在各工具里的逻辑。每次工具调用前，`streamText` 调 `toolApproval` 回调（由 `buildAgentCall` 构造，`runtime/build-agent.ts:85`）。`agent/module.ts` 会先用 hooks 包裹 `PolicyEngine.decide`：`PreToolUse` 钩子可拒绝，否则继续交给标准策略引擎返回 ai-sdk 的 `ToolApprovalStatus`：
+## 1. The `toolApproval` decision function
 
-```
-'approved' | 'denied' | 'user-approval' | 'not-applicable'
-```
+The AI SDK's `streamText` calls a `toolApproval` callback before executing any tool call. Its return type is
+`ToolApprovalStatus` (from `ai`):
 
-返回 `user-approval` 时该回合**自然停止**、把审批请求 part 流回 renderer——此刻 main **不持有任何审批状态**。用户响应被写进消息历史，下一次 `submit` 用含响应的完整历史重跑，SDK 看到已批准的调用直接执行。
+- `'approved'` — execute immediately.
+- `'user-approval'` — pause and request user confirmation.
+- `'not-applicable'` — no policy applies (treated as approved).
+- `{ type: 'denied', reason? }` — a hard block with a reason.
 
-## 2. 决策函数 `decide`（`policy/engine.ts:183`）
+`buildAgentCall` constructs the callback (`runtime/build-agent.ts:85-96`): it reads per-tool metadata
+(`kind`, `fingerprintFields`) from `tool.metadata.tanzo` (`build-agent.ts:16-33`) and forwards a
+`PolicyDecisionInput` to `input.decide(...)`. It is wired into the stream at `runtime/stream-runner.ts:282`.
 
-`buildAgentCall` 从 `metadata.tanzo` 取 `kind`/`fingerprintFields`，从 `runtimeContext` 取活跃模式与 chatId，传入 `decide`。`createAgentModule` 包裹后的实际求值顺序是：
+### The hooks pre-gate
 
-0. **PreToolUse hooks**：受信任且启用的钩子若返回 deny，直接 `{type:'denied', reason}`；钩子只能收紧，不能放宽策略。
-1. **内置 + 用户 DENY 规则**（最先匹配）→ `{type:'denied', reason}`。
-2. `exitPlanMode` → 恒 `user-approval`。
-3. **计划模式 + 非只读工具** → denied（"plan mode: writes are blocked"）。
-4. **已记忆决策**（持久 `listDecisions` 或 session 缓存），按 `fingerprint(toolName, input, fingerprintFieldsFor(toolName))` 匹配。注：`decide` 忽略传入的 `fingerprintFields`，改用静态 `FINGERPRINT_FIELDS` 映射（`engine.ts:19-27`）。
-5. **ALLOW 规则**（内置 + 用户）→ `approved`。
-6. **yolo / dangerous 模式** → `approved`。
-7. **ASK 规则** → `user-approval`。
-8. **只读工具** → `not-applicable`（无需审批直接跑）。
-9. 否则 → `user-approval`。
+The `policy` object passed to `createAgentService` wraps the engine's `decide` with a `PreToolUse` hook check
+(`module.ts:290-306`): it resolves the chat id from the runtime context, runs `hooks.runPreToolUse(...)`, and
+returns `{ type: 'denied', reason }` if a hook blocks — otherwise it defers to `policyEngine.decide(input)`.
+Decision order is therefore **hooks PreToolUse → policy engine**. See [14 Hooks](./14-hooks.md).
 
-**失败安全**：任何异常降级为 `user-approval` 并记日志（`engine.ts:227-229`）——规则求值 bug 永不会静默批准。
+## 2. The policy engine
 
-`isReadOnlyTool`（`engine.ts:30`）：`kind ∈ read|search` 或 name ∈ `{fileRead, glob, grep, skill, subagentCheck, askQuestion}`。
+Types are in `src/shared/policy.ts` and `src/main/agent/policy/types.ts`.
 
-## 3. 规则模式（`src/shared/policy.ts`）
+- `PolicyRule` = `{ action: 'allow' | 'deny' | 'ask', source: 'builtin' | 'user', scope, priority, match }`,
+  where `match` is `{ toolName?, toolNameGlob?, argMatch?: { path, equals?, regex? } }`.
+- `PermissionMode` = `'default' | 'plan' | 'yolo' | 'dangerous'`.
+- `PolicyUserDecision` = `{ toolName, inputFingerprint, decision, scope: 'session' | 'forever', decidedAt,
+  expiresAt?, scopeTargetId? }`.
 
-```ts
-type PolicyRule = {
-  id, source, scope, action: 'allow'|'deny'|'ask',
-  priority, match, reason
-}
-type PolicyMatch = {
-  toolName?, toolNameGlob?,            // 大括号/星号 glob → globToRegExp
-  argMatch?: { path, equals | regex }  // 按入参路径匹配
-}
-```
+### 2.1 Rule ordering (`engine.ts:124-134`)
 
-`mergeRules`（`engine.ts:124`）固定优先级：内置 deny → 用户 deny → 用户 allow → 内置 allow → 用户 ask。`PolicyStore` 持久化规则、决策、每对话模式。
+`mergeRules(builtin, user)` produces a single ordered list:
 
-## 4. 内置护栏（`policy/builtin-rules.ts`）
-
-全部 `source:'builtin', scope:'system', priority:0`：
-
-- **拒绝**任何 `path` 入参匹配 `.git/`。
-- **拒绝**任何 `path` 入参匹配敏感路径模式（`.ssh`/`.aws`/`.env` 凭证）。
-- **拒绝 shell**（`shell`/`shellStart` 的 command **与** `shellWrite` 的 input 双向量）：`rm -rf /|~|.|*`、`rm --no-preserve-root`、fork 炸弹、`dd of=/dev/<block>`、`mkfs`、`> /dev/<block>`。
-- **拒绝凭证读取**（`b.cred-read`，`builtin-rules.ts:41-45`）：经 `cat|less|more|head|tail|bat|nl|xxd|od|strings|base64|openssl` 等读取 `.ssh/`、`.aws/`、`.env*`、`id_rsa/ed25519` 等（同样对 shell command 与 shellWrite input 双向量）。
-- **允许** `{fileRead, glob, grep, skill, askQuestion}`（priority 100）。
-
-## 5. 权限模式
-
-```ts
-type PermissionMode = 'default' | 'plan' | 'yolo' | 'dangerous'
+```text
+builtin deny  →  user deny (by priority)  →  user allow (by priority)  →  builtin allow  →  user ask (by priority)
 ```
 
-每对话解析，回落全局（`modeFor`，`engine.ts:146`），经 `policyStore.saveMode` 持久化。活跃模式同时传入模型 `runtimeContext`（`build-agent.ts:58`），供 `extractMode` 读取。
+`matchRule` (`engine.ts:113-120`) matches on exact `toolName`, a `toolNameGlob` (compiled via `globToRegExp`,
+`engine.ts:79-94`), and an `argMatch` that reads a JSON path from the tool input and compares by `equals` or
+`regex`.
 
-| 模式 | 行为 |
-|---|---|
-| `default` | 标准审批流（按上面优先级） |
-| `plan` | 写类工具被拦截；只读子代理可用；`exitPlanMode` 走审批 |
-| `yolo` | ASK 类直接批准（仍受 DENY 与内置护栏约束） |
-| `dangerous` | 绕过沙箱包含校验（仍强制凭证路径拒绝）；批准 ASK 类 |
+### 2.2 `decide()` flow (`engine.ts:183-231`)
 
-## 6. 审批记忆指纹
+For each tool call, in order:
 
-`fingerprint(toolName, input, fields)`（`engine.ts:55`）= 对 `toolName` + 仅 `fingerprintFields` 投影的稳定串化做 sha256（如 `shell→[command]`，编辑类 `→[path]`）。这把"记住这个决策"限定到有意义的入参——批准一条 shell 命令不会盲批所有 shell。决策作用域 `SubagentApprovalScope = 'once' | 'session' | 'forever'`：`session` 存内存缓存，`forever` 持久化到 `policy_decisions` 表。
+1. **Deny rules first.** If any `deny` rule matches, return `{ type: 'denied', reason }` (`engine.ts:189-190`).
+2. **`exitPlanMode` always asks.** Return `'user-approval'` (`engine.ts:192`).
+3. **Plan-mode write block.** Resolve the active mode (`engine.ts:194-195`); in `plan` mode, any non-read-only
+   tool returns `{ type: 'denied', reason: 'plan mode: writes are blocked' }` (`engine.ts:196-198`). This
+   happens *before* remembered decisions, so plan mode cannot be bypassed by a prior approval.
+4. **Remembered decision.** Compute the `fingerprint` (`engine.ts:200`) and look up a persisted decision (scoped
+   to the workspace via `scopeTargetId`, or a legacy unscoped one) then the session cache; if found, return it
+   (`engine.ts:201-214`).
+5. **Allow rules.** If any `allow` rule matches, return `'approved'` (`engine.ts:216-218`).
+6. **Yolo / dangerous.** Return `'approved'` (`engine.ts:220`).
+7. **Ask rules.** If any `ask` rule matches, return `'user-approval'` (`engine.ts:222-223`).
+8. **Default fallback.** Read-only tools return `'not-applicable'`; everything else returns `'user-approval'`
+   (`engine.ts:225-226`).
 
-## 7. 无状态重跑链路
+Any thrown error is caught and downgraded to `'user-approval'` — the engine fails safe (`engine.ts:227-229`).
 
-审批续航全由消息承载，main 无状态：
+### 2.3 Built-in guardrails (`policy/builtin-rules.ts`)
 
-```
-PolicyEngine 在 toolApproval 返回 'user-approval'
-  → ai-sdk 吐 tool-approval-request chunk，回合自然停止，stream 返回
-  → renderer 从 approval-requested 状态渲染审批 UI（ApprovalGroup）
-  → 用户点批准/拒绝 → 经 chat:respond-approvals 把响应写进消息
-  → applyApprovalResponses(messages, responses)（shared/approval-responses.ts）
-       把 approval-requested 工具 part 迁移到 approval-responded
-  → main 用含审批响应的完整历史起全新 streamText 运行
-  → SDK 在 step 起点看到已批准调用，直接执行、继续
-```
+All built-in rules have `priority: 0` and `source: 'builtin'`. Deny rules:
 
-`applyApprovalResponses`（`approval-responses.ts:34`）是纯共享逻辑：遍历 assistant 工具 part，用 ai-sdk 的 `isToolUIPart`/`isDynamicToolUIPart`/`getToolName` 识别并迁移状态，返回新消息 + `AppliedApprovalResponse[]`。
+- `b.git` — deny any tool whose `path` matches `(^|/)\.git(?:/|$)`.
+- `b.ssh` — deny credential file paths (`SENSITIVE_PATH_PATTERN`).
+- `b.rmrf` — deny destructive `rm -rf` of `/ ~ * ..` in `{shell, shellStart}.command` / `shellWrite.input`.
+- `b.cred-read` — deny reading `.ssh/`, `.aws/`, `.env`, key files via cat/less/base64/openssl/…
+- `b.rm-no-preserve`, `b.forkbomb`, `b.dd-device`, `b.mkfs`, `b.dev-redirect` — other destructive patterns.
 
-子代理审批经 `subagent/approval-utils.ts`（`extractPendingApprovals`/`applyApprovalResponse`）+ `subagent/task-service.ts`（`listApprovals`/`respondApproval`，发 `data-taskApproval`）路由到 root 对话（[12 工具系统](./12-tools.md) §6）。
+One allow rule: `b.read` (`priority: 100`, action `allow`) — `{ fileRead, glob, grep, skill, askQuestion }` are
+always allowed. See [12 Tools](./12-tools.md).
 
-## 8. 策略 IPC（`POLICY_CHANNELS`）
+### 2.4 Fingerprinting and memory
 
-`listRules`/`saveRule`/`deleteRule`/`listDecisions`/`revokeDecision`/`getMode`/`setMode`。renderer 在 Settings → Permissions 标签编辑（[30 渲染层](./30-renderer.md)）。Hooks 的 list/reload/trust/preview 属于独立 `HOOKS_CHANNELS`，但会在审批前参与 `decide`。
+`fingerprint(toolName, input, fields?)` (`engine.ts:56-60`) is a stable, order-independent SHA-256 over the
+tool name and a canonically-stringified projection of the input. When `fingerprintFields` are given
+(`FINGERPRINT_FIELDS`: `shell → [command]`, `fileEdit`/`multiEdit`/`fileWrite → [path]`, `engine.ts:19-23`),
+only those fields are hashed, so "approve this command" survives unrelated argument changes.
 
-## 9. 策略不变量
+`remember(decision, chatId)` (`engine.ts:248-258`): a `'session'` decision goes into an in-memory
+`sessionCache` keyed by workspace scope + fingerprint; a `'forever'` decision is persisted to SQLite via
+`policyStore.saveDecision`, tagged with the workspace `scopeTargetId`. Decisions are thus **workspace-scoped**:
+an approval in workspace A does not apply to workspace B (legacy unscoped rows apply globally). Expired
+decisions are filtered out on read.
 
-- [ ] 优先级：PreToolUse hooks deny > deny > 计划模式写拦截 > 已记忆 > allow > yolo/dangerous > ask > 只读跳过 > 默认 ask。
-- [ ] 求值异常降级为 `user-approval`，永不静默批准。
-- [ ] main 不持有审批状态机；审批活在消息里，经 `applyApprovalResponses` 迁移。
-- [ ] 凭证/`.git` 路径与破坏性 shell 命令由内置规则硬拒。
-- [ ] 审批记忆按 `fingerprintFields` 指纹限定作用域。
+Permission modes are per-chat with a global fallback: `setMode(next, chatId?)` stores a chat override (persisted
+via `policyStore.saveMode`) or sets the global mode (`engine.ts:236-247`); `modeFor(chatId)` prefers the chat
+override (`engine.ts:166-169`).
 
-下一篇 → [20 供应商运行时](./20-providers.md)
+### 2.5 Persistence
+
+`policy/policy-store.ts` owns three tables: `policy_rules` (user rules), `policy_decisions` (remembered
+decisions), and `policy_modes` (per-chat mode overrides). See [22 Persistence](./22-persistence.md).
+
+## 3. Approval lives in the message
+
+There is no server-side approval state machine. Approval state is entirely encoded in tool-call parts inside
+assistant `UIMessage` objects, with a two-state lifecycle:
+
+- `'approval-requested'` — emitted by the SDK when `toolApproval` returns `'user-approval'`; the part carries an
+  `approval.id` (UUID) and the tool `input`.
+- `'approval-responded'` — written back after the user responds, embedding `approval: { id, approved, reason? }`.
+
+Key helpers (`src/shared/approval-responses.ts`):
+
+- `hasPendingApprovalRequest(messages)` scans all assistant parts for `state === 'approval-requested'`.
+- `applyApprovalResponses(messages, responses)` rewrites matching parts to `'approval-responded'` and returns a
+  new message array plus the applied responses.
+
+On the sub-agent path (`src/main/agent/subagent/approval-utils.ts`): `extractPendingApprovals` scopes to the
+**current turn** (everything after the last user message) so a stale approval from an aborted turn cannot
+re-surface; `applyApprovalResponse` is the single-approval variant; `hasUnresolvedApproval` checks only the last
+assistant message.
+
+The mechanism: when a run stops awaiting approval, the request part streams to the renderer and the run ends
+(the `AbortController` is the only cross-call state `main` keeps). The user's response is written into the
+history and `submit` fires again; `main` re-runs `streamText` with the **complete** history, and the SDK reads
+`approval.approved` from the part and proceeds or cancels the call accordingly. This is invariant §3.4 from
+[01 Introduction](./01-introduction.md).
+
+Next → [14 Hooks](./14-hooks.md)

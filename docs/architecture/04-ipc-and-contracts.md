@@ -1,133 +1,163 @@
-# 04 · 跨进程契约
+# 04 · Cross-Process Contracts (IPC)
 
-> 适用范围：IPC 路由、`@shared` 契约、错误编解码、通道命名。最后核对：`src/main/ipc/router.ts`、`src/shared/*`、`src/preload/*`。
+> Scope: the IPC router, `@shared` contracts, error encoding/decoding, and channel-naming conventions. Last
+> verified against `src/preload/`, `src/main/ipc/router.ts`, `src/main/agent/ipc/`, `src/shared/` at v0.2.4.
 
-## 1. 通道命名约定
+## 1. The preload bridge
 
-所有 IPC 通道名都是 `"<domain>:<kebab-action>"` 字符串常量，**只在 `src/shared/<domain>.ts` 定义一次**（`as const` 对象），main 与 renderer 共引，绝不内联硬编码。
+`src/preload/index.ts` assembles a single object `tanzoApi` (`index.ts:16-35`) and exposes it as
+`window.electron` — the exposed name is literally `'electron'`, not `'tanzo'` — via
+`contextBridge.exposeInMainWorld('electron', tanzoApi)` (`index.ts:39`), with a non-isolated fallback
+`Object.assign(window, { electron: tanzoApi })` (`index.ts:44`). The type is exported as
+`TanzoElectronAPI = typeof tanzoApi` (`index.ts:47`); the global `Window.electron` augmentation is in
+`src/preload/index.d.ts`.
 
-```ts
-// src/shared/chat.ts:93
-export const CHAT_CHANNELS = {
-  submit: 'chat:submit',
-  editMessage: 'chat:edit-message',
-  respondApprovals: 'chat:respond-approvals',
-  cancel: 'chat:cancel',
-  steer: 'chat:steer',
-  enqueue: 'chat:enqueue',
-  // ...共 34 个
-  event: 'chat:event',
-} as const
-```
+Namespaces (key → module → shared API type):
 
-特例：
-- 窗口控制用 `window:` 前缀（`SYSTEM_CHANNELS`）。
-- 每对话事件通道带 id 后缀：`chatEventChannel(id)` → `chat:event:<id>`（`chat.ts:133`）；`chatAnyEventChannel()` → `chat:event`（`chat.ts:132`）。
-- **推送通道**（main→renderer，经 `webContents.send`）：`chat:event[:id]`、`mcp:connection-states-changed`、`mcp:elicitation-requested`、`system:preferences-changed`、`preferences:changed`、`pet:presence-changed`、`git:event`。renderer 侧一律用 `subscribe()` 消费；`hooks:*` 当前均为 invoke。
+| Key | Module | Shared type |
+|---|---|---|
+| `...` (spread) | `src/preload/system.ts` | system: `platformInfo`, `getPlatform`, `getSystemPreferences`, `pickDirectory`, `onSystemPreferencesChanged`, `windowControls` |
+| `preferences` | `src/preload/preferences.ts` | `PreferencesApi` |
+| `mcp` | `src/preload/mcp.ts` | `McpApi` |
+| `provider` | `src/preload/provider.ts` | `ProviderApi` |
+| `chat` | `src/preload/agent.ts` | `ChatApi` |
+| `policy` | `src/preload/agent.ts` | `PolicyApi` |
+| `hooks` | `src/preload/hooks.ts` | `HooksApi` |
+| `goal` | `src/preload/agent.ts` | `GoalApi` |
+| `git` | `src/preload/agent.ts` | `GitApi` |
+| `changeSet` | `src/preload/agent.ts` | `ChangeSetApi` |
+| `activity` | `src/preload/agent.ts` | `ActivityApi` |
+| `skills` | `src/preload/skills.ts` | `SkillApi` |
+| `plugins` | `src/preload/plugins.ts` | `PluginApi` |
+| `slashCommand` | `src/preload/slash-command.ts` | `SlashCommandApi` |
+| `fileMention` | `src/preload/file-mention.ts` | `FileMentionApi` |
+| `pet` | `src/preload/pet.ts` | `PetApi` |
+| `browser` | `src/preload/browser.ts` | `BrowserControlApi` (receive-only) |
+| `process` | `src/preload/index.ts:34` | `{ versions }` |
 
-## 2. IPC 路由：`registerIpcHandlers`
+`chat`, `policy`, `goal`, `git`, `changeSet`, and `activity` all originate in the single file
+`src/preload/agent.ts` and are re-exported through it.
 
-新模块统一经 `src/main/ipc/router.ts:29` 的 `registerIpcHandlers(ipcMain, registrations, options)` 注册：
+## 2. The two primitives: `invoke()` / `subscribe()`
 
-```ts
-type IpcHandler = (...args: unknown[]) => unknown
-type IpcRegistration = readonly [channel: string, handler: IpcHandler]
-registerIpcHandlers(ipcMain, registrations, opts): () => void  // 返回 unregister
-```
+Every namespace is built purely from two helpers in `src/preload/invoke.ts` — there is no business logic in
+preload:
 
-要点：
+- `invoke<F>(channel)` (`invoke.ts:3-5`): returns a typed function that calls
+  `ipcRenderer.invoke(channel, ...args)` (request/response).
+- `subscribe<T>(channel, callback)` (`invoke.ts:7-13`): calls `ipcRenderer.on(channel, listener)` and returns
+  an unsubscribe closure that calls `ipcRenderer.off`.
 
-1. **幂等**：注册前先移除该通道已有 handler，重复注册安全。
-2. **错误归一化**：每个 handler 被包裹，同步抛出与 Promise reject 都经 `normalizeError → encodeIpcError`。Zod 错误（`name === 'ZodError'`）被转成 `TanzoValidationError('IPC_INPUT_INVALID', ...)`，renderer 收到结构化、可序列化的错误而非裸栈。
-3. **校验在调用点**：handler 自己用 Zod `parse` 入参再委派给 service；路由只负责捕获与归一化，不做校验。
-4. 返回的 `unregister` 闭包被模块存住，在 `close()` 或重注册前调用。
+## 3. `ipcMain` registration and de-duplication
 
-旧的独立模块（system、preferences、wallpaper、pet-window、pet-assets）直接调 `ipcMain.handle`。
+`registerIpcHandlers(ipcMain, registrations, options)` (`src/main/ipc/router.ts:33-58`) makes registration
+idempotent: a first loop removes every channel (`ipcMain.removeHandler(channel)`, `router.ts:38`) before a
+second loop calls `ipcMain.handle` (`router.ts:40`); it returns a disposer that removes all channels again
+(`router.ts:55-57`).
 
-## 3. 错误编解码（`src/shared/errors.ts`）
+- `IpcRegistration` is a tuple `[channel, handler, options?]` with an optional `passEvent`; when set, the
+  `IpcMainInvokeEvent` is forwarded to the handler (`router.ts:5-9,42`).
+- Agent handlers are aggregated in `src/main/agent/ipc/index.ts`: `allHandlers(deps)` concatenates the
+  `chat / goal / policy / hooks / skill / plugin / activity / git / changeSet` handler arrays
+  (`ipc/index.ts:15-27`); `registerAgentIpc` wraps them with the `'agent.ipc'` logger and is invoked (after
+  `unregisterIpc?.()`) in `src/main/agent/module.ts:452`.
+- Non-agent domains self-register via the same router: `src/main/mcp/ipc.ts`, `src/main/provider/ipc.ts`,
+  `src/main/slash-command/ipc.ts`, `src/main/file-mention/ipc.ts`. Preferences / system / pet register
+  elsewhere in `main`.
 
-跨进程错误系统是一条横切契约：
+## 4. Channel-naming conventions
 
-- `TanzoError` 基类（`errors.ts:7`）带 `code`、`recoverable`、`details`，子类含 `Invariant`/`Configuration`/`Validation`/`NotFound`/`Operation`/`Integration`/`Auth`/`Timeout`（`Timeout` 默认 `recoverable: true`）。
-- `ERROR_CODES` 是集中注册表（`errors.ts:69`）。
-- 编解码：`encodeIpcError` / `decodeIpcError`（`errors.ts:140-157`），标记前缀 `__TANZO_IPC_ERROR__:` + JSON。renderer 侧 `platform/electron/ipc-errors.ts` 的 `withDecodedIpcError(s)` 包裹每个客户端方法，把 main 抛出的错误还原成 `TanzoError`。
+Channels are colon-namespaced `domain:kebab-action`, and each constant is defined **once** in `@shared` and
+imported by both processes:
 
-## 4. Preload 桥接
+`chat:*` (`src/shared/chat.ts`) · `provider:*` · `mcp:*` · `policy:*` · `git:*` · `goal:*` · `activity:*` ·
+`hooks:*` · `skills:*` · `plugins:*` · `change-set:*` · `pet:*` · `slash-command:*` · `file-mention:*` ·
+`browser:*` · `preferences:*` · `system:*`.
 
-### 4.1 两个原语（`src/preload/invoke.ts`）
+**Naming exception:** window controls use the `window:*` prefix (`window:minimize` / `toggle-maximize` /
+`close` / `is-maximized`), defined alongside system in `src/shared/system.ts`.
 
-```ts
-invoke<F>(channel): F                          // 包 ipcRenderer.invoke
-subscribe<T>(channel, cb): () => void          // 包 ipcRenderer.on，返回 disposer
-```
+Per-conversation channels are **derived, not static**: `chatEventChannel(id) = \`chat:event:${id}\`` and
+`taskEventChannel(id) = \`chat:task-event:${id}\``; the global fan-in channel is
+`chatAnyEventChannel() = 'chat:event'` (`src/shared/chat.ts`).
 
-每个 domain API 都只由这两者构成。`invoke` 请求/响应；`subscribe` 消费推送通道并返回反订阅函数。
+## 5. The `chat:*` streaming channel and payload
 
-### 4.2 桥对象（`src/preload/index.ts`）
+The base constant is `event: 'chat:event'`; the renderer subscribes per-chat via `chatEventChannel(chatId)`
+and globally via `chatAnyEventChannel()`. The preload wiring (`onEvent` / `onAnyEvent` / `onTaskEvent`) is in
+`src/preload/agent.ts`.
 
-```ts
-const tanzoApi = {
-  ...systemApi,            // platformInfo, getPlatform, windowControls, pickDirectory…
-  preferences, mcp, provider, chat, policy, hooks, goal, git, changeSet,
-  activity, skills, slashCommand, fileMention, pet,
-  process: { versions: process.versions }
-}
-contextBridge.exposeInMainWorld('electron', tanzoApi)   // 上下文隔离时
-export type TanzoElectronAPI = typeof tanzoApi
-```
+The payload type `ChatEvent` (`src/shared/chat.ts`) is a union of:
 
-`index.d.ts` 把 `Window.electron: TanzoElectronAPI` 注入类型——renderer 的强类型句柄。每个 domain 的 preload 模块导入对应 `*_CHANNELS` 与 `*Api` 类型，构造出受该 `Api` 约束的对象，保证桥不会偏离契约。
+- `ChatRunFrame` — `{ kind: 'run-frame', chatId, runId, seq, chunk: InferUIMessageChunk<TanzoUIMessage> }`.
+  The `chunk` is the AI SDK streaming chunk; `seq` is the monotonic sequence the renderer's frame gate uses to
+  order and de-duplicate.
+- `ChatRunStateEvent` — `{ kind: 'run-state', …, status, error? }`.
+- `ChatNotificationEvent` — `{ kind: 'notification', chatId, chunk }` where the chunk is a
+  `data-${string}` UI-message chunk.
 
-## 5. `@shared` 核心契约
+**Emit side (main → renderer).** `createChatEventDeliverer` (`src/main/agent/module.ts:109-118`) sends
+`chatEventChannel(event.chatId)` to each usable window and mirrors `run-state` events to
+`chatAnyEventChannel()`. The chunk pipeline is `createChunkSink` (`module.ts:121-137`), which publishes into
+the `ChatRunSessionRegistry` (24 ms delta batching) and delivers `notification` events; upstream chunks
+originate at `src/main/agent/runtime/stream-runner.ts:439` via `deps.send(chatId, chunk, { runId })`. See
+[10 Agent Runtime](./10-agent-runtime.md).
 
-`src/shared/` 共 19 个文件，定义跨进程边界。模式：每个 domain 一个 `*_CHANNELS` 常量 + 数据接口 + 在 preload 实现、在 main 服务的 `*Api` 接口。`hooks.ts` 是其中一个完整 domain（list/reload/setEnabled/setTrusted/preview）。
+**Snapshot / replay.** `chat:run-snapshot` → `ChatApi.runSnapshot` returns a `ChatRunSnapshot`
+(`baseMessages` + `notifications` + `frames`) so a reconnecting renderer can replay; the handler is
+`deps.streams.snapshot(chatId)` (`src/main/agent/ipc/chat.ts`).
 
-### 5.1 消息物质（`agent-message.ts`）—— 系统骨架
+**Task stream.** `chat:task-event` carries a `TaskEvent` union (`{ type: 'tasks', … }` / `{ type: 'approvals',
+… }`) emitted via `deps.sendTo(taskEventChannel(rootChatId), …)` from
+`src/main/agent/subagent/task-service.ts`. This is how sub-agent progress reaches the UI. See
+[12 Tools](./12-tools.md).
 
-```ts
-export type TanzoUIMessage = UIMessage<TanzoMetadata, TanzoDataParts, TanzoToolUI>   // :419
-```
+## 6. Error encoding/decoding across IPC
 
-- **`TanzoTools`（`:58`）—— 工具词汇**：每个工具的 `{ input, output }` 类型。含 `fileRead/fileEdit/multiEdit/fileWrite/glob/grep/shell/shellStart/shellPoll/shellWrite/shellStop/shellList/spawn/await/tasks/steer/cancel/report/skill/web_search/updateGoal/askQuestion/todo/exitPlanMode`。`ToolError = { error: true; message: string }` 是统一失败变体。`TanzoToolUI = TanzoTools`。
-- **`TanzoDataParts`（`:264`）—— 数据 part 词汇**（流式 `data-*`）：`plan/fileDiff/changePreview/status/task/taskApproval/compaction/context/steering/queued/goal/telemetry`。`telemetry` part 是富事件信封（operation/step/model/tool/retry/error 生命周期）。
-- **`TanzoMetadata`（`:413`）**：`createdAt`、`usage`、逐步 `steps`。
+The cross-cutting error contract is `src/shared/errors.ts`:
 
-**类型贯穿**：`TanzoUIMessage` 同时参数化了 renderer 状态、`chat:event` 帧载荷（`ChatRunFrame.chunk` 即 `InferUIMessageChunk<TanzoUIMessage>`）、main 流与持久化校验。定义一次，整链路被锁死。
+- **Hierarchy.** Base `TanzoError { code, recoverable, details }` with subclasses `Invariant / Configuration /
+  Validation / NotFound / Operation / Integration / Auth / Timeout` (`TanzoTimeoutError` defaults
+  `recoverable: true`). A central `ERROR_CODES` registry names the codes.
+- **Encode (main).** `serializeTanzoError` produces `{ code, message, recoverable, details? }` (non-Tanzo
+  errors coerced to `UNEXPECTED_ERROR`); `encodeIpcError` wraps the JSON behind the marker prefix
+  `__TANZO_IPC_ERROR__:` inside a plain `Error.message`. The router encodes both sync throws and rejected
+  promises (`src/main/ipc/router.ts:46,51`).
+- **Zod normalization.** `normalizeError` (`router.ts:24-31`) detects a `ZodError` and converts it to
+  `TanzoValidationError('IPC_INPUT_INVALID', …)` before encoding. Because handler inputs are Zod-parsed, bad
+  payloads surface uniformly as `IPC_INPUT_INVALID`.
+- **Decode (renderer).** `decodeIpcError` parses the marker back into a `TanzoError` (or `null` if absent).
+  The renderer wrappers `withDecodedIpcError` / `withDecodedIpcErrors`
+  (`src/renderer/src/platform/electron/ipc-errors.ts`) re-throw `decodeIpcError(error) ?? error` for each
+  client method. This round-trip is covered by `tests/unit/main/ipc/router.test.ts`.
 
-### 5.2 对话生命周期（`chat.ts`）
+## 7. Inventory of `@shared` contracts
 
-- 流事件：`ChatEvent = ChatRunFrame | ChatRunStateEvent | ChatNotificationEvent`（`:179`）。`ChatRunSnapshot`（`:181`）让 renderer 在 run 中途重同步（baseMessages + notifications + frames）。
-- 会话：`ConversationSummary`、`NewConversationInput`、`ForkConversationInput/Result`、`AgentSummary`/`AgentKind`。
-- 审批/问答：`ChatApprovalResponse`（`:193`）、`SubagentApprovalScope = 'once'|'session'|'forever'`（`:191`，即 `subagent-task.ts` 的 `SubagentTaskApprovalScope` 别名）、`PendingQuestion`（`:200`）。
-- `ChatApi`（`:210`）是完整调用面。
+Each file in `src/shared/` owns one contract, imported by both processes:
 
-### 5.3 其它 domain 契约
-
-| 文件 | 关键类型 / 作用 |
+| File | Purpose |
 |---|---|
-| `provider.ts` | `PROVIDER_CHANNELS`、`ProviderId`(5)、`ModelFamily`、`ProviderConfig`、`ProviderKeySummary`(只带 `maskedKey`)、`ProviderOptionSchema`、`ProviderCapabilities` |
-| `mcp.ts` | `MCP_CHANNELS`、`McpServerConfig`、`McpConnectionState`、`McpTool`、`McpElicitationRequest`/`McpElicitResult` |
-| `policy.ts` | `POLICY_CHANNELS`、`PolicyRule`(action `allow/deny/ask`)、`PolicyMatch`、`PermissionMode = default/plan/yolo/dangerous`、re-export ai-sdk `ToolApprovalStatus` |
-| `hooks.ts` | `HOOKS_CHANNELS`、Codex/Claude 事件集合、`HookEntrySummary`、`HookPreviewResult`、`HooksApi` |
-| `goal.ts` | `GOAL_CHANNELS`、`ThreadGoal`、`deriveStatus(goal)` 共享派生逻辑 |
-| `git.ts` | `GIT_CHANNELS`(27 op，含 `watch`/`unwatch`)、`GitResult<T> = {ok:true;data}|{ok:false;code;message}`（不跨 IPC 抛异常）、`GitOverview`、`GitDiffInput` |
-| `change-set.ts` | `CHANGE_SET_CHANNELS`、`ChangePreviewData`(检查点/树 OID/恢复风险分级) |
-| `activity.ts` | `ACTIVITY_CHANNELS`、`ActivitySummary`/`ActivityKpis`/`ActivityRunDetail`（只读分析） |
-| `skills.ts` | `SKILL_CHANNELS`、`SkillSummary`/`SkillDetail`、`SkillScope`(user/workspace/builtin) |
-| `preferences.ts` | `PREFERENCES_CHANNELS`(含 `changed` 推送)、`UserPreferences`、`PreferencesPatch`、默认值与边界常量 |
-| `system.ts` | `SYSTEM_CHANNELS`(含 `window:*`)、`ElectronPlatformInfo`、`detectNativeWindowEffect` |
-| `approval-responses.ts` | 纯共享逻辑 `applyApprovalResponses(messages, responses)`：把 `approval-requested` 工具 part 迁移到 `approval-responded` |
-| `file-mention.ts` / `slash-command.ts` | 各一通道 + 共享解析逻辑（`parseSlashInput`、`expandTemplate`） |
-| `pet.ts` | `PET_CHANNELS`、`PetPresenceState`、spritesheet 元数据 |
-| `subagent-task.ts` | `SubagentTask`、`SubagentTaskApproval*`、`SubagentTaskApprovalScope`（`chat.ts` 与审批链路依赖） |
-| `errors.ts` | 见 §3 |
+| `chat.ts` | Chat/conversation contract: `CHAT_CHANNELS`, `ChatApi`, streaming `ChatEvent` / `ChatRunFrame` / `ChatRunSnapshot`, `TaskEvent`, channel helpers |
+| `agent-message.ts` | `TanzoUIMessage` (extends AI SDK `UIMessage`), data-part types (`TanzoDataParts`), `AskQuestion*`, `QueuedMessage` — the type threaded through the whole seam |
+| `subagent-task.ts` | Sub-agent task model: `SubagentTask`, statuses, approval views/responses/scopes |
+| `policy.ts` | Permission policy: `POLICY_CHANNELS`, `PolicyApi`, `PolicyRule` / `PolicyMatch`, `PermissionMode`, user decisions |
+| `provider.ts` | Model-provider control plane: `PROVIDER_CHANNELS`, `ProviderApi`, `PROVIDER_IDS`, model families/setups/keys |
+| `mcp.ts` | MCP servers: `MCP_CHANNELS`, `McpApi`, connection states, elicitation request/result types |
+| `git.ts` | Git domain: `GIT_CHANNELS`, `GitApi`, `gitEventChannel`, `GitChangedEvent`, status/diff/branch/remote types (wraps results in `GitResult<T>` rather than throwing) |
+| `change-set.ts` | Change-set diff/apply: `CHANGE_SET_CHANNELS`, `ChangeSetApi`, `ChangePreviewData` |
+| `goal.ts` | Thread goal: `GOAL_CHANNELS`, `GoalApi`, `ThreadGoalStatus`, budget fields |
+| `activity.ts` | Activity/analytics: `ACTIVITY_CHANNELS`, `ActivityApi`, summary/trend/reliability/run types |
+| `hooks.ts` | Lifecycle hooks: `HOOK_EVENTS`, `HOOKS_CHANNELS`, `HooksApi` |
+| `skills.ts` | Skills registry: `SKILL_CHANNELS`, `SkillApi` |
+| `plugins.ts` | Plugins + marketplaces: `PLUGIN_CHANNELS`, `PluginApi` |
+| `slash-command.ts` | Slash commands: `SLASH_COMMAND_CHANNELS`, `SlashCommandApi`, `SlashCommandDef` |
+| `file-mention.ts` | `@`-mention search: `FILE_MENTION_CHANNELS`, `FileMentionApi`, `FileMentionEntry` |
+| `pet.ts` | Desktop-pet window: `PET_CHANNELS`, `PetApi`, presence payload, hit-rect/drag/position |
+| `browser-control.ts` | Built-in browser panel: `BROWSER_CHANNELS`, `BrowserOpenRequest` (main asks the renderer to open a URL; MCP/CDP drives the page) |
+| `system.ts` | OS/window integration: `SYSTEM_CHANNELS` (+ `window:*` controls), platform/system-preference types |
+| `preferences.ts` | User preferences/theming: `PREFERENCES_CHANNELS`, `UserPreferences` / `PreferencesPatch`, theme/radius/density/font presets |
+| `approval-responses.ts` | Pure helpers to apply `ChatApprovalResponse` onto tool UI parts (no channels) |
+| `tool-catalog.ts` | Catalog of user-toggleable built-in tools grouped by category (pure data, no channels) |
+| `errors.ts` | The error contract: `TanzoError` hierarchy, `ERROR_CODES`, `encodeIpcError` / `decodeIpcError` |
 
-## 6. 契约不变量
-
-- [ ] 通道名只在 `@shared` 定义一次，两进程共引。
-- [ ] 所有跨 IPC 错误经 `encodeIpcError`/`decodeIpcError`，保留 `code`/`recoverable`/`details`；Zod 失败 → `IPC_INPUT_INVALID`。
-- [ ] 凭证/密钥不以明文跨 IPC（见 [20 供应商](./20-providers.md)）。
-- [ ] `TanzoUIMessage` 是 renderer 状态、流帧、持久化校验的同一类型。
-- [ ] preload 仅由 `invoke`/`subscribe` 构成，无业务逻辑。
-
-下一篇 → [10 Agent 运行时](./10-agent-runtime.md)
+Next → [10 Agent Runtime](./10-agent-runtime.md)
