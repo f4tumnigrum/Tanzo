@@ -6,24 +6,29 @@ import {
   CircleCheckBig,
   CircleDashed,
   GitBranch,
+  Info,
   ListTree,
-  Pause
+  Pause,
+  PowerOff
 } from 'lucide-react'
 import type { SubagentTask, SubagentTaskResult } from '@shared/subagent-task'
 import { isRecord } from '@/common/lib/type-guards'
 import { cn } from '@/lib/utils'
+import { PANEL_HEIGHT_XL } from '../primitives/constants'
+import { ShimmerText } from '../primitives/shimmer'
 import {
-  PANEL_HEIGHT_XL,
-  ShimmerText,
   ToolBadge,
   ToolHeaderRow,
   ToolMetaChip,
+  type ToolBadgeTone
+} from '../primitives/header'
+import {
   ToolPanel,
   ToolScrollPanel,
-  ToolValuePreview
-} from '../primitives'
+  ToolValuePreview,
+  type ToolPanelTone
+} from '../primitives/panel'
 import type { ToolRenderContext } from '../render-context'
-import type { ToolBadgeTone, ToolPanelTone } from '../primitives'
 import type { ToolRenderer } from '../renderer-types'
 import { Response } from '../../message/response'
 import { renderToolError } from './render-error'
@@ -50,9 +55,12 @@ const STATUS_CHIP_TONE: Record<SubagentTask['status'], ToolBadgeTone> = {
   cancelled: 'neutral'
 }
 
-function panelToneForStatus(status: SubagentTask['status']): ToolPanelTone {
+function panelToneForStatus(
+  status: SubagentTask['status'],
+  failureKind?: 'app-restart' | 'logic-error'
+): ToolPanelTone {
   if (status === 'blocked') return 'warning'
-  if (status === 'failed') return 'danger'
+  if (status === 'failed') return failureKind === 'app-restart' ? 'subtle' : 'danger'
   return 'subtle'
 }
 
@@ -261,11 +269,18 @@ function SpawnSummary({
               taskId={entry.task}
             />
             {dependsOn.length > 0 ? (
-              <SubagentStatusLine
-                icon={GitBranch}
-                tone="warning"
-                text={t('chat.tool.subagent.dependsOn', { tasks: dependsOn.join(', ') })}
-              />
+              <div className={cn('flex flex-wrap items-center gap-1 px-0.5 text-[0.6875rem]', STATUS_TONE['warning'])}>
+                <GitBranch className="size-3 shrink-0" aria-hidden="true" />
+                <span className="shrink-0">{t('chat.tool.subagent.waitingFor')}</span>
+                {dependsOn.map((depId) => (
+                  <code
+                    key={depId}
+                    className="rounded bg-amber-500/12 px-1 py-px font-mono text-[0.5625rem] text-amber-700 dark:text-amber-300"
+                  >
+                    {depId}
+                  </code>
+                ))}
+              </div>
             ) : null}
           </TaskShell>
         )
@@ -307,11 +322,15 @@ function AckLine({
   const cancelled = 'cancelled' in output
   const text = ackText(context, output, t)
 
+  // Redefining a task is destructive (all progress lost) — use amber warning
+  // tone so the visual feedback matches the action's consequence.
+  const redefined = 'steered' in output && output.mode === 'redefined'
+  const tone: ToolBadgeTone = cancelled ? 'neutral' : redefined ? 'warning' : 'success'
   return (
     <div
       className={cn(
         'flex items-center gap-1.5 px-0.5 text-[0.6875rem]',
-        STATUS_TONE[cancelled ? 'neutral' : 'success']
+        STATUS_TONE[tone]
       )}
     >
       {cancelled ? (
@@ -320,7 +339,7 @@ function AckLine({
         <CircleCheckBig className="size-3 shrink-0" aria-hidden="true" />
       )}
       <span className="min-w-0 flex-1 break-words">{text}</span>
-      {task ? <ToolMetaChip text={task} tone={cancelled ? 'neutral' : 'info'} /> : null}
+      {task ? <ToolMetaChip text={task} tone={cancelled ? 'neutral' : redefined ? 'warning' : 'info'} /> : null}
     </div>
   )
 }
@@ -334,20 +353,28 @@ function ResultBlock({
 }): React.JSX.Element {
   const { t } = useTranslation()
   if (result.failed) {
+    const isInterrupted = result.failureKind === 'app-restart'
     return (
       <div className="space-y-1.5">
         <ResultLabel task={task} failed />
-        <ToolPanel tone="danger">
-          <p className="whitespace-pre-wrap break-words px-2.5 py-1.75 text-[0.625rem] leading-[1.45] text-red-500/90">
-            {result.errorMessage ?? t('chat.tool.subagent.errors.taskFailed')}
-          </p>
+        <ToolPanel tone={isInterrupted ? 'subtle' : 'danger'}>
+          <div className="flex items-start gap-1.5 px-2.5 py-1.75">
+            {isInterrupted ? (
+              <PowerOff className="mt-px size-3 shrink-0 text-muted-foreground/55" aria-hidden="true" />
+            ) : (
+              <CircleAlert className="mt-px size-3 shrink-0 text-red-500/80" aria-hidden="true" />
+            )}
+            <p className="min-w-0 whitespace-pre-wrap break-words text-[0.625rem] leading-[1.45] text-foreground/70">
+              {result.errorMessage ?? t('chat.tool.subagent.errors.taskFailed')}
+            </p>
+          </div>
         </ToolPanel>
       </div>
     )
   }
   return (
     <div className="space-y-1.5">
-      <ResultLabel task={task} />
+      <ResultLabel task={task} inferred={result.resultSource === 'inferred'} />
       <ToolScrollPanel tone="subtle" maxHeight={PANEL_HEIGHT_XL} contentClassName="px-2.5 py-2">
         <Response
           content={result.summary || ''}
@@ -360,10 +387,12 @@ function ResultBlock({
 
 function ResultLabel({
   task,
-  failed = false
+  failed = false,
+  inferred = false
 }: {
   task: string
   failed?: boolean
+  inferred?: boolean
 }): React.JSX.Element {
   const { t } = useTranslation()
   return (
@@ -372,14 +401,23 @@ function ResultLabel({
         text={failed ? t('chat.tool.subagent.resultFailed') : t('chat.tool.subagent.result')}
       />
       <ToolMetaChip text={task} tone={failed ? 'danger' : 'info'} />
+      {inferred ? (
+        <span
+          className="ml-auto flex shrink-0 items-center gap-0.5 text-[0.5625rem] text-muted-foreground/40"
+          title={t('chat.tool.subagent.resultInferred')}
+        >
+          <Info className="size-2.5" aria-hidden="true" />
+          {t('chat.tool.subagent.inferred')}
+        </span>
+      ) : null}
     </div>
   )
 }
 
 function TaskDetail({ task }: { task: SubagentTask }): React.JSX.Element {
   return (
-    <div className="space-y-1.5">
-      <TaskShell tone={panelToneForStatus(task.status)}>
+    <div className="space-y-2">
+      <TaskShell tone={panelToneForStatus(task.status, task.result?.failureKind)}>
         <SubagentEntity
           status={task.status}
           objective={task.objective}
@@ -404,7 +442,7 @@ function TaskList({ tasks }: { tasks: SubagentTask[] }): React.JSX.Element {
   return (
     <div className="space-y-1.5">
       {tasks.map((task) => (
-        <TaskShell key={task.id} tone={panelToneForStatus(task.status)} compact>
+        <TaskShell key={task.id} tone={panelToneForStatus(task.status, task.result?.failureKind)} compact>
           <SubagentEntity
             status={task.status}
             objective={task.objective}
@@ -466,7 +504,7 @@ function SubagentEntity({
           {objectiveText}
         </p>
         {phase ? (
-          <span className="max-w-[8rem] shrink-0 truncate text-[0.625rem] text-foreground/45">
+          <span className="min-w-0 flex-1 truncate text-[0.625rem] text-foreground/45" title={phase}>
             {phase}
           </span>
         ) : null}
@@ -488,7 +526,9 @@ function SubagentEntity({
       <div className="flex min-w-0 flex-wrap items-center gap-1.5 pl-5">
         <ToolBadge text={agent || t('chat.tool.subagent.run')} tone="info" />
         {phase ? (
-          <span className="min-w-0 truncate text-[0.625rem] text-foreground/50">{phase}</span>
+          <span className="min-w-0 flex-1 truncate text-[0.625rem] text-foreground/50" title={phase}>
+            {phase}
+          </span>
         ) : null}
       </div>
     </div>
@@ -498,12 +538,21 @@ function SubagentEntity({
 function TaskBlockLine({ task }: { task: SubagentTask }): React.JSX.Element | null {
   const { t } = useTranslation()
   if (task.block?.kind === 'dependency') {
+    // Render each blocker as a labelled chip so the agent and user can identify
+    // the exact dependency at a glance without inspecting the raw text.
     return (
-      <SubagentStatusLine
-        icon={GitBranch}
-        tone="warning"
-        text={t('chat.tool.subagent.blockedDependency', { tasks: task.block.taskIds.join(', ') })}
-      />
+      <div className={cn('flex flex-wrap items-center gap-1 px-0.5 text-[0.6875rem]', STATUS_TONE['warning'])}>
+        <GitBranch className="size-3 shrink-0" aria-hidden="true" />
+        <span className="shrink-0">{t('chat.tool.subagent.blockedBy')}</span>
+        {task.block.taskIds.map((depId) => (
+          <code
+            key={depId}
+            className="rounded bg-amber-500/12 px-1 py-px font-mono text-[0.5625rem] text-amber-700 dark:text-amber-300"
+          >
+            {depId}
+          </code>
+        ))}
+      </div>
     )
   }
   if (task.block?.kind === 'approval') {
@@ -517,11 +566,18 @@ function TaskBlockLine({ task }: { task: SubagentTask }): React.JSX.Element | nu
   }
   if (task.dependsOn.length > 0 && task.status === 'pending') {
     return (
-      <SubagentStatusLine
-        icon={GitBranch}
-        tone="warning"
-        text={t('chat.tool.subagent.dependsOn', { tasks: task.dependsOn.join(', ') })}
-      />
+      <div className={cn('flex flex-wrap items-center gap-1 px-0.5 text-[0.6875rem]', STATUS_TONE['warning'])}>
+        <GitBranch className="size-3 shrink-0" aria-hidden="true" />
+        <span className="shrink-0">{t('chat.tool.subagent.waitingFor')}</span>
+        {task.dependsOn.map((depId) => (
+          <code
+            key={depId}
+            className="rounded bg-amber-500/12 px-1 py-px font-mono text-[0.5625rem] text-amber-700 dark:text-amber-300"
+          >
+            {depId}
+          </code>
+        ))}
+      </div>
     )
   }
   return null

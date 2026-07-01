@@ -17,13 +17,15 @@ Then write the final summary inside a single <summary>...</summary> block, using
 Be specific and complete. Preserve exact identifiers, signatures, and paths. Do not invent facts not present in the transcript.`
 
 export function extractPartialSummary(text: string): string {
-  const openTag = text.search(/<summary>/i)
-  if (openTag === -1) return ''
-  const body = text
-    .slice(openTag)
-    .replace(/<summary>/i, '')
-    .replace(/<\/summary>[\s\S]*$/i, '')
-  return body.trimStart()
+  // Strip completed <analysis> blocks first so their content cannot confuse
+  // the tag search below (the prompt instructs the model to think inside
+  // <analysis> before writing <summary>, so this block often precedes it).
+  const cleaned = text.replace(/<analysis>[\s\S]*?<\/analysis>/gi, '')
+
+  // Match everything between <summary> and </summary>, or between <summary>
+  // and end-of-text while the model is still streaming (partial output).
+  const match = cleaned.match(/<summary>([\s\S]*?)(?:<\/summary>|$)/i)
+  return match ? match[1].trimStart() : ''
 }
 
 export function stripAnalysis(text: string): string {

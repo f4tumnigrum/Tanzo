@@ -48,6 +48,29 @@ export function createCompactionCoordinator(
     runLifecycle?: CompactionRunLifecycle
   }
 ): CompactionCoordinator {
+  // Per-chat run queue: ensures at most one compaction runs concurrently per
+  // conversation even when no external runLifecycle is provided. Without this,
+  // concurrent prepareMessages calls on the same chat could race.
+  const pendingByChat = new Map<string, Promise<unknown>>()
+  const lifecycle: CompactionRunLifecycle =
+    deps.runLifecycle ??
+    function defaultLifecycle<T>(
+      chatId: string,
+      _runId: string,
+      _messages: TanzoUIMessage[],
+      executor: (signal: AbortSignal) => Promise<T>,
+      parentSignal?: AbortSignal
+    ): Promise<T> {
+      const signal = parentSignal ?? new AbortController().signal
+      const prev = pendingByChat.get(chatId) ?? Promise.resolve()
+      const run = prev.catch(() => undefined).then(() => executor(signal))
+      pendingByChat.set(chatId, run as Promise<unknown>)
+      run.finally(() => {
+        if (pendingByChat.get(chatId) === (run as Promise<unknown>)) pendingByChat.delete(chatId)
+      })
+      return run
+    }
+
   function createCompactionTelemetry(chatId: string, runId: string, broadcast: boolean) {
     return createAgentTelemetry({
       runId,
@@ -111,10 +134,15 @@ export function createCompactionCoordinator(
     }
   }
 
-  function compactionPrompt(instructions: string | undefined): string {
-    const trimmed = instructions?.trim()
-    if (!trimmed) return COMPACT_PROMPT
-    return `${COMPACT_PROMPT}\n\nAdditional user instructions for this compaction:\n${trimmed}`
+  function compactionPrompt(def: AgentDefinition, instructions: string | undefined): string {
+    const parts = [COMPACT_PROMPT]
+    // Agent-specific guidance: different agent types need different emphasis
+    // (e.g. a verify agent should preserve test names; an explore agent, file paths).
+    const agentInstructions = def.compactionInstructions?.trim()
+    if (agentInstructions) parts.push(`Agent-specific compaction guidance:\n${agentInstructions}`)
+    const userInstructions = instructions?.trim()
+    if (userInstructions) parts.push(`Additional user instructions for this compaction:\n${userInstructions}`)
+    return parts.join('\n\n')
   }
 
   async function runCompaction(
@@ -150,7 +178,7 @@ export function createCompactionCoordinator(
             cwd: deps.store.getConversation(chatId)?.cwd ?? process.cwd(),
             runId: compactionRunId,
             head: plan.sourceMessages,
-            prompt: compactionPrompt(instructions),
+            prompt: compactionPrompt(def, instructions),
             telemetry: telemetry.options,
             abortSignal: signal,
             onSummary: (summary) => {
@@ -210,7 +238,11 @@ export function createCompactionCoordinator(
             },
             compactionRunId
           )
-          return { outcome: 'stale', next: null }
+          // Reload the current history so callers work with up-to-date messages
+          // instead of the stale snapshot. The snapshot is already over the context
+          // limit; falling back to it would cause the next turn to fail.
+          const fresh = await deps.store.load(chatId)
+          return { outcome: 'stale', next: fresh }
         }
         deps.logger?.warn('compaction failed', { chatId, error })
         publishCompactionStatus(
@@ -228,8 +260,7 @@ export function createCompactionCoordinator(
       }
     }
 
-    if (!deps.runLifecycle) return execute(options?.signal ?? new AbortController().signal)
-    return deps.runLifecycle(chatId, compactionRunId, incoming, execute, options?.signal)
+    return lifecycle(chatId, compactionRunId, incoming, execute, options?.signal)
   }
 
   return {

@@ -22,6 +22,12 @@ export interface SubagentTaskResult {
   summary: string
   failed?: boolean
   errorMessage?: string
+  /** Whether the result was submitted via an explicit `report(result:...)` call or
+   *  inferred from the last assistant text when the sub-agent terminated without one. */
+  resultSource?: 'explicit' | 'inferred'
+  /** Distinguishes app-restart interruptions from genuine logic failures so the UI
+   *  can offer targeted recovery actions (e.g. "retry interrupted tasks"). */
+  failureKind?: 'app-restart' | 'logic-error'
 }
 
 export interface SubagentTask {

@@ -30,7 +30,10 @@ export interface CompactionForkInput {
   onSummary?: (summary: string) => void
 }
 
-export type CompactionForkDeps = AgentRuntimeDeps & {
+export type CompactionForkDeps = Omit<AgentRuntimeDeps, 'buildTools'> & {
+  /** buildTools is intentionally omitted: the fork runs with toolChoice:'none'
+   *  and never calls any tool, so building the full tool set is pure waste. */
+  buildTools?: AgentRuntimeDeps['buildTools']
   contextEngine: ContextEngine
   logger?: Logger
 }
@@ -139,34 +142,32 @@ export async function runCompactionFork(
   input: CompactionForkInput
 ): Promise<CompactionForkResult> {
   const mode = deps.policy.getMode(deps.store.rootOf(input.chatId))
-  const tools = await deps.buildTools({
-    def: input.def,
-    chatId: input.chatId,
-    depth: deps.store.depthOf(input.chatId),
-    mode
-  })
+
+  // The fork runs with toolChoice:'none' — tools are never invoked.
+  // Building the full tool set (MCP servers, registries) is unnecessary overhead,
+  // so we skip buildTools entirely and pass an empty set.
+  const tools = {} as ToolSet
+
   const basePrepareStep = async (stepInput: {
     initialMessages: ModelMessage[]
-    responseMessages: ModelMessage[]
     stepNumber: number
   }) => {
-    const transcript = [
-      ...stepInput.initialMessages,
-      ...stepInput.responseMessages
-    ] as ModelMessage[]
+    // stopWhen:isStepCount(1) guarantees exactly one step, so responseMessages
+    // is always empty when prepareStep fires. Use initialMessages directly.
     return deps.contextEngine.build(
       input.def,
       input.chatId,
       input.cwd,
-      transcript,
+      stepInput.initialMessages,
       stepInput.stepNumber,
-      {
-        consumeGoalInjection: false
-      }
+      { consumeGoalInjection: false }
     )
   }
 
-  const modelConfig = resolveLanguageModelConfig(deps.providerService, input.def.modelRef)
+  // Prefer a dedicated compaction model when configured — compaction is a
+  // high-input / low-reasoning task that rarely needs the parent's full model.
+  const compactionRef = input.def.compactionModelRef ?? input.def.modelRef
+  const modelConfig = resolveLanguageModelConfig(deps.providerService, compactionRef)
 
   let streamError: unknown
   try {
@@ -184,6 +185,8 @@ export async function runCompactionFork(
         !force &&
         now - lastPublishedAt < SUMMARY_UPDATE_MIN_INTERVAL_MS &&
         grewBy < SUMMARY_UPDATE_MIN_CHARS &&
+        // Force publish at newline boundaries so the UI updates at paragraph
+        // breaks rather than mid-sentence, giving a more readable live preview.
         !summary.endsWith('\n')
       ) {
         return

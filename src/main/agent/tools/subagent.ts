@@ -78,7 +78,14 @@ export function spawnTool(
           })
           return { task: task.id, status: task.status }
         })
-        return { tasks: spawned }
+        // Inline reminder so the agent has an immediate, concrete follow-up
+        // action visible in the tool result — reduces the risk of forgetting await.
+        const ids = spawned.map((t) => JSON.stringify(t.task)).join(', ')
+        const count = spawned.length
+        const hint =
+          `${count} task${count !== 1 ? 's' : ''} started. ` +
+          `Collect results with: await({tasks:[${ids}]})`
+        return { tasks: spawned, hint }
       }
     }
   )

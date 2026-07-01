@@ -547,13 +547,17 @@ function createChatSession(chatId: string, onDispose: () => void): ChatSession {
     },
     async respondTaskApproval(response) {
       const rootChatId = chatId
-      setState({
-        subagentApprovals: state.subagentApprovals.filter(
-          (pending) => pending.approval.approvalId !== response.approvalId
-        )
-      })
+      // Confirm the approval with the main process BEFORE removing the card.
+      // Previously the card was removed optimistically first; if the IPC call
+      // failed, the card was already unmounted and the task was permanently stuck
+      // in blocked state with no way to re-respond.
       try {
         await chatClient.approveTask(rootChatId, response)
+        setState({
+          subagentApprovals: state.subagentApprovals.filter(
+            (pending) => pending.approval.approvalId !== response.approvalId
+          )
+        })
       } catch (error) {
         reportError(error)
         throw error

@@ -93,7 +93,7 @@ describe('main/agent/context/compact/fork-agent', () => {
     }
   }
 
-  it('forks the parent agent reusing its tools and context prepareStep', async () => {
+  it('forks the parent agent using an empty tool set — compaction never calls tools', async () => {
     const abort = new AbortController()
     const deps = createDeps()
 
@@ -119,16 +119,16 @@ describe('main/agent/context/compact/fork-agent', () => {
       }
     })
 
-    expect(deps.buildTools).toHaveBeenCalledWith({
-      def,
-      chatId: 'chat-1',
-      depth: 0,
-      mode: 'default'
-    })
+    // buildTools must NOT be called: the fork runs with toolChoice:'none'
+    // and building the full tool set (MCP servers etc.) is wasted work.
+    expect(deps.buildTools).not.toHaveBeenCalled()
     expect(deps.contextEngine.build).toHaveBeenCalledWith(
       def,
       'chat-1',
       '/repo',
+      // basePrepareStep passes initialMessages directly (the full messages array
+      // passed to streamText: head + prompt). responseMessages is always empty
+      // for step 0 in a single-step fork, so the old spread was a no-op.
       [
         { role: 'user', content: 'old transcript' },
         { role: 'user', content: 'compact now' }
@@ -142,7 +142,7 @@ describe('main/agent/context/compact/fork-agent', () => {
     expect(mocks.streamText).toHaveBeenCalledWith(
       expect.objectContaining({
         model: { provider: 'openai', modelId: 'gpt' },
-        tools: { shell: {} },
+        tools: {},
         toolChoice: 'none',
         stopWhen: ['step-count:1'],
         runtimeContext: { chatId: 'chat-1', mode: 'default' },

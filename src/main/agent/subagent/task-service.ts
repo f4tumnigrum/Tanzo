@@ -241,6 +241,10 @@ export function createTaskService(
   function startDriver(task: SubagentTask): void {
     const controller = new AbortController()
     controllers.set(task.chatId, controller)
+    // Mark the task as "queued" immediately so the agent and UI can tell the
+    // difference between "waiting for a semaphore slot" and "actively running".
+    // The first report() call from the sub-agent will overwrite this phase.
+    setPhase(task.rootChatId, task.id, 'queued: waiting for capacity')
     void runTask(task.id, task.rootChatId, task.chatId, controller.signal)
       .catch((error) => {
         if (error instanceof TaskInterrupted) return
@@ -267,7 +271,11 @@ export function createTaskService(
       if (candidate.status !== 'pending') continue
       const blocker = dependencyUnsatisfiable(candidate)
       if (blocker) {
-        failTask(rootChatId, candidate.id, `Dependency ${blocker} did not complete successfully.`)
+        // Propagate the root-cause error message so the parent agent can diagnose
+        // without needing to inspect the dependency task separately.
+        const blockerTask = deps.store.tasks.get(rootChatId, blocker)
+        const reason = blockerTask?.result?.errorMessage ?? 'did not complete successfully'
+        failTask(rootChatId, candidate.id, `Dependency '${blocker}' failed: ${reason}`)
         continue
       }
       if (!dependenciesSatisfied(candidate)) continue
@@ -412,9 +420,12 @@ export function createTaskService(
   function completeTask(rootChatId: string, taskId: string, messages: TanzoUIMessage[]): void {
     const task = deps.store.tasks.get(rootChatId, taskId)
     if (!task || isTerminal(task.status)) return
-    const submitted = task.result && !task.result.failed ? task.result.summary : ''
-    const summary = submitted || lastAssistantText(messages)
-    dispatch(rootChatId, taskId, { kind: 'complete', summary, now: Date.now() })
+    // Prefer an explicitly submitted result; fall back to the last assistant text.
+    // Track which path was used so the parent and UI can gauge result confidence.
+    const hasExplicitResult = Boolean(task.result && !task.result.failed)
+    const summary = hasExplicitResult ? task.result!.summary : lastAssistantText(messages)
+    const resultSource: 'explicit' | 'inferred' = hasExplicitResult ? 'explicit' : 'inferred'
+    dispatch(rootChatId, taskId, { kind: 'complete', summary, resultSource, now: Date.now() })
   }
 
   function surfaceApprovals(
@@ -626,6 +637,29 @@ export function createTaskService(
     writeObjective(task.chatId, task.objective)
     const restarted = dispatch(rootChatId, taskId, { kind: 'retry', now: Date.now() })
     if (restarted) startDriver(restarted)
+    // Cascade: reset any tasks that failed *because* this dep failed, so they can
+    // restart automatically when this task completes (via maybeUnblockDependents).
+    cascadeRetryDependents(rootChatId, taskId)
+  }
+
+  /**
+   * When a dependency is retried, find all tasks that failed because of it and
+   * reset them back to pending-blocked so they auto-start once the dep finishes.
+   * Only tasks whose errorMessage references the retried dep are touched; failures
+   * with independent root causes are left alone.
+   */
+  function cascadeRetryDependents(rootChatId: string, retriedTaskId: string): void {
+    for (const candidate of deps.store.tasks.listByRoot(rootChatId)) {
+      if (candidate.status !== 'failed') continue
+      if (!candidate.dependsOn.includes(retriedTaskId)) continue
+      // Guard: only cascade if the failure message traces back to this specific dep.
+      if (!candidate.result?.errorMessage?.includes(`'${retriedTaskId}'`)) continue
+      dispatch(rootChatId, candidate.id, {
+        kind: 'reset-dependency',
+        taskIds: candidate.dependsOn,
+        now: Date.now()
+      })
+    }
   }
 
   /**
@@ -634,6 +668,9 @@ export function createTaskService(
    * the previous process. Mark them failed so the UI stops showing a spinner and
    * any future await resolves instead of hanging forever. Called once at startup,
    * before any new run can attach.
+   *
+   * Uses failureKind:'app-restart' so the UI can distinguish these from genuine
+   * logic failures and offer targeted "retry interrupted tasks" recovery.
    */
   function reconcileOrphans(): number {
     const orphans = deps.store.tasks.listUnsettled()
@@ -642,6 +679,7 @@ export function createTaskService(
       dispatch(task.rootChatId, task.id, {
         kind: 'fail',
         message: 'Interrupted: the app restarted while this sub-agent was running.',
+        failureKind: 'app-restart',
         now: Date.now()
       })
     }

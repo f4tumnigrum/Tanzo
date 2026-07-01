@@ -317,7 +317,9 @@ const subagentTaskStatusSchema = z.enum([
 const subagentTaskResultSchema = z.object({
   summary: z.string(),
   failed: z.boolean().optional(),
-  errorMessage: z.string().optional()
+  errorMessage: z.string().optional(),
+  resultSource: z.enum(['explicit', 'inferred']).optional(),
+  failureKind: z.enum(['app-restart', 'logic-error']).optional()
 })
 
 const subagentTaskBlockSchema = z.union([
@@ -392,7 +394,9 @@ export const spawnInputSchema = z
 
 export const spawnOutputSchema = z.union([
   z.object({
-    tasks: z.array(z.object({ task: z.string(), status: subagentTaskStatusSchema }))
+    tasks: z.array(z.object({ task: z.string(), status: subagentTaskStatusSchema })),
+    /** Inline reminder of the next action — helps the agent remember to await results. */
+    hint: z.string().optional()
   }),
   toolErrorSchema
 ])
@@ -447,12 +451,21 @@ export const steerInputSchema = z
       .string()
       .min(1)
       .optional()
-      .describe('Extra guidance appended to the running task without restarting it.'),
+      .describe(
+        'Append guidance to the running task without restarting it. ' +
+          'The task continues and all existing progress is preserved. ' +
+          'Use for mid-course corrections, additional context, or clarifications.'
+      ),
     objective: z
       .string()
       .min(1)
       .optional()
-      .describe('Replacement objective; providing this restarts the task from scratch.')
+      .describe(
+        'Replace the entire goal and restart the task from scratch. ' +
+          'ALL CURRENT PROGRESS IS LOST — phases, results, and history are cleared. ' +
+          'Use only when the current objective itself is fundamentally wrong, ' +
+          'not just when you want to redirect or add constraints.'
+      )
   })
   .strict()
 

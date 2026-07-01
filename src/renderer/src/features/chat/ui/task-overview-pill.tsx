@@ -6,14 +6,15 @@ import {
   CircleDashed,
   GitBranch,
   ListTree,
-  Pause
+  Pause,
+  PowerOff
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { SubagentTask } from '@shared/subagent-task'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
-import { useChatSession } from '../model'
+import { useChatSession } from '../model/conversation/use-chat-session'
 
 const ACTIVE_STATUSES = new Set<SubagentTask['status']>(['pending', 'running', 'blocked'])
 
@@ -26,11 +27,19 @@ const STATUS_ICON_TONE: Record<SubagentTask['status'], string> = {
   cancelled: 'text-muted-foreground/70'
 }
 
-function statusIcon(status: SubagentTask['status']): { Icon: React.ElementType; spin?: boolean } {
+/** App-restart interruptions get a softer visual treatment than genuine failures. */
+const INTERRUPTED_ICON_TONE = 'text-muted-foreground/55'
+
+function statusIcon(
+  status: SubagentTask['status'],
+  failureKind?: 'app-restart' | 'logic-error'
+): { Icon: React.ElementType; spin?: boolean; overrideTone?: string } {
   switch (status) {
     case 'done':
       return { Icon: CircleCheckBig }
     case 'failed':
+      // App-restart interruptions: use PowerOff icon with muted tone instead of red CircleAlert.
+      if (failureKind === 'app-restart') return { Icon: PowerOff, overrideTone: INTERRUPTED_ICON_TONE }
       return { Icon: CircleAlert }
     case 'cancelled':
       return { Icon: Ban }
@@ -134,8 +143,9 @@ function TaskGroup({
 
 function TaskRow({ task }: { task: SubagentTask }): React.JSX.Element {
   const { t } = useTranslation()
-  const { Icon, spin } = statusIcon(task.status)
+  const { Icon, spin, overrideTone } = statusIcon(task.status, task.result?.failureKind)
   const detail = blockDetail(task, t)
+  const isInterrupted = task.result?.failureKind === 'app-restart'
   const settled = task.status === 'done' || task.status === 'cancelled'
   return (
     <div
@@ -143,9 +153,10 @@ function TaskRow({ task }: { task: SubagentTask }): React.JSX.Element {
         'flex items-center gap-1.5 rounded-[var(--radius-sm)] px-1.5 py-1 transition-colors',
         'hover:bg-foreground/[0.045]'
       )}
+      title={isInterrupted ? t('chat.taskPanel.interrupted') : undefined}
     >
       <Icon
-        className={cn('size-3 shrink-0', STATUS_ICON_TONE[task.status], spin && 'animate-spin')}
+        className={cn('size-3 shrink-0', overrideTone ?? STATUS_ICON_TONE[task.status], spin && 'animate-spin')}
         aria-hidden="true"
       />
       <span

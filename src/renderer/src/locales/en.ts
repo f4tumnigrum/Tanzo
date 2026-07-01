@@ -648,8 +648,13 @@ export const en = {
           resultFailed: 'Failed',
           dependsOn: 'Depends on {{tasks}}.',
           blockedDependency: 'Waiting on {{tasks}}.',
+          blockedBy: 'Blocked by',
+          waitingFor: 'Waiting for',
           blockedApproval: 'Waiting for approval.',
           awaitPending: 'Still running: {{tasks}}.',
+          inferred: 'inferred',
+          resultInferred:
+            'Result inferred from last assistant text — sub-agent did not call report().',
           errors: {
             taskFailed: 'Subagent failed.'
           }
@@ -661,7 +666,8 @@ export const en = {
         running: 'Running',
         done: 'Done',
         blockedDependency: 'Waiting on {{tasks}}',
-        blockedApproval: 'Waiting for approval'
+        blockedApproval: 'Waiting for approval',
+        interrupted: 'Interrupted — app restarted. Use retry to restart.'
       },
       goal: {
         pause: 'Pause goal',

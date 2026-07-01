@@ -28,8 +28,8 @@ export function isTaskTerminal(status: SubagentTask['status']): boolean {
 
 export type TaskEvent =
   | { kind: 'start'; now: number }
-  | { kind: 'fail'; message: string; now: number }
-  | { kind: 'complete'; summary: string; now: number }
+  | { kind: 'fail'; message: string; failureKind?: 'app-restart' | 'logic-error'; now: number }
+  | { kind: 'complete'; summary: string; resultSource: 'explicit' | 'inferred'; now: number }
   | { kind: 'surface-approvals'; approvals: SubagentTaskApproval[] }
   | { kind: 'clear-approval-block' }
   | { kind: 'cancel'; now: number }
@@ -38,6 +38,9 @@ export type TaskEvent =
   | { kind: 'retry'; now: number }
   | { kind: 'set-phase'; phase: string; now: number }
   | { kind: 'set-result'; result: SubagentTaskResult }
+  /** Reset a failed/cancelled task back to pending-with-dependency-block so that
+   *  when its dependencies complete it can start automatically (used by cascadeRetry). */
+  | { kind: 'reset-dependency'; taskIds: string[]; now: number }
 
 export type TaskEffect = { kind: 'persist' } | { kind: 'notify-settled' }
 
@@ -65,7 +68,12 @@ export function taskTransition(
           ...withoutBlock(task),
           status: 'failed',
           completedAt: event.now,
-          result: { summary: '', failed: true, errorMessage: event.message }
+          result: {
+            summary: '',
+            failed: true,
+            errorMessage: event.message,
+            ...(event.failureKind ? { failureKind: event.failureKind } : {})
+          }
         },
         PERSIST_AND_SETTLE
       )
@@ -77,7 +85,7 @@ export function taskTransition(
         ...withoutBlock(task),
         status: 'done',
         completedAt: event.now,
-        result: { summary: event.summary }
+        result: { summary: event.summary, resultSource: event.resultSource }
       }
       delete done.phase
       return next(done, PERSIST_AND_SETTLE)
@@ -150,6 +158,22 @@ export function taskTransition(
 
     case 'set-result':
       return next({ ...task, result: event.result }, PERSIST)
+
+    case 'reset-dependency': {
+      if (task.status !== 'failed' && task.status !== 'cancelled') return stay(task)
+      // Reset back to pending so maybeUnblockDependents can restart it once all
+      // deps are done. Clears result/phase so the UI shows a clean slate.
+      const reset: SubagentTask = {
+        ...withoutBlock(task),
+        status: 'pending',
+        block: { kind: 'dependency', taskIds: event.taskIds },
+        phases: []
+      }
+      delete reset.result
+      delete reset.phase
+      delete reset.completedAt
+      return next(reset, PERSIST)
+    }
 
     default:
       return stay(task)
