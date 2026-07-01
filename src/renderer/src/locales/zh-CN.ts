@@ -1195,6 +1195,13 @@ export const zhCN = {
           label: '原始 providerOptions JSON',
           description: '高级兜底入口。原始值会覆盖结构化选项。'
         },
+        reset: {
+          button: '重置',
+          title: '重置参数配置',
+          description:
+            '确定要将该模型分类下的所有参数默认值恢复为系统默认吗？已保存的调用默认值和选项都会被清空，此操作无法撤销。',
+          confirm: '重置'
+        },
         errors: {
           objectRequired: 'JSON 值必须是对象。'
         }

@@ -315,18 +315,16 @@ export function ModelsList({ providerId, family, state }: ModelsListProps) {
                   onCheckedChange={(checked) => toggleModel(model, Boolean(checked))}
                   disabled={isMutating}
                 />
-                {model.isCustom ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setPendingDelete(model)}
-                    disabled={isMutating || deleteModel.isPending}
-                    className="size-8 rounded-xl text-muted-foreground hover:text-destructive"
-                  >
-                    <Trash2 className="size-3.5" />
-                  </Button>
-                ) : null}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setPendingDelete(model)}
+                  disabled={isMutating || deleteModel.isPending}
+                  className="size-8 rounded-xl text-muted-foreground hover:text-destructive"
+                >
+                  <Trash2 className="size-3.5" />
+                </Button>
               </div>
             </div>
           ))

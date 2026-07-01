@@ -1200,6 +1200,13 @@ export const en = {
           label: 'Raw providerOptions JSON',
           description: 'Advanced escape hatch. Raw values override structured options.'
         },
+        reset: {
+          button: 'Reset',
+          title: 'Reset parameter config',
+          description:
+            'Reset all parameter defaults for this model family back to system defaults? Saved call defaults and options will be cleared. This cannot be undone.',
+          confirm: 'Reset'
+        },
         errors: {
           objectRequired: 'JSON value must be an object.'
         }

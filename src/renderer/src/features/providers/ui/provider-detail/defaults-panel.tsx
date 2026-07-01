@@ -1,6 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { CheckCircle2, Save, Sliders, X } from 'lucide-react'
+import { CheckCircle2, RotateCcw, Save, Sliders, X } from 'lucide-react'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -55,6 +65,7 @@ export function DefaultsPanel({ providerId, family, defaults }: DefaultsPanelPro
   const { t } = useTranslation()
   const schemasQuery = useProviderOptionSchemas(providerId, family)
   const saveDefaults = useSaveProviderDefaults(providerId)
+  const [resetOpen, setResetOpen] = useState(false)
 
   const baselineCallText = useMemo(
     () => formatJsonObject(defaults.callDefaults),
@@ -232,12 +243,59 @@ export function DefaultsPanel({ providerId, family, defaults }: DefaultsPanelPro
     }))
   }
 
+  const hasSavedDefaults =
+    baselineCallText.trim() !== '' ||
+    baselineRawText.trim() !== '' ||
+    Object.keys(defaults.providerOptions).length > 0
+
+  function handleReset() {
+    saveDefaults.mutate(
+      {
+        byFamily: {
+          [family]: {
+            callDefaults: {},
+            providerOptions: {},
+            rawProviderOptions: {}
+          }
+        }
+      },
+      {
+        onSuccess: () => {
+          setResetOpen(false)
+          setFormState((current) => ({
+            key: baselineKey,
+            callDefaultsText: baselineCallText,
+            providerOptions: defaults.providerOptions,
+            rawProviderOptionsText: baselineRawText,
+            invalidJsonFields: {},
+            resetToken: current.resetToken + 1,
+            error: null,
+            saveStatus: 'idle'
+          }))
+        }
+      }
+    )
+  }
+
   return (
     <div className="relative space-y-2">
       <ProviderSectionCard
         icon={Sliders}
         title={t('providers.defaults.title')}
         description={t('providers.defaults.description')}
+        action={
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setResetOpen(true)}
+            disabled={!hasSavedDefaults || saveDefaults.isPending}
+            className="h-7 gap-1.5 rounded-xl px-2.5 text-[0.6875rem]"
+          >
+            <RotateCcw className="size-3.5" />
+            {t('providers.defaults.reset.button')}
+          </Button>
+        }
       >
         {fields.map((field) => (
           <OptionField
@@ -330,6 +388,31 @@ export function DefaultsPanel({ providerId, family, defaults }: DefaultsPanelPro
           {saveStatus === 'success' ? t('common.actions.saved') : t('common.actions.save')}
         </Button>
       </FloatingSaveBar>
+
+      <AlertDialog open={resetOpen} onOpenChange={setResetOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('providers.defaults.reset.title')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('providers.defaults.reset.description')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={saveDefaults.isPending}>
+              {t('common.actions.cancel')}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault()
+                handleReset()
+              }}
+              disabled={saveDefaults.isPending}
+            >
+              {t('providers.defaults.reset.confirm')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
