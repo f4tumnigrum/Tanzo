@@ -336,7 +336,7 @@ export function createWorkspaceFs(root: string, options: WorkspaceFsOptions = {}
         )
       }
       const buf = await readFile(abs, signal ? { signal } : {})
-      return detectAndDecode(buf)
+      return { ...detectAndDecode(buf), stamp: { mtimeMs: info.mtimeMs, size: info.size } }
     },
     readTextWindow,
     async readBinary(p, signal) {
@@ -360,8 +360,22 @@ export function createWorkspaceFs(root: string, options: WorkspaceFsOptions = {}
     async writeAtomic(p, content, signal) {
       await atomicWrite(resolveWrite(p), content, signal)
     },
-    async writeTextMeta(p, content, meta, signal) {
-      await atomicWrite(resolveWrite(p), encodeWithMeta(content, meta), signal)
+    async writeTextMeta(p, content, meta, signal, expected) {
+      const abs = resolveWrite(p)
+      if (expected) {
+        const current = await stat(abs).catch((error: unknown) => {
+          if (isErrno(error, 'ENOENT')) return null
+          throw error
+        })
+        if (!current || current.mtimeMs !== expected.mtimeMs || current.size !== expected.size) {
+          throw new TanzoValidationError(
+            'FS_STALE_WRITE',
+            `File changed on disk since it was read: ${p}. Re-read it with fileRead before editing.`,
+            { recoverable: true }
+          )
+        }
+      }
+      await atomicWrite(abs, encodeWithMeta(content, meta), signal)
     },
     registerReadRoot(absoluteDir) {
       const abs = resolve(absoluteDir)

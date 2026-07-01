@@ -1,9 +1,9 @@
 import { tool, zodSchema } from 'ai'
 import type { TanzoTools } from '@shared/agent-message'
-import type { FileMeta } from '../../fs/types'
+import type { FileMeta, FileStamp } from '../../fs/types'
 import type { ToolDeps } from '../types'
 import { toolResultToModelOutput } from '../model-output'
-import { isErrno } from './shared'
+import { fsToolError, isErrno } from './shared'
 import { fileWriteInputSchema } from '../tool-schemas'
 
 function encodedByteLength(content: string, meta: FileMeta): number {
@@ -30,13 +30,27 @@ export const fileWriteTool = (deps: ToolDeps) =>
     toModelOutput: toolResultToModelOutput,
     async execute({ path, content }, { abortSignal }): Promise<TanzoTools['fileWrite']['output']> {
       let meta: FileMeta = { eol: 'lf', encoding: 'utf8', bom: false }
+      let stamp: FileStamp | undefined
       try {
         const existing = await deps.fs.readTextMeta(path, abortSignal)
         meta = existing.meta
+        stamp = existing.stamp
       } catch (error) {
-        if (!isErrno(error, 'ENOENT')) throw error
+        if (isErrno(error, 'ENOENT')) {
+          // Missing files are created with the default UTF-8/LF metadata.
+        } else {
+          const mapped = fsToolError(error, path, 'write')
+          if (mapped) return mapped
+          throw error
+        }
       }
-      await deps.fs.writeTextMeta(path, content, meta, abortSignal)
+      try {
+        await deps.fs.writeTextMeta(path, content, meta, abortSignal, stamp)
+      } catch (error) {
+        const mapped = fsToolError(error, path, 'write')
+        if (mapped) return mapped
+        throw error
+      }
       return { applied: true, bytes: encodedByteLength(content, meta) }
     }
   })

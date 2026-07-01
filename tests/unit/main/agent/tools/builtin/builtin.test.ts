@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { TanzoOperationError } from '@shared/errors'
+import { TanzoOperationError, TanzoValidationError } from '@shared/errors'
 import type { WorkspaceFs } from '@main/agent/fs/types'
 import type { ToolDeps } from '@main/agent/tools/types'
 import { fileEditTool } from '@main/agent/tools/builtin/file-edit'
@@ -11,6 +11,7 @@ import { multiEditTool } from '@main/agent/tools/builtin/multi-edit'
 import { shellTool } from '@main/agent/tools/builtin/shell'
 
 const meta = { eol: 'lf', encoding: 'utf8', bom: false } as const
+const stamp = { mtimeMs: 100, size: 13 } as const
 
 function deps(overrides: Partial<ToolDeps> = {}): ToolDeps {
   return {
@@ -132,27 +133,33 @@ describe('main/agent/tools/builtin file tools', () => {
 
   it('edits a unique match and reports the starting line', async () => {
     const d = deps()
-    vi.mocked(d.fs.readTextMeta).mockResolvedValue({ content: 'one\ntwo\nthree', meta })
+    vi.mocked(d.fs.readTextMeta).mockResolvedValue({ content: 'one\ntwo\nthree', meta, stamp })
 
     await expect(
       execute(fileEditTool(d), { path: 'a.txt', oldText: 'two', newText: '2' })
     ).resolves.toEqual({ applied: true, replacements: 1, startLine: 2 })
-    expect(d.fs.writeTextMeta).toHaveBeenCalledWith('a.txt', 'one\n2\nthree', meta, undefined)
+    expect(d.fs.writeTextMeta).toHaveBeenCalledWith(
+      'a.txt',
+      'one\n2\nthree',
+      meta,
+      undefined,
+      stamp
+    )
   })
 
   it('edits a unique match even when oldText uses CRLF line endings', async () => {
     const d = deps()
-    vi.mocked(d.fs.readTextMeta).mockResolvedValue({ content: 'one\ntwo\nthree', meta })
+    vi.mocked(d.fs.readTextMeta).mockResolvedValue({ content: 'one\ntwo\nthree', meta, stamp })
 
     await expect(
       execute(fileEditTool(d), { path: 'a.txt', oldText: 'one\r\ntwo', newText: '1\n2' })
     ).resolves.toEqual({ applied: true, replacements: 1, startLine: 1 })
-    expect(d.fs.writeTextMeta).toHaveBeenCalledWith('a.txt', '1\n2\nthree', meta, undefined)
+    expect(d.fs.writeTextMeta).toHaveBeenCalledWith('a.txt', '1\n2\nthree', meta, undefined, stamp)
   })
 
   it('does not write when a single edit is ambiguous', async () => {
     const d = deps()
-    vi.mocked(d.fs.readTextMeta).mockResolvedValue({ content: 'x x', meta })
+    vi.mocked(d.fs.readTextMeta).mockResolvedValue({ content: 'x x', meta, stamp })
 
     await expect(
       execute(fileEditTool(d), { path: 'a.txt', oldText: 'x', newText: 'y' })
@@ -162,7 +169,7 @@ describe('main/agent/tools/builtin file tools', () => {
 
   it('applies multi-edit replacements sequentially and atomically', async () => {
     const d = deps()
-    vi.mocked(d.fs.readTextMeta).mockResolvedValue({ content: 'alpha beta gamma', meta })
+    vi.mocked(d.fs.readTextMeta).mockResolvedValue({ content: 'alpha beta gamma', meta, stamp })
 
     await expect(
       execute(multiEditTool(d), {
@@ -173,7 +180,7 @@ describe('main/agent/tools/builtin file tools', () => {
         ]
       })
     ).resolves.toMatchObject({ applied: true, edits: 2, replacements: 2 })
-    expect(d.fs.writeTextMeta).toHaveBeenCalledWith('a.txt', 'AB gamma', meta, undefined)
+    expect(d.fs.writeTextMeta).toHaveBeenCalledWith('a.txt', 'AB gamma', meta, undefined, stamp)
   })
 
   it('writes new files with default metadata and existing files with existing encoding', async () => {
@@ -188,7 +195,42 @@ describe('main/agent/tools/builtin file tools', () => {
         bytes: 5
       }
     )
-    expect(d.fs.writeTextMeta).toHaveBeenCalledWith('new.txt', 'hello', meta, undefined)
+    expect(d.fs.writeTextMeta).toHaveBeenCalledWith('new.txt', 'hello', meta, undefined, undefined)
+  })
+
+  it('wraps expected edit file-system failures as structured tool errors', async () => {
+    const d = deps()
+    vi.mocked(d.fs.readTextMeta).mockRejectedValue(
+      Object.assign(new Error('denied'), { code: 'EACCES' })
+    )
+
+    await expect(
+      execute(fileEditTool(d), { path: 'locked.txt', oldText: 'a', newText: 'b' })
+    ).resolves.toEqual({
+      error: true,
+      message:
+        'Permission denied while trying to edit: locked.txt. Check file permissions or choose a writable path.'
+    })
+  })
+
+  it('returns a structured stale-write error when a file changes before writeback', async () => {
+    const d = deps()
+    vi.mocked(d.fs.readTextMeta).mockResolvedValue({ content: 'one two', meta, stamp })
+    vi.mocked(d.fs.writeTextMeta).mockRejectedValue(
+      new TanzoValidationError(
+        'FS_STALE_WRITE',
+        'File changed on disk since it was read: a.txt. Re-read it with fileRead before editing.',
+        { recoverable: true }
+      )
+    )
+
+    await expect(
+      execute(fileEditTool(d), { path: 'a.txt', oldText: 'two', newText: '2' })
+    ).resolves.toEqual({
+      error: true,
+      message:
+        'File changed on disk since it was read: a.txt. Re-read it with fileRead before editing.'
+    })
   })
 })
 

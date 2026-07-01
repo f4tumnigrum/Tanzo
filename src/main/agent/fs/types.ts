@@ -4,6 +4,16 @@ export interface FileMeta {
   bom: boolean
 }
 
+/**
+ * A snapshot of a file's on-disk identity, captured at read time and re-checked
+ * before an edit writes back. Used to detect that the file changed underneath
+ * an edit tool between read and write (concurrent/external modification).
+ */
+export interface FileStamp {
+  mtimeMs: number
+  size: number
+}
+
 export interface TextWindow {
   lines: string[]
   totalLines: number
@@ -23,7 +33,10 @@ export interface WorkspaceFs {
   resolveWorkspace(path: string, signal?: AbortSignal): Promise<string>
   read(path: string, signal?: AbortSignal): Promise<string>
 
-  readTextMeta(path: string, signal?: AbortSignal): Promise<{ content: string; meta: FileMeta }>
+  readTextMeta(
+    path: string,
+    signal?: AbortSignal
+  ): Promise<{ content: string; meta: FileMeta; stamp: FileStamp }>
   readTextWindow(
     path: string,
     options: { offset: number; limit: number; maxLineWidth: number; maxOutputChars: number },
@@ -36,6 +49,17 @@ export interface WorkspaceFs {
   readDir(path: string, signal?: AbortSignal): Promise<string[]>
   writeAtomic(path: string, content: string, signal?: AbortSignal): Promise<void>
 
-  writeTextMeta(path: string, content: string, meta: FileMeta, signal?: AbortSignal): Promise<void>
+  /**
+   * Write `content` with the given format metadata. When `expected` is provided,
+   * the file's current stamp is re-checked first and the write is refused with
+   * an `FS_STALE_WRITE` error if it no longer matches.
+   */
+  writeTextMeta(
+    path: string,
+    content: string,
+    meta: FileMeta,
+    signal?: AbortSignal,
+    expected?: FileStamp
+  ): Promise<void>
   registerReadRoot(absoluteDir: string): void
 }

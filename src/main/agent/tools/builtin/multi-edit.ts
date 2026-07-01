@@ -3,7 +3,7 @@ import type { TanzoTools } from '@shared/agent-message'
 import type { ToolDeps } from '../types'
 import { toolResultToModelOutput } from '../model-output'
 import { applyReplacements, lineNumberAt, locate } from './match'
-import { isErrno, toolError } from './shared'
+import { fsToolError, isErrno, toolError } from './shared'
 import { multiEditInputSchema } from '../tool-schemas'
 
 export const multiEditTool = (deps: ToolDeps) =>
@@ -25,12 +25,15 @@ export const multiEditTool = (deps: ToolDeps) =>
     async execute({ path, edits }, { abortSignal }): Promise<TanzoTools['multiEdit']['output']> {
       let content: string
       let meta: Awaited<ReturnType<ToolDeps['fs']['readTextMeta']>>['meta']
+      let stamp: Awaited<ReturnType<ToolDeps['fs']['readTextMeta']>>['stamp']
       try {
-        ;({ content, meta } = await deps.fs.readTextMeta(path, abortSignal))
+        ;({ content, meta, stamp } = await deps.fs.readTextMeta(path, abortSignal))
       } catch (error) {
         if (isErrno(error, 'ENOENT')) {
           return toolError(`File not found: ${path}. Read it first with fileRead.`)
         }
+        const mapped = fsToolError(error, path, 'edit')
+        if (mapped) return mapped
         throw error
       }
       if (content.includes('\u0000'))
@@ -61,7 +64,13 @@ export const multiEditTool = (deps: ToolDeps) =>
         replacements += starts.length
       }
 
-      await deps.fs.writeTextMeta(path, working, meta, abortSignal)
+      try {
+        await deps.fs.writeTextMeta(path, working, meta, abortSignal, stamp)
+      } catch (error) {
+        const mapped = fsToolError(error, path, 'edit')
+        if (mapped) return mapped
+        throw error
+      }
       return { applied: true, edits: edits.length, replacements, locations }
     }
   })

@@ -38,6 +38,20 @@ describe('main/agent/fs/workspace-fs', () => {
     )
   })
 
+  it('refuses stale text writes when the file changed after reading', async () => {
+    const root = await tempRoot()
+    const fs = createWorkspaceFs(root)
+    await writeFile(join(root, 'stale.txt'), 'one')
+
+    const { meta, stamp } = await fs.readTextMeta('stale.txt')
+    await writeFile(join(root, 'stale.txt'), 'changed')
+
+    await expect(fs.writeTextMeta('stale.txt', 'ours', meta, undefined, stamp)).rejects.toThrow(
+      TanzoValidationError
+    )
+    expect(await readFile(join(root, 'stale.txt'), 'utf8')).toBe('changed')
+  })
+
   it('reads a bounded text window without requiring the full file body', async () => {
     const root = await tempRoot()
     const fs = createWorkspaceFs(root)

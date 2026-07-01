@@ -3,7 +3,7 @@ import type { TanzoTools } from '@shared/agent-message'
 import type { ToolDeps } from '../types'
 import { toolResultToModelOutput } from '../model-output'
 import { applyReplacements, lineNumberAt, locate } from './match'
-import { isErrno, toolError } from './shared'
+import { fsToolError, isErrno, toolError } from './shared'
 import { fileEditInputSchema } from '../tool-schemas'
 
 export const fileEditTool = (deps: ToolDeps) =>
@@ -26,12 +26,15 @@ export const fileEditTool = (deps: ToolDeps) =>
     ): Promise<TanzoTools['fileEdit']['output']> {
       let content: string
       let meta: Awaited<ReturnType<ToolDeps['fs']['readTextMeta']>>['meta']
+      let stamp: Awaited<ReturnType<ToolDeps['fs']['readTextMeta']>>['stamp']
       try {
-        ;({ content, meta } = await deps.fs.readTextMeta(path, abortSignal))
+        ;({ content, meta, stamp } = await deps.fs.readTextMeta(path, abortSignal))
       } catch (error) {
         if (isErrno(error, 'ENOENT')) {
           return toolError(`File not found: ${path}. Read it first with fileRead.`)
         }
+        const mapped = fsToolError(error, path, 'edit')
+        if (mapped) return mapped
         throw error
       }
       if (content.includes('\u0000'))
@@ -50,7 +53,13 @@ export const fileEditTool = (deps: ToolDeps) =>
       const starts = replaceAll ? loc.starts : [loc.starts[0]!]
       const startLine = lineNumberAt(content, starts[0]!)
       const next = applyReplacements(content, starts, loc.length, newText)
-      await deps.fs.writeTextMeta(path, next, meta, abortSignal)
+      try {
+        await deps.fs.writeTextMeta(path, next, meta, abortSignal, stamp)
+      } catch (error) {
+        const mapped = fsToolError(error, path, 'edit')
+        if (mapped) return mapped
+        throw error
+      }
       return { applied: true, replacements: starts.length, startLine }
     }
   })
