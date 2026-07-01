@@ -137,7 +137,7 @@ export default function ChatPage(): React.JSX.Element {
             panelRef={chatPaneRef}
             className="min-h-0 min-w-0"
           >
-            <div className="flex h-full min-h-0 flex-col">{chatContent}</div>
+            <div className="@container/chat flex h-full min-h-0 flex-col">{chatContent}</div>
           </ResizablePanel>
           {browserOpen ? (
             <>

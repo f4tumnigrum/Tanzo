@@ -42,7 +42,7 @@ export function QueuedMessages({
     <div
       className={cn(
         composeSurfaceClass,
-        'mx-auto flex w-[90%] min-w-0 flex-col overflow-hidden rounded-[var(--radius-xl)]',
+        'mx-auto flex w-full min-w-0 flex-col overflow-hidden rounded-[var(--radius-xl)] @md/chat:w-[90%]',
         'bg-[color-mix(in_oklab,var(--card)_95%,transparent)] backdrop-blur-2xl backdrop-saturate-150'
       )}
     >

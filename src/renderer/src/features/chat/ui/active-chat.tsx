@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
-import { useChatSession } from '../model'
+import { useChatSession } from '../model/conversation/use-chat-session'
 import { useArchivedMessages } from '../model/conversation/use-archived-messages'
 import type { SubagentTaskApprovalResponse } from '@shared/subagent-task'
 import {
@@ -108,7 +108,7 @@ export function ActiveChat({
           <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30">
             <div
               ref={measureComposer}
-              className="pointer-events-auto mx-auto w-full max-w-3xl px-5 pb-4"
+              className="pointer-events-auto mx-auto w-full max-w-3xl px-3 pb-4 @md/chat:px-5"
             >
               {state.subagentApprovals.map((approval) => (
                 <SubagentApprovalCard

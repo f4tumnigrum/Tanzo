@@ -174,7 +174,7 @@ export const AssistantMessage = memo(function AssistantMessage({
         {!isStreaming || hasUsage ? (
           <div
             className={cn(
-              'mt-2 flex items-center gap-1.5',
+              'mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1',
               'opacity-0 transition-opacity duration-150 group-hover/msg:opacity-100 focus-within:opacity-100'
             )}
           >

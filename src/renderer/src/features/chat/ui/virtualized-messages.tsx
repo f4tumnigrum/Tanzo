@@ -57,7 +57,7 @@ const Footer = memo(function Footer({ context }: { context?: FooterContext }) {
   return (
     <>
       {context?.footer ? (
-        <div className="mx-auto w-full max-w-3xl px-5">{context.footer}</div>
+        <div className="mx-auto w-full max-w-3xl px-3 @md/chat:px-5">{context.footer}</div>
       ) : null}
       <div style={{ height: context?.offset ?? 24 }} />
     </>
@@ -112,7 +112,7 @@ export const VirtualizedMessages = memo(
 
     const renderItem = useCallback(
       (_index: number, message: TanzoUIMessage) => (
-        <div className="mx-auto w-full max-w-3xl px-5">
+        <div className="mx-auto w-full max-w-3xl px-3 @md/chat:px-5">
           <MessageItem
             message={message}
             isStreaming={isStreaming && message.id === activeStreamingMessageId}

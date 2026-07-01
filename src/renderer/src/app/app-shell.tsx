@@ -60,14 +60,6 @@ export function AppShell({ children }: AppShellProps): React.JSX.Element {
 
   return (
     <AppShellContext.Provider value={contextValue}>
-      {/* A single persistent traffic-light overlay pinned to the window's
-          top-left corner. It never unmounts as the sidebar collapses/expands,
-          so the controls never flash. */}
-      {windowControlsVisible ? (
-        <div className="app-no-drag pointer-events-auto fixed left-0 top-0 z-[1000] flex h-11 w-[108px] items-center px-5">
-          <WindowControls className="app-no-drag pointer-events-auto" />
-        </div>
-      ) : null}
       <ResizablePanelGroup
         id="app-shell"
         orientation="horizontal"
@@ -135,6 +127,15 @@ export function AppShell({ children }: AppShellProps): React.JSX.Element {
           <div className="main-surface flex h-full min-h-0 min-w-0 flex-col">{children}</div>
         </ResizablePanel>
       </ResizablePanelGroup>
+      {/* A single persistent traffic-light overlay pinned to the window's
+          top-left corner. Rendered last so its `no-drag` region wins over any
+          `app-titlebar` drag regions in headers below it (macOS composes
+          draggable regions in DOM order). */}
+      {windowControlsVisible ? (
+        <div className="app-no-drag pointer-events-auto fixed left-0 top-0 z-[1000] flex h-11 w-[108px] items-center px-5">
+          <WindowControls className="app-no-drag pointer-events-auto" />
+        </div>
+      ) : null}
     </AppShellContext.Provider>
   )
 }

@@ -6,7 +6,7 @@ export interface ChatEmptyProps {
 
 export function ChatEmpty({ children }: ChatEmptyProps): React.JSX.Element {
   return (
-    <div className="mx-auto flex h-full w-full max-w-3xl flex-1 flex-col px-5 pb-4">
+    <div className="mx-auto flex h-full w-full max-w-3xl flex-1 flex-col px-3 pb-4 @md/chat:px-5">
       <div className="flex min-h-0 flex-1 items-center justify-center px-6 pt-4 pb-8 sm:pt-6 sm:pb-10">
         <img
           src={tanzoEmptyImage}

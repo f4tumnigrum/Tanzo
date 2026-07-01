@@ -23,7 +23,7 @@ const messageContentVariants = cva('flex flex-col gap-2 overflow-hidden text-sm'
   variants: {
     variant: {
       contained: [
-        'max-w-[80%] rounded-[var(--radius-lg)] px-4 py-3',
+        'max-w-[94%] rounded-[var(--radius-lg)] px-3 py-2.5 @md/chat:max-w-[80%] @md/chat:px-4 @md/chat:py-3',
         'group-[.is-user]/msg:bg-primary group-[.is-user]/msg:text-primary-foreground',
         'group-[.is-assistant]/msg:bg-secondary group-[.is-assistant]/msg:text-foreground'
       ],

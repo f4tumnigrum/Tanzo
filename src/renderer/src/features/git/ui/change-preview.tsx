@@ -152,12 +152,12 @@ export function ChangePreview({
   return (
     <div
       className={cn(
-        'mt-2 overflow-hidden rounded-[var(--radius-lg)] border border-border/40 bg-secondary/60',
+        '@container/change mt-2 overflow-hidden rounded-[var(--radius-lg)] border border-border/40 bg-secondary/60',
         className
       )}
     >
-      <div className="flex min-w-0 items-center justify-between gap-2 border-b border-border/30 px-3 py-2">
-        <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden text-xs text-foreground">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-2 gap-y-1.5 border-b border-border/30 px-3 py-2">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-foreground">
           <FileDiff className="size-3.5 shrink-0" />
           <span className="shrink-0">
             {t('gitReview.changePreview.files', { count: preview.fileCount })}
@@ -173,7 +173,7 @@ export function ChangePreview({
             {t(`gitReview.changePreview.status.${status}`)}
           </span>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex shrink-0 flex-wrap items-center gap-1">
           <Button
             type="button"
             variant="ghost"
@@ -228,7 +228,7 @@ export function ChangePreview({
               <button
                 type="button"
                 onClick={() => toggleFile(file)}
-                className="group flex w-full min-w-0 items-center gap-2 px-3 py-2 text-left text-xs hover:bg-foreground/[0.03]"
+                className="group flex w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 text-left text-xs hover:bg-foreground/[0.03]"
               >
                 <ChevronRight
                   className={cn(
@@ -243,11 +243,13 @@ export function ChangePreview({
                   {directory ? <span className="text-foreground/55">{directory}/</span> : null}
                   {fileName}
                 </span>
-                <span className="shrink-0 rounded-[var(--radius-sm)] border border-border/35 px-1 py-0.5 text-[0.625rem] uppercase tracking-wide text-muted-foreground">
-                  {t(`gitReview.changePreview.kind.${file.kind}`)}
+                <span className="flex shrink-0 items-center gap-2">
+                  <span className="shrink-0 rounded-[var(--radius-sm)] border border-border/35 px-1 py-0.5 text-[0.625rem] uppercase tracking-wide text-muted-foreground">
+                    {t(`gitReview.changePreview.kind.${file.kind}`)}
+                  </span>
+                  <span className="font-mono text-emerald-600">+{file.additions}</span>
+                  <span className="font-mono text-red-600">-{file.deletions}</span>
                 </span>
-                <span className="font-mono text-emerald-600">+{file.additions}</span>
-                <span className="font-mono text-red-600">-{file.deletions}</span>
               </button>
               {open ? (
                 <div>

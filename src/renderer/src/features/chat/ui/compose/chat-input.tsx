@@ -14,7 +14,6 @@ import { MentionMenu } from './mention-menu'
 import { useMentionMenu, type PluginMentionOption } from './use-mention-menu'
 import { useAttachments } from './use-attachments'
 import { composeSurfaceClass, toolbarBaseButtonClass } from './surface-style'
-import { SteeringControls } from './steering-controls'
 import { ComposerAttachment } from './composer-attachment'
 
 const MODE_ORDER: readonly PermissionMode[] = ['default', 'plan', 'yolo', 'dangerous']
@@ -470,14 +469,6 @@ export function ChatInput({
                     : t('chat.composer.attachments.attach')}
                 </TooltipContent>
               </Tooltip>
-
-              {isStreaming ? (
-                <SteeringControls
-                  canSubmit={canSubmit}
-                  onQueue={queueable ? () => void dispatch('queue') : undefined}
-                  onSteer={steerable ? () => void dispatch('steer') : undefined}
-                />
-              ) : null}
 
               <Tooltip>
                 <TooltipTrigger

@@ -106,8 +106,8 @@ export const UserMessage = memo(function UserMessage({
   if (isEditing) {
     return (
       <Message from="user" className={className}>
-        <div className="flex w-full max-w-[80%] flex-col items-end gap-2">
-          <MessageContent variant="contained" className="w-full max-w-full">
+        <div className="flex w-full flex-col items-end gap-2">
+          <MessageContent variant="contained" className="w-full max-w-[94%] @md/chat:max-w-[80%]">
             <Textarea
               ref={textareaRef}
               variant="bare"
@@ -141,9 +141,9 @@ export const UserMessage = memo(function UserMessage({
 
   return (
     <Message from="user" className={className}>
-      <div className="flex max-w-[80%] flex-col items-end gap-2">
+      <div className="flex w-full flex-col items-end gap-2">
         {hasBubble ? (
-          <MessageContent variant="contained" className="max-w-full">
+          <MessageContent variant="contained" className="w-fit max-w-[94%] @md/chat:max-w-[80%]">
             <div className="space-y-2">
               <div className="relative">
                 <div
