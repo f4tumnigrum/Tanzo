@@ -1,7 +1,10 @@
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   Ban,
   Bot,
+  Check,
+  ChevronsUpDown,
   CircleAlert,
   CircleCheckBig,
   CircleDashed,
@@ -13,10 +16,16 @@ import {
 } from 'lucide-react'
 import type { SubagentTask, SubagentTaskResult } from '@shared/subagent-task'
 import { isRecord } from '@/common/lib/type-guards'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import { PANEL_HEIGHT_XL } from '../primitives/constants'
 import { ShimmerText } from '../primitives/shimmer'
-import { ToolBadge, ToolHeaderRow, ToolMetaChip, type ToolBadgeTone } from '../primitives/header'
+import { ToolHeaderRow, ToolMetaChip, type ToolBadgeTone } from '../primitives/header'
 import {
   ToolPanel,
   ToolScrollPanel,
@@ -210,9 +219,13 @@ function SubagentOutputComp({ context }: { context: ToolRenderContext }): React.
   if (isAwaitOutput(output)) {
     return (
       <div className="space-y-2">
-        {output.results.map((entry) => (
-          <ResultBlock key={entry.task} task={entry.task} result={entry.result} />
-        ))}
+        {output.results.length > 1 ? (
+          <ResultSelector results={output.results} />
+        ) : (
+          output.results.map((entry) => (
+            <ResultBlock key={entry.task} task={entry.task} result={entry.result} />
+          ))
+        )}
         {output.pending && output.pending.length > 0 ? (
           <SubagentStatusLine
             icon={Pause}
@@ -343,17 +356,19 @@ function AckLine({
 
 function ResultBlock({
   task,
-  result
+  result,
+  hideLabel = false
 }: {
   task: string
   result: SubagentTaskResult
+  hideLabel?: boolean
 }): React.JSX.Element {
   const { t } = useTranslation()
   if (result.failed) {
     const isInterrupted = result.failureKind === 'app-restart'
     return (
       <div className="space-y-1.5">
-        <ResultLabel task={task} failed />
+        {hideLabel ? null : <ResultLabel task={task} failed />}
         <ToolPanel tone={isInterrupted ? 'subtle' : 'danger'}>
           <div className="flex items-start gap-1.5 px-2.5 py-1.75">
             {isInterrupted ? (
@@ -374,7 +389,7 @@ function ResultBlock({
   }
   return (
     <div className="space-y-1.5">
-      <ResultLabel task={task} inferred={result.resultSource === 'inferred'} />
+      {hideLabel ? null : <ResultLabel task={task} inferred={result.resultSource === 'inferred'} />}
       <ToolScrollPanel tone="subtle" maxHeight={PANEL_HEIGHT_XL} contentClassName="px-2.5 py-2">
         <Response
           content={result.summary || ''}
@@ -383,6 +398,120 @@ function ResultBlock({
       </ToolScrollPanel>
     </div>
   )
+}
+
+type AwaitResult = { task: string; result: SubagentTaskResult }
+
+// Switcher for multiple await results: a compact dropdown picks the subagent
+// and the chosen result renders in the single panel below. No vertical row list
+// and no forced scroll — the control stays one line no matter how many agents
+// ran. Selection defaults to the first failure (most worth inspecting), else
+// the first result.
+function ResultSelector({ results }: { results: AwaitResult[] }): React.JSX.Element {
+  const { t } = useTranslation()
+  const initial = results.find((entry) => entry.result.failed) ?? results[0]
+  const [activeTask, setActiveTask] = useState(initial.task)
+  const activeIndex = Math.max(
+    0,
+    results.findIndex((entry) => entry.task === activeTask)
+  )
+  const active = results[activeIndex]
+  const { Icon, tone } = resultGlyph(active.result)
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-1.5 px-0.5">
+        <SubagentSectionLabel text={t('chat.tool.subagent.result')} />
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            className={cn(
+              'group/pick ml-auto inline-flex min-w-0 max-w-[70%] items-center gap-1.5 rounded-md px-1.5 py-0.5',
+              'bg-foreground/[0.05] text-foreground/80 transition-colors hover:bg-foreground/[0.08] hover:text-foreground',
+              'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60 data-popup-open:bg-foreground/[0.08]'
+            )}
+          >
+            <Icon
+              className={cn(
+                'size-3 shrink-0',
+                tone,
+                active.result.failed ? undefined : 'opacity-85'
+              )}
+              aria-hidden="true"
+            />
+            <span className="truncate font-mono text-[0.625rem] tabular-nums">{active.task}</span>
+            <span className="shrink-0 font-mono text-[0.5625rem] text-muted-foreground/55 tabular-nums">
+              {activeIndex + 1}/{results.length}
+            </span>
+            <ChevronsUpDown
+              className="size-2.5 shrink-0 text-muted-foreground/50 transition-colors group-hover/pick:text-foreground/70"
+              aria-hidden="true"
+            />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-[8rem] max-w-[min(18rem,80vw)]">
+            {results.map((entry) => (
+              <ResultMenuItem
+                key={entry.task}
+                entry={entry}
+                active={entry.task === active.task}
+                onSelect={() => setActiveTask(entry.task)}
+              />
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+      <ResultBlock task={active.task} result={active.result} hideLabel />
+    </div>
+  )
+}
+
+function ResultMenuItem({
+  entry,
+  active,
+  onSelect
+}: {
+  entry: AwaitResult
+  active: boolean
+  onSelect: () => void
+}): React.JSX.Element {
+  const { t } = useTranslation()
+  const { task, result } = entry
+  const { Icon, tone } = resultGlyph(result)
+  const inferred = !result.failed && result.resultSource === 'inferred'
+
+  return (
+    <DropdownMenuItem
+      onClick={onSelect}
+      className={cn(
+        'gap-1.5 rounded-sm px-1.5 py-1 font-mono text-[0.625rem] tabular-nums',
+        active ? 'bg-foreground/[0.06] text-foreground' : 'text-foreground/70'
+      )}
+    >
+      <Icon
+        className={cn('size-3 shrink-0', tone, result.failed ? undefined : 'opacity-85')}
+        aria-hidden="true"
+      />
+      <span className="min-w-0 flex-1 truncate">{task}</span>
+      {inferred ? (
+        <Info
+          className="size-2.5 shrink-0 text-muted-foreground/45"
+          aria-label={t('chat.tool.subagent.inferred')}
+        />
+      ) : null}
+      {active ? <Check className="size-3 shrink-0 text-foreground/60" aria-hidden="true" /> : null}
+    </DropdownMenuItem>
+  )
+}
+
+function resultGlyph(result: SubagentTaskResult): {
+  Icon: React.ElementType
+  tone: string
+} {
+  if (result.failed) {
+    return result.failureKind === 'app-restart'
+      ? { Icon: PowerOff, tone: 'text-muted-foreground/60' }
+      : { Icon: CircleAlert, tone: 'text-red-500/80' }
+  }
+  return { Icon: CircleCheckBig, tone: 'text-emerald-500/85' }
 }
 
 function ResultLabel({
@@ -462,10 +591,11 @@ function TaskList({ tasks }: { tasks: SubagentTask[] }): React.JSX.Element {
   )
 }
 
-// One subagent, rendered as an entity. The id chip leads each line as the
-// stable handle the user references; the objective is the hero text beside it;
-// the agent role and live phase sit on a single quiet meta row. The status
-// icon + tone carry status, so the status word is dropped to save density.
+// One subagent, rendered as an entity. A status glyph opens a fixed left rail
+// so every line shares the same optical margin; the objective is the hero text
+// and the id chip trails as the stable handle. The agent role and live phase
+// sit on one quiet meta line under the objective, aligned to the same rail. The
+// glyph + tone carry status, so the status word is dropped to save density.
 function SubagentEntity({
   status,
   objective,
@@ -492,53 +622,62 @@ function SubagentEntity({
     />
   )
 
-  // Dense single-line row for multi-task lists: glyph · id · objective · agent.
+  // Dense single-line row for multi-task lists: glyph · objective · agent · id.
   if (truncate) {
     return (
-      <div className="flex min-w-0 items-center gap-1.5">
+      <div className="flex min-w-0 items-center gap-2">
         {StatusGlyph}
-        <ToolMetaChip text={taskId} tone={STATUS_CHIP_TONE[status]} className="shrink-0" />
         <p
           className={cn(
             'min-w-0 flex-1 truncate text-[0.75rem] leading-[1.5]',
-            isActive ? 'text-foreground/85' : 'text-foreground/60'
+            isActive ? 'text-foreground/85' : 'text-foreground/55'
           )}
           title={objectiveText}
         >
           {objectiveText}
         </p>
-        {phase ? (
-          <span
-            className="min-w-0 flex-1 truncate text-[0.625rem] text-foreground/45"
-            title={phase}
-          >
-            {phase}
+        {agent ? (
+          <span className="hidden shrink-0 font-mono text-[0.5625rem] text-foreground/45 sm:inline">
+            {agent}
           </span>
         ) : null}
-        <ToolBadge text={agent || t('chat.tool.subagent.run')} tone="info" className="shrink-0" />
+        <ToolMetaChip text={taskId} tone={STATUS_CHIP_TONE[status]} className="shrink-0" />
       </div>
     )
   }
 
-  // Two-line hero layout for a single highlighted subagent.
+  // Hero layout for a single highlighted subagent: the objective leads on its
+  // own line with the id chip trailing; the agent role and phase form a quiet
+  // meta line that aligns to the objective via the shared left rail.
   return (
-    <div className="space-y-0.5">
-      <div className="flex min-w-0 items-start gap-1.5">
-        <span className="mt-0.5">{StatusGlyph}</span>
-        <ToolMetaChip text={taskId} tone={STATUS_CHIP_TONE[status]} className="mt-px shrink-0" />
-        <p className="min-w-0 flex-1 text-[0.75rem] font-medium leading-[1.5] text-foreground/88">
-          {objectiveText}
-        </p>
-      </div>
-      <div className="flex min-w-0 flex-wrap items-center gap-1.5 pl-5">
-        <ToolBadge text={agent || t('chat.tool.subagent.run')} tone="info" />
-        {phase ? (
-          <span
-            className="min-w-0 flex-1 truncate text-[0.625rem] text-foreground/50"
-            title={phase}
-          >
-            {phase}
-          </span>
+    <div className="flex min-w-0 items-start gap-2">
+      <span className="mt-px shrink-0">{StatusGlyph}</span>
+      <div className="min-w-0 flex-1 space-y-1">
+        <div className="flex min-w-0 items-start gap-2">
+          <p className="min-w-0 flex-1 text-[0.75rem] font-medium leading-[1.5] text-foreground/88">
+            {objectiveText}
+          </p>
+          <ToolMetaChip text={taskId} tone={STATUS_CHIP_TONE[status]} className="mt-px shrink-0" />
+        </div>
+        {agent || phase ? (
+          <div className="flex min-w-0 items-center gap-1.5 text-[0.625rem] text-foreground/50">
+            {agent ? (
+              <span className="shrink-0 font-mono" title={agent}>
+                {agent}
+              </span>
+            ) : null}
+            {agent && phase ? (
+              <span
+                className="size-0.5 shrink-0 rounded-full bg-current opacity-40"
+                aria-hidden="true"
+              />
+            ) : null}
+            {phase ? (
+              <span className="min-w-0 truncate" title={phase}>
+                {phase}
+              </span>
+            ) : null}
+          </div>
         ) : null}
       </div>
     </div>
