@@ -32,21 +32,7 @@ toolRendererRegistry.registerMany({
   todo: todoRenderer,
   updateGoal: goalRenderer,
   askQuestion: askQuestionRenderer,
-  browserSnapshot: browserRenderer,
-  browserNavigate: browserRenderer,
-  browserClick: browserRenderer,
-  browserType: browserRenderer,
-  browserScroll: browserRenderer,
-  browserBack: browserRenderer,
-  browserForward: browserRenderer,
-  browserReadText: browserRenderer,
-  browserScreenshot: browserRenderer,
-  browserTabs: browserRenderer,
-  browserActivateTab: browserRenderer,
-  browserWaitFor: browserRenderer,
-  browserSelect: browserRenderer,
-  browserPressKey: browserRenderer,
-  browserHover: browserRenderer
+  browserOpen: browserRenderer
 })
 
 toolRendererRegistry.registerComponents({

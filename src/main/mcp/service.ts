@@ -43,20 +43,29 @@ export interface McpService {
    * already claims the same name).
    */
   setPluginServers(provider: () => McpServerConfig[]): void
+  /**
+   * Register a lazy provider of built-in servers the app itself contributes
+   * (e.g. the browser-automation server bound to the embedded browser). Merged
+   * with the lowest priority: a user or plugin server of the same name wins, so
+   * users can override or disable the built-in by defining their own.
+   */
+  setBuiltinServers(provider: () => McpServerConfig[]): void
   syncFromStore(): Promise<void>
   dispose(): Promise<void>
 }
 
 export function createMcpService(store: McpStore, client: McpClient): McpService {
   let pluginServersProvider: (() => McpServerConfig[]) | null = null
+  let builtinServersProvider: (() => McpServerConfig[]) | null = null
 
   function mergedServers(): McpServerConfig[] {
     const userServers = store.getAll()
     const pluginServers = pluginServersProvider?.() ?? []
-    if (pluginServers.length === 0) return userServers
+    const builtinServers = builtinServersProvider?.() ?? []
     const claimed = new Set(userServers.map((server) => server.name))
     const merged = [...userServers]
-    for (const server of pluginServers) {
+    // User servers win over plugins, plugins win over built-ins.
+    for (const server of [...pluginServers, ...builtinServers]) {
       if (claimed.has(server.name)) continue
       claimed.add(server.name)
       merged.push(server)
@@ -102,6 +111,9 @@ export function createMcpService(store: McpStore, client: McpClient): McpService
     onConnectionStatesChanged: (listener) => client.onConnectionStatesChanged(listener),
     setPluginServers(provider) {
       pluginServersProvider = provider
+    },
+    setBuiltinServers(provider) {
+      builtinServersProvider = provider
     },
     syncFromStore,
     dispose: () => client.dispose()

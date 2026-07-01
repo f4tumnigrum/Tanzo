@@ -59,24 +59,7 @@ function deps(): ToolDeps {
       markOutcome: vi.fn(() => false)
     },
     browser: {
-      snapshot: vi.fn(),
-      navigate: vi.fn(),
-      click: vi.fn(),
-      type: vi.fn(),
-      scroll: vi.fn(),
-      goBack: vi.fn(),
-      goForward: vi.fn(),
-      readText: vi.fn(),
-      screenshot: vi.fn(),
-      listTabs: vi.fn(() => []),
-      activateTab: vi.fn(),
-      waitFor: vi.fn(),
-      select: vi.fn(),
-      pressKey: vi.fn(),
-      hover: vi.fn(),
-      registerTab: vi.fn(),
-      unregisterTab: vi.fn(),
-      setActiveTab: vi.fn()
+      requestOpen: vi.fn(() => true)
     } as never,
     disabledTools: () => []
   } as unknown as ToolDeps
@@ -157,24 +140,7 @@ function planDeps(): ToolDeps {
     submitTaskResult: vi.fn(),
     goal: { get: vi.fn(), markOutcome: vi.fn() },
     browser: {
-      snapshot: vi.fn(),
-      navigate: vi.fn(),
-      click: vi.fn(),
-      type: vi.fn(),
-      scroll: vi.fn(),
-      goBack: vi.fn(),
-      goForward: vi.fn(),
-      readText: vi.fn(),
-      screenshot: vi.fn(),
-      listTabs: vi.fn(() => []),
-      activateTab: vi.fn(),
-      waitFor: vi.fn(),
-      select: vi.fn(),
-      pressKey: vi.fn(),
-      hover: vi.fn(),
-      registerTab: vi.fn(),
-      unregisterTab: vi.fn(),
-      setActiveTab: vi.fn()
+      requestOpen: vi.fn(() => true)
     } as never,
     disabledTools: () => []
   } as unknown as ToolDeps
@@ -206,9 +172,7 @@ describe('main/agent/tools/registry', () => {
         'shellStart',
         'shellPoll',
         'askQuestion',
-        'browserSnapshot',
-        'browserNavigate',
-        'browserClick',
+        'browserOpen',
         'spawn'
       ])
     )
@@ -221,7 +185,7 @@ describe('main/agent/tools/registry', () => {
     const baseDeps = deps()
     const withDisabled = {
       ...baseDeps,
-      disabledTools: () => ['shell', 'browserNavigate', 'browserClick']
+      disabledTools: () => ['shell', 'browserOpen']
     }
     const tools = await createBuildTools(withDisabled)({
       def: def(),
@@ -232,10 +196,8 @@ describe('main/agent/tools/registry', () => {
 
     const keys = Object.keys(tools)
     expect(keys).not.toContain('shell')
-    expect(keys).not.toContain('browserNavigate')
-    expect(keys).not.toContain('browserClick')
+    expect(keys).not.toContain('browserOpen')
     // Untouched tools remain available.
-    expect(keys).toContain('browserSnapshot')
     expect(keys).toContain('fileRead')
   })
 

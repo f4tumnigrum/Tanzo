@@ -1,6 +1,11 @@
 import { randomUUID } from 'crypto'
 import type { IpcMain } from 'electron'
-import { MCP_CHANNELS, type McpConnectionState, type McpElicitResult } from '@shared/mcp'
+import {
+  MCP_CHANNELS,
+  type McpConnectionState,
+  type McpElicitResult,
+  type McpServerConfig
+} from '@shared/mcp'
 import type { SqlDatabase } from '../database/types'
 import { McpClient } from './client'
 import { registerMcpIpc } from './ipc'
@@ -29,6 +34,47 @@ export interface CreateMcpModuleOptions {
   enableReconnect?: boolean
   appName?: string
   appVersion?: string
+  /**
+   * Chromium remote-debugging port opened by the main process (0 = disabled).
+   * When set, a built-in chrome-devtools-mcp server is registered so agent
+   * browser tools drive the embedded `<webview>` guests over CDP.
+   */
+  remoteDebuggingPort?: number
+}
+
+/** Name of the auto-registered browser-automation server. Reserved: a user
+ * server with this name would shadow it (mergedServers gives user servers
+ * priority), which we treat as an intentional override. */
+export const BUILTIN_BROWSER_SERVER_NAME = 'chrome-devtools'
+
+/**
+ * Build the built-in chrome-devtools-mcp server config that attaches to our own
+ * Electron Chromium over CDP. `--browserUrl` connects to the already-open
+ * debugging port instead of launching a separate Chrome. Isolation notes:
+ *   - `--experimentalIncludeAllPages` surfaces `<webview>` guests as pages so
+ *     the agent can drive the tab the user sees.
+ *   - `--blockedUrlPattern file://**` detaches the server from the Tanzo UI and
+ *     pet windows (both load via file:// in production), so the agent cannot
+ *     navigate or inject into the app's own renderer. Chrome 149's cleaner
+ *     `--allowedUrlPattern` allowlist is unavailable on our Chromium (146).
+ */
+function buildBrowserServerConfig(port: number): McpServerConfig {
+  return {
+    name: BUILTIN_BROWSER_SERVER_NAME,
+    description: 'Built-in browser automation (drives the embedded browser via CDP).',
+    transport: 'stdio',
+    command: 'npx',
+    args: [
+      '-y',
+      'chrome-devtools-mcp@latest',
+      '--browserUrl',
+      `http://127.0.0.1:${port}`,
+      '--experimentalIncludeAllPages',
+      '--blockedUrlPattern',
+      'file://**'
+    ],
+    enabled: true
+  }
 }
 
 export interface McpModule {
@@ -116,6 +162,13 @@ export function createMcpModule(options: CreateMcpModuleOptions): McpModule {
     if (!resolver) return
     clearElicitation(requestId)
     resolver(result)
+  }
+
+  const browserPort = options.remoteDebuggingPort ?? 0
+  if (browserPort > 0) {
+    const browserServer = buildBrowserServerConfig(browserPort)
+    service.setBuiltinServers(() => [browserServer])
+    log.info('registered built-in browser server', { port: browserPort })
   }
 
   return {

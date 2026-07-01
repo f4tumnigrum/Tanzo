@@ -12,7 +12,7 @@
 export type ToolCategoryId = 'files' | 'search' | 'shell' | 'browser'
 
 export interface ToolCatalogEntry {
-  /** Tool id, matches the registry key (e.g. "browserClick"). */
+  /** Tool id, matches the registry key (e.g. "browserOpen"). */
   id: string
   category: ToolCategoryId
   /** True for read-only tools (auto-approved). Surfaced as a badge in the UI. */
@@ -48,23 +48,7 @@ export const TOOL_CATALOG: readonly ToolCategoryDef[] = [
   },
   {
     id: 'browser',
-    tools: [
-      entry('browserSnapshot', 'browser', true),
-      entry('browserReadText', 'browser', true),
-      entry('browserScreenshot', 'browser', true),
-      entry('browserTabs', 'browser', true),
-      entry('browserNavigate', 'browser', false),
-      entry('browserClick', 'browser', false),
-      entry('browserType', 'browser', false),
-      entry('browserSelect', 'browser', false),
-      entry('browserPressKey', 'browser', false),
-      entry('browserHover', 'browser', false),
-      entry('browserScroll', 'browser', false),
-      entry('browserBack', 'browser', false),
-      entry('browserForward', 'browser', false),
-      entry('browserActivateTab', 'browser', false),
-      entry('browserWaitFor', 'browser', false)
-    ]
+    tools: [entry('browserOpen', 'browser', false)]
   }
 ]
 

@@ -16,7 +16,6 @@ import { createLogger } from '../logger'
 import type { McpService } from '../mcp/service'
 import type { ProviderService } from '../provider/service'
 import { createAgentIdentity } from './agents'
-import { createBrowserController } from './browser/controller'
 import { createContextEngine } from './context'
 import { createContextEngineDeps } from './context/deps'
 import { createGitService } from './git/service'
@@ -332,8 +331,11 @@ export function createAgentModule(options: AgentModuleOptions): AgentModule {
   const git = createGitService({ broadcast: gitBroadcast, logger })
   const changeSet = createChangeSetService({ userDataPath: app.getPath('userData') })
   const questions = createQuestionBroker()
-  const browser = createBrowserController({
-    requestOpen: (url) => {
+  // Asks the renderer to show the built-in browser panel and load a URL. This
+  // creates the <webview> target that the chrome-devtools-mcp server drives;
+  // Tanzo itself no longer performs page interaction.
+  const browser = {
+    requestOpen: (url: string): boolean => {
       const windows = (options.getChatWindows ?? options.getWindows)().filter(isUsableWindow)
       if (windows.length === 0) return false
       for (const window of windows) {
@@ -341,7 +343,7 @@ export function createAgentModule(options: AgentModuleOptions): AgentModule {
       }
       return true
     }
-  })
+  }
 
   // Tracks explicit plugin @mentions in user messages for one-shot, per-turn
   // capability hints. Only mentions matching an active plugin's skill namespace
@@ -460,8 +462,7 @@ export function createAgentModule(options: AgentModuleOptions): AgentModule {
         changeSet,
         skills,
         plugins,
-        streams,
-        browser
+        streams
       })
     },
     async close() {

@@ -606,26 +606,8 @@ export const en = {
         browser: {
           label: 'Browser',
           url: 'url',
-          activeTab: 'active',
-          emptySnapshot: 'No interactive elements found.',
-          emptyText: 'No text content.',
-          screenshotAlt: 'Screenshot of the active browser tab',
           actions: {
-            browserSnapshot: 'Snapshot',
-            browserNavigate: 'Navigate',
-            browserClick: 'Click',
-            browserType: 'Type',
-            browserScroll: 'Scroll',
-            browserBack: 'Back',
-            browserForward: 'Forward',
-            browserReadText: 'Read text',
-            browserScreenshot: 'Screenshot',
-            browserTabs: 'List tabs',
-            browserActivateTab: 'Activate tab',
-            browserWaitFor: 'Wait',
-            browserSelect: 'Select',
-            browserPressKey: 'Press key',
-            browserHover: 'Hover'
+            browserOpen: 'Open browser'
           },
           errors: {
             failed: 'Browser action failed.'
@@ -1267,21 +1249,7 @@ export const en = {
           glob: 'Find files by glob pattern.',
           grep: 'Search file contents with ripgrep.',
           shell: 'Run a shell command.',
-          browserSnapshot: 'Capture an accessibility snapshot with @eN refs.',
-          browserReadText: 'Read the visible text of the page or an element.',
-          browserScreenshot: 'Capture a screenshot of the active tab.',
-          browserTabs: 'List the open browser tabs.',
-          browserNavigate: 'Open a URL (opens the browser automatically).',
-          browserClick: 'Click an element by ref.',
-          browserType: 'Type text into a field by ref.',
-          browserSelect: 'Choose a dropdown option by ref.',
-          browserPressKey: 'Press Enter, Tab, Escape, or an arrow key.',
-          browserHover: 'Hover an element to reveal menus or tooltips.',
-          browserScroll: 'Scroll the page.',
-          browserBack: 'Go back in history.',
-          browserForward: 'Go forward in history.',
-          browserActivateTab: 'Switch the active browser tab.',
-          browserWaitFor: 'Wait for the page to settle.'
+          browserOpen: 'Open the built-in browser at a URL.'
         }
       },
       permissions: {

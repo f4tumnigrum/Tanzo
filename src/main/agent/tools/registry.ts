@@ -44,11 +44,7 @@ const READ_ONLY_SUBAGENT_TOOLS = new Set([
   'report',
   'shellPoll',
   'shellList',
-  'web_search',
-  'browserSnapshot',
-  'browserReadText',
-  'browserScreenshot',
-  'browserTabs'
+  'web_search'
 ])
 
 function isReadOnlySubagentToolPattern(pattern: string): boolean {

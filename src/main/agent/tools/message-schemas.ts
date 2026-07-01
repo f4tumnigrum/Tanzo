@@ -46,35 +46,8 @@ import {
   updateGoalOutputSchema,
   askQuestionInputSchema,
   askQuestionOutputSchema,
-  browserSnapshotInputSchema,
-  browserSnapshotOutputSchema,
-  browserNavigateInputSchema,
-  browserNavigateOutputSchema,
-  browserClickInputSchema,
-  browserClickOutputSchema,
-  browserTypeInputSchema,
-  browserTypeOutputSchema,
-  browserScrollInputSchema,
-  browserScrollOutputSchema,
-  browserBackInputSchema,
-  browserForwardInputSchema,
-  browserNavStateOutputSchema,
-  browserReadTextInputSchema,
-  browserReadTextOutputSchema,
-  browserScreenshotInputSchema,
-  browserScreenshotOutputSchema,
-  browserTabsInputSchema,
-  browserTabsOutputSchema,
-  browserActivateTabInputSchema,
-  browserActivateTabOutputSchema,
-  browserWaitForInputSchema,
-  browserWaitForOutputSchema,
-  browserSelectInputSchema,
-  browserSelectOutputSchema,
-  browserPressKeyInputSchema,
-  browserPressKeyOutputSchema,
-  browserHoverInputSchema,
-  browserHoverOutputSchema
+  browserOpenInputSchema,
+  browserOpenOutputSchema
 } from './tool-schemas'
 
 const providerToolPayloadSchema = z.unknown()
@@ -117,39 +90,7 @@ export const validationTools = {
   updateGoal: asTool<'updateGoal'>(updateGoalInputSchema, updateGoalOutputSchema),
   askQuestion: asTool<'askQuestion'>(askQuestionInputSchema, askQuestionOutputSchema),
   exitPlanMode: asTool<'exitPlanMode'>(exitPlanModeInputSchema, exitPlanModeOutputSchema),
-  browserSnapshot: asTool<'browserSnapshot'>(
-    browserSnapshotInputSchema,
-    browserSnapshotOutputSchema
-  ),
-  browserNavigate: asTool<'browserNavigate'>(
-    browserNavigateInputSchema,
-    browserNavigateOutputSchema
-  ),
-  browserClick: asTool<'browserClick'>(browserClickInputSchema, browserClickOutputSchema),
-  browserType: asTool<'browserType'>(browserTypeInputSchema, browserTypeOutputSchema),
-  browserScroll: asTool<'browserScroll'>(browserScrollInputSchema, browserScrollOutputSchema),
-  browserBack: asTool<'browserBack'>(browserBackInputSchema, browserNavStateOutputSchema),
-  browserForward: asTool<'browserForward'>(browserForwardInputSchema, browserNavStateOutputSchema),
-  browserReadText: asTool<'browserReadText'>(
-    browserReadTextInputSchema,
-    browserReadTextOutputSchema
-  ),
-  browserScreenshot: asTool<'browserScreenshot'>(
-    browserScreenshotInputSchema,
-    browserScreenshotOutputSchema
-  ),
-  browserTabs: asTool<'browserTabs'>(browserTabsInputSchema, browserTabsOutputSchema),
-  browserActivateTab: asTool<'browserActivateTab'>(
-    browserActivateTabInputSchema,
-    browserActivateTabOutputSchema
-  ),
-  browserWaitFor: asTool<'browserWaitFor'>(browserWaitForInputSchema, browserWaitForOutputSchema),
-  browserSelect: asTool<'browserSelect'>(browserSelectInputSchema, browserSelectOutputSchema),
-  browserPressKey: asTool<'browserPressKey'>(
-    browserPressKeyInputSchema,
-    browserPressKeyOutputSchema
-  ),
-  browserHover: asTool<'browserHover'>(browserHoverInputSchema, browserHoverOutputSchema),
+  browserOpen: asTool<'browserOpen'>(browserOpenInputSchema, browserOpenOutputSchema),
   todo: asTool<'todo'>(todoInputSchema, todoOutputSchema)
 } satisfies ValidationTools
 

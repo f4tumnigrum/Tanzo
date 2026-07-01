@@ -10,7 +10,6 @@ import type { ChatRunSessionRegistry } from '../runtime/run-session-registry'
 import type { SkillsStore } from '../skills/types'
 import type { PluginsManager } from '../plugins/manager'
 import type { AgentStore } from '../store-types'
-import type { BrowserController } from '../browser/controller'
 
 export interface AgentIpcDeps {
   service: AgentService
@@ -25,5 +24,4 @@ export interface AgentIpcDeps {
   skills: SkillsStore
   plugins: PluginsManager
   streams: Pick<ChatRunSessionRegistry, 'snapshot'>
-  browser: BrowserController
 }

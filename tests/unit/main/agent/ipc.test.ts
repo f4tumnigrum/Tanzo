@@ -173,12 +173,7 @@ function deps() {
     skills,
     plugins,
     streams,
-    changeSet,
-    browser: {
-      registerTab: vi.fn(),
-      unregisterTab: vi.fn(),
-      setActiveTab: vi.fn()
-    }
+    changeSet
   }
 }
 

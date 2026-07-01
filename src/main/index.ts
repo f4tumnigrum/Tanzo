@@ -1,3 +1,4 @@
+import { createServer } from 'node:net'
 import { app, BrowserWindow, ipcMain, Menu, nativeTheme } from 'electron'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import fixPath from 'fix-path'
@@ -36,6 +37,39 @@ registerWallpaperScheme()
 
 initializeLogger()
 const log = createLogger('main')
+
+/**
+ * Reserve an ephemeral loopback port for Chromium's remote debugging endpoint.
+ * The port drives chrome-devtools-mcp via `--browser-url`; a random port (never
+ * a fixed one) avoids collisions across instances and shrinks the window in
+ * which a local process could guess it. Bound to 127.0.0.1 only, and Electron's
+ * DevTools endpoint enforces a Host-header check, so remote/rebinding access is
+ * refused. Falls back to 0 (feature disabled) if allocation fails.
+ */
+async function reserveLoopbackPort(): Promise<number> {
+  return new Promise((resolve) => {
+    const srv = createServer()
+    srv.on('error', () => resolve(0))
+    srv.listen(0, '127.0.0.1', () => {
+      const addr = srv.address()
+      const port = addr && typeof addr === 'object' ? addr.port : 0
+      srv.close(() => resolve(port))
+    })
+  })
+}
+
+/**
+ * Opened synchronously before app ready so agent browser automation can attach
+ * to the embedded `<webview>` guests over CDP. 0 means "not enabled".
+ */
+let remoteDebuggingPort = 0
+
+function openRemoteDebuggingPort(port: number): void {
+  if (port <= 0) return
+  remoteDebuggingPort = port
+  app.commandLine.appendSwitch('remote-debugging-port', String(port))
+  app.commandLine.appendSwitch('remote-debugging-address', '127.0.0.1')
+}
 const startupStartedAt = Date.now()
 let startupPreviousAt = startupStartedAt
 
@@ -155,121 +189,131 @@ if (!singleInstanceLock) {
   })
 }
 
-if (singleInstanceLock)
-  app.whenReady().then(() => {
-    Menu.setApplicationMenu(null)
-    markStartup('menu')
-    electronApp.setAppUserModelId('com.luminstudio.tanzo')
-    markStartup('appUserModelId')
-    ensureMacDockIcon()
-    markStartup('dockIcon')
-    installDevProcessLifecycle()
-    markStartup('devLifecycle')
+function bootstrap(): void {
+  Menu.setApplicationMenu(null)
+  markStartup('menu')
+  electronApp.setAppUserModelId('com.luminstudio.tanzo')
+  markStartup('appUserModelId')
+  ensureMacDockIcon()
+  markStartup('dockIcon')
+  installDevProcessLifecycle()
+  markStartup('devLifecycle')
 
-    app.on('browser-window-created', (_, window) => {
-      optimizer.watchWindowShortcuts(window)
-    })
-
-    initPreferences()
-    markStartup('preferences.init')
-    registerPreferencesIpc()
-    registerSystemIpc(() => mainWindow)
-    registerWallpaperProtocol()
-    registerWallpaperIpc(() => mainWindow)
-    nativeTheme.on('updated', broadcastSystemPreferences)
-    markStartup('ipc.system')
-
-    databaseModule = createDatabaseModule({
-      userDataPath: app.getPath('userData'),
-      migrations: [tanzoMigrations]
-    })
-    markStartup('database.module')
-
-    mcpModule = createMcpModule({
-      db: databaseModule.db,
-      getWindows: () => BrowserWindow.getAllWindows()
-    })
-    mcpModule.registerIpc(ipcMain)
-    markStartup('mcp.module')
-
-    providerModule = createProviderModule({
-      db: databaseModule.db
-    })
-    providerModule.registerIpc(ipcMain)
-    markStartup('provider.module')
-
-    agentModule = createAgentModule({
-      db: databaseModule.db,
-      providerService: providerModule.service,
-      mcpService: mcpModule.service,
-      workspaceRoot: defaultWorkspaceRoot(),
-      getWindows: () => BrowserWindow.getAllWindows(),
-      getChatWindows: () => (mainWindow && !mainWindow.isDestroyed() ? [mainWindow] : []),
-      disabledTools: () => getPreferences().disabledTools
-    })
-    agentModule.registerIpc(ipcMain)
-    markStartup('agent.module')
-
-    slashCommandModule = createSlashCommandModule({ skills: agentModule.skills })
-    slashCommandModule.registerIpc(ipcMain)
-    markStartup('slashCommand.module')
-
-    fileMentionModule = createFileMentionModule()
-    fileMentionModule.registerIpc(ipcMain)
-    markStartup('fileMention.module')
-
-    petAssetsModule = createPetAssetsModule()
-    petAssetsModule.registerIpc(ipcMain)
-    markStartup('petAssets.module')
-
-    registerPetWindowIpc({
-      getPet: () => petWindow,
-      showMainWindow,
-      setActiveChatId: (chatId) => agentModule?.presence.setActiveChatId(chatId)
-    })
-    markStartup('petWindow.ipc')
-
-    showMainWindow()
-    markStartup('showMainWindow.called')
-
-    syncPetWindow = (): void => {
-      ensureMacDockIcon()
-      const enabled = getPreferences().petEnabled
-      if (enabled && !petWindow) {
-        const agent = agentModule
-        if (!agent) return
-        petWindow = createPetWindow({ getPresence: () => agent.presence.snapshot() })
-        markStartup('petWindow.created')
-        petWindow.once('ready-to-show', () => markStartup('petWindow.ready-to-show'))
-        petWindow.webContents.once('did-finish-load', () =>
-          markStartup('petWindow.did-finish-load')
-        )
-        petWindow.on('closed', () => {
-          petWindow = null
-        })
-      } else if (!enabled && petWindow) {
-        destroyPetWindow(petWindow)
-        petWindow = null
-      } else if (enabled && petWindow) {
-        resizePetWindow(petWindow)
-      }
-    }
-
-    syncPetWindow()
-    markStartup('syncPetWindow')
-    onPreferencesChanged(() => syncPetWindow())
-
-    void mcpModule
-      .initialize()
-      .then(() => markStartup('mcp.initialize'))
-      .catch((error) => {
-        log.error('Failed to initialize MCP module', error)
-      })
-
-    app.on('activate', () => {
-      showMainWindow()
-    })
+  app.on('browser-window-created', (_, window) => {
+    optimizer.watchWindowShortcuts(window)
   })
+
+  initPreferences()
+  markStartup('preferences.init')
+  registerPreferencesIpc()
+  registerSystemIpc(() => mainWindow)
+  registerWallpaperProtocol()
+  registerWallpaperIpc(() => mainWindow)
+  nativeTheme.on('updated', broadcastSystemPreferences)
+  markStartup('ipc.system')
+
+  databaseModule = createDatabaseModule({
+    userDataPath: app.getPath('userData'),
+    migrations: [tanzoMigrations]
+  })
+  markStartup('database.module')
+
+  mcpModule = createMcpModule({
+    db: databaseModule.db,
+    getWindows: () => BrowserWindow.getAllWindows(),
+    remoteDebuggingPort
+  })
+  mcpModule.registerIpc(ipcMain)
+  markStartup('mcp.module')
+
+  providerModule = createProviderModule({
+    db: databaseModule.db
+  })
+  providerModule.registerIpc(ipcMain)
+  markStartup('provider.module')
+
+  agentModule = createAgentModule({
+    db: databaseModule.db,
+    providerService: providerModule.service,
+    mcpService: mcpModule.service,
+    workspaceRoot: defaultWorkspaceRoot(),
+    getWindows: () => BrowserWindow.getAllWindows(),
+    getChatWindows: () => (mainWindow && !mainWindow.isDestroyed() ? [mainWindow] : []),
+    disabledTools: () => getPreferences().disabledTools
+  })
+  agentModule.registerIpc(ipcMain)
+  markStartup('agent.module')
+
+  slashCommandModule = createSlashCommandModule({ skills: agentModule.skills })
+  slashCommandModule.registerIpc(ipcMain)
+  markStartup('slashCommand.module')
+
+  fileMentionModule = createFileMentionModule()
+  fileMentionModule.registerIpc(ipcMain)
+  markStartup('fileMention.module')
+
+  petAssetsModule = createPetAssetsModule()
+  petAssetsModule.registerIpc(ipcMain)
+  markStartup('petAssets.module')
+
+  registerPetWindowIpc({
+    getPet: () => petWindow,
+    showMainWindow,
+    setActiveChatId: (chatId) => agentModule?.presence.setActiveChatId(chatId)
+  })
+  markStartup('petWindow.ipc')
+
+  showMainWindow()
+  markStartup('showMainWindow.called')
+
+  syncPetWindow = (): void => {
+    ensureMacDockIcon()
+    const enabled = getPreferences().petEnabled
+    if (enabled && !petWindow) {
+      const agent = agentModule
+      if (!agent) return
+      petWindow = createPetWindow({ getPresence: () => agent.presence.snapshot() })
+      markStartup('petWindow.created')
+      petWindow.once('ready-to-show', () => markStartup('petWindow.ready-to-show'))
+      petWindow.webContents.once('did-finish-load', () => markStartup('petWindow.did-finish-load'))
+      petWindow.on('closed', () => {
+        petWindow = null
+      })
+    } else if (!enabled && petWindow) {
+      destroyPetWindow(petWindow)
+      petWindow = null
+    } else if (enabled && petWindow) {
+      resizePetWindow(petWindow)
+    }
+  }
+
+  syncPetWindow()
+  markStartup('syncPetWindow')
+  onPreferencesChanged(() => syncPetWindow())
+
+  void mcpModule
+    .initialize()
+    .then(() => markStartup('mcp.initialize'))
+    .catch((error) => {
+      log.error('Failed to initialize MCP module', error)
+    })
+
+  app.on('activate', () => {
+    showMainWindow()
+  })
+}
+
+if (singleInstanceLock)
+  reserveLoopbackPort()
+    .then((port) => {
+      openRemoteDebuggingPort(port)
+      return app.whenReady()
+    })
+    .then(bootstrap)
+    .catch((error) => {
+      log.error('Failed to start Tanzo', error)
+      app.exit(1)
+    })
 
 app.on('before-quit', (event) => {
   if (isQuitting) return
