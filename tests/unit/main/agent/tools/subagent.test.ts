@@ -125,7 +125,8 @@ describe('main/agent/tools/subagent (tasks)', () => {
     await expect(
       exec(tool, { tasks: [{ objective: 'search code', agent: 'explore' }] })
     ).resolves.toEqual({
-      tasks: [{ task: 'explore-1', status: 'running' }]
+      tasks: [{ task: 'explore-1', status: 'running' }],
+      hint: '1 task started. Collect results with: await({tasks:["explore-1"]})'
     })
     expect(d.spawnTask).toHaveBeenCalledWith({
       parentChatId: 'parent',

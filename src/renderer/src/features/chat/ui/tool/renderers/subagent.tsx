@@ -16,12 +16,7 @@ import { isRecord } from '@/common/lib/type-guards'
 import { cn } from '@/lib/utils'
 import { PANEL_HEIGHT_XL } from '../primitives/constants'
 import { ShimmerText } from '../primitives/shimmer'
-import {
-  ToolBadge,
-  ToolHeaderRow,
-  ToolMetaChip,
-  type ToolBadgeTone
-} from '../primitives/header'
+import { ToolBadge, ToolHeaderRow, ToolMetaChip, type ToolBadgeTone } from '../primitives/header'
 import {
   ToolPanel,
   ToolScrollPanel,
@@ -269,7 +264,12 @@ function SpawnSummary({
               taskId={entry.task}
             />
             {dependsOn.length > 0 ? (
-              <div className={cn('flex flex-wrap items-center gap-1 px-0.5 text-[0.6875rem]', STATUS_TONE['warning'])}>
+              <div
+                className={cn(
+                  'flex flex-wrap items-center gap-1 px-0.5 text-[0.6875rem]',
+                  STATUS_TONE['warning']
+                )}
+              >
                 <GitBranch className="size-3 shrink-0" aria-hidden="true" />
                 <span className="shrink-0">{t('chat.tool.subagent.waitingFor')}</span>
                 {dependsOn.map((depId) => (
@@ -327,19 +327,16 @@ function AckLine({
   const redefined = 'steered' in output && output.mode === 'redefined'
   const tone: ToolBadgeTone = cancelled ? 'neutral' : redefined ? 'warning' : 'success'
   return (
-    <div
-      className={cn(
-        'flex items-center gap-1.5 px-0.5 text-[0.6875rem]',
-        STATUS_TONE[tone]
-      )}
-    >
+    <div className={cn('flex items-center gap-1.5 px-0.5 text-[0.6875rem]', STATUS_TONE[tone])}>
       {cancelled ? (
         <Ban className="size-3 shrink-0" aria-hidden="true" />
       ) : (
         <CircleCheckBig className="size-3 shrink-0" aria-hidden="true" />
       )}
       <span className="min-w-0 flex-1 break-words">{text}</span>
-      {task ? <ToolMetaChip text={task} tone={cancelled ? 'neutral' : redefined ? 'warning' : 'info'} /> : null}
+      {task ? (
+        <ToolMetaChip text={task} tone={cancelled ? 'neutral' : redefined ? 'warning' : 'info'} />
+      ) : null}
     </div>
   )
 }
@@ -360,7 +357,10 @@ function ResultBlock({
         <ToolPanel tone={isInterrupted ? 'subtle' : 'danger'}>
           <div className="flex items-start gap-1.5 px-2.5 py-1.75">
             {isInterrupted ? (
-              <PowerOff className="mt-px size-3 shrink-0 text-muted-foreground/55" aria-hidden="true" />
+              <PowerOff
+                className="mt-px size-3 shrink-0 text-muted-foreground/55"
+                aria-hidden="true"
+              />
             ) : (
               <CircleAlert className="mt-px size-3 shrink-0 text-red-500/80" aria-hidden="true" />
             )}
@@ -442,7 +442,11 @@ function TaskList({ tasks }: { tasks: SubagentTask[] }): React.JSX.Element {
   return (
     <div className="space-y-1.5">
       {tasks.map((task) => (
-        <TaskShell key={task.id} tone={panelToneForStatus(task.status, task.result?.failureKind)} compact>
+        <TaskShell
+          key={task.id}
+          tone={panelToneForStatus(task.status, task.result?.failureKind)}
+          compact
+        >
           <SubagentEntity
             status={task.status}
             objective={task.objective}
@@ -504,7 +508,10 @@ function SubagentEntity({
           {objectiveText}
         </p>
         {phase ? (
-          <span className="min-w-0 flex-1 truncate text-[0.625rem] text-foreground/45" title={phase}>
+          <span
+            className="min-w-0 flex-1 truncate text-[0.625rem] text-foreground/45"
+            title={phase}
+          >
             {phase}
           </span>
         ) : null}
@@ -526,7 +533,10 @@ function SubagentEntity({
       <div className="flex min-w-0 flex-wrap items-center gap-1.5 pl-5">
         <ToolBadge text={agent || t('chat.tool.subagent.run')} tone="info" />
         {phase ? (
-          <span className="min-w-0 flex-1 truncate text-[0.625rem] text-foreground/50" title={phase}>
+          <span
+            className="min-w-0 flex-1 truncate text-[0.625rem] text-foreground/50"
+            title={phase}
+          >
             {phase}
           </span>
         ) : null}
@@ -541,7 +551,12 @@ function TaskBlockLine({ task }: { task: SubagentTask }): React.JSX.Element | nu
     // Render each blocker as a labelled chip so the agent and user can identify
     // the exact dependency at a glance without inspecting the raw text.
     return (
-      <div className={cn('flex flex-wrap items-center gap-1 px-0.5 text-[0.6875rem]', STATUS_TONE['warning'])}>
+      <div
+        className={cn(
+          'flex flex-wrap items-center gap-1 px-0.5 text-[0.6875rem]',
+          STATUS_TONE['warning']
+        )}
+      >
         <GitBranch className="size-3 shrink-0" aria-hidden="true" />
         <span className="shrink-0">{t('chat.tool.subagent.blockedBy')}</span>
         {task.block.taskIds.map((depId) => (
@@ -566,7 +581,12 @@ function TaskBlockLine({ task }: { task: SubagentTask }): React.JSX.Element | nu
   }
   if (task.dependsOn.length > 0 && task.status === 'pending') {
     return (
-      <div className={cn('flex flex-wrap items-center gap-1 px-0.5 text-[0.6875rem]', STATUS_TONE['warning'])}>
+      <div
+        className={cn(
+          'flex flex-wrap items-center gap-1 px-0.5 text-[0.6875rem]',
+          STATUS_TONE['warning']
+        )}
+      >
         <GitBranch className="size-3 shrink-0" aria-hidden="true" />
         <span className="shrink-0">{t('chat.tool.subagent.waitingFor')}</span>
         {task.dependsOn.map((depId) => (

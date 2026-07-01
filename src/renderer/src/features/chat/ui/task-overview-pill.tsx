@@ -39,7 +39,8 @@ function statusIcon(
       return { Icon: CircleCheckBig }
     case 'failed':
       // App-restart interruptions: use PowerOff icon with muted tone instead of red CircleAlert.
-      if (failureKind === 'app-restart') return { Icon: PowerOff, overrideTone: INTERRUPTED_ICON_TONE }
+      if (failureKind === 'app-restart')
+        return { Icon: PowerOff, overrideTone: INTERRUPTED_ICON_TONE }
       return { Icon: CircleAlert }
     case 'cancelled':
       return { Icon: Ban }
@@ -156,7 +157,11 @@ function TaskRow({ task }: { task: SubagentTask }): React.JSX.Element {
       title={isInterrupted ? t('chat.taskPanel.interrupted') : undefined}
     >
       <Icon
-        className={cn('size-3 shrink-0', overrideTone ?? STATUS_ICON_TONE[task.status], spin && 'animate-spin')}
+        className={cn(
+          'size-3 shrink-0',
+          overrideTone ?? STATUS_ICON_TONE[task.status],
+          spin && 'animate-spin'
+        )}
         aria-hidden="true"
       />
       <span

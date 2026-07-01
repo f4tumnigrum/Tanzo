@@ -278,7 +278,8 @@ describe('main/agent/tools/registry', () => {
     await expect(
       execSpawn(planTools, { tasks: [{ objective: 'inspect', agent: 'safe' }] })
     ).resolves.toEqual({
-      tasks: [{ task: 'explore-1', status: 'running' }]
+      tasks: [{ task: 'explore-1', status: 'running' }],
+      hint: '1 task started. Collect results with: await({tasks:["explore-1"]})'
     })
     await expect(
       execSpawn(planTools, { tasks: [{ objective: 'inspect', agent: 'unsafe-shell' }] })
@@ -292,6 +293,9 @@ describe('main/agent/tools/registry', () => {
     })
     await expect(
       execSpawn(defaultTools, { tasks: [{ objective: 'inspect', agent: 'unsafe-full' }] })
-    ).resolves.toEqual({ tasks: [{ task: 'explore-1', status: 'running' }] })
+    ).resolves.toEqual({
+      tasks: [{ task: 'explore-1', status: 'running' }],
+      hint: '1 task started. Collect results with: await({tasks:["explore-1"]})'
+    })
   })
 })

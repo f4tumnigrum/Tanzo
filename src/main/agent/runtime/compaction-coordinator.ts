@@ -141,7 +141,8 @@ export function createCompactionCoordinator(
     const agentInstructions = def.compactionInstructions?.trim()
     if (agentInstructions) parts.push(`Agent-specific compaction guidance:\n${agentInstructions}`)
     const userInstructions = instructions?.trim()
-    if (userInstructions) parts.push(`Additional user instructions for this compaction:\n${userInstructions}`)
+    if (userInstructions)
+      parts.push(`Additional user instructions for this compaction:\n${userInstructions}`)
     return parts.join('\n\n')
   }
 
