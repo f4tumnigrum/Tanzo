@@ -1,6 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { useChatSession } from '../model/conversation/use-chat-session'
-import { useArchivedMessages } from '../model/conversation/use-archived-messages'
 import type { SubagentTaskApprovalResponse } from '@shared/subagent-task'
 import {
   ChatActionsProvider,
@@ -25,14 +24,13 @@ export function ActiveChat({
   onForkMessage: (messageId: string) => void
 }): React.JSX.Element {
   const { session, state } = useChatSession(chatId)
-  const visibleMessages = useArchivedMessages(session, state)
 
   const streamingMessageId =
     state.isStreaming && state.activeRunKind !== 'compaction'
       ? (state.messages.at(-1)?.id ?? null)
       : null
 
-  const lastMessage = visibleMessages.at(-1)
+  const lastMessage = state.messages.at(-1)
   const editableMessageId =
     !state.isStreaming && lastMessage?.role === 'user' ? lastMessage.id : null
 
@@ -90,11 +88,11 @@ export function ActiveChat({
 
   return (
     <ChatActionsProvider value={actions}>
-      {visibleMessages.length > 0 ? (
+      {state.messages.length > 0 ? (
         <div className="relative min-h-0 flex-1">
           <div className="absolute inset-0">
             <VirtualizedMessages
-              messages={visibleMessages}
+              messages={state.messages}
               activeStreamingMessageId={streamingMessageId}
               isStreaming={state.isStreaming}
               threadId={chatId}
