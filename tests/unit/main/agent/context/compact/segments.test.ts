@@ -66,6 +66,33 @@ describe('main/agent/context/compact/segments', () => {
     })
   })
 
+  it('falls back to message boundary when the head portion has a tool-invocation', () => {
+    // Step 1 has a tool-invocation; step 2 is plain text.
+    // Without the guard, findCut would return { messageIndex:1, partIndex:2 }
+    // and leave the tool-invocation call in the head with its result in the tail.
+    const loopWithTool = {
+      id: 'a1',
+      role: 'assistant',
+      parts: [
+        { type: 'step-start' },
+        { type: 'tool-fileRead', toolInvocation: { toolCallId: 'tc1', toolName: 'fileRead', state: 'call', input: {} } },
+        { type: 'step-start' },
+        { type: 'text', text: 'done' }
+      ]
+    } as TanzoUIMessage
+    const cut = findCut([user('u1', 'go'), loopWithTool], 1)
+    // The guard must push the cut to a whole-message boundary (partIndex: 0).
+    expect(cut).toEqual({ messageIndex: 1, partIndex: 0 })
+  })
+
+  it('keeps an in-message cut when head portion has no tool-invocation', () => {
+    // Both steps are plain text — safe to split mid-message.
+    const messages = [user('u1', 'go'), assistantLoop('a1', ['step1', 'step2'])]
+    const cut = findCut(messages, 1)
+    // Normal in-message cut: step 2 starts at partIndex 2.
+    expect(cut).toEqual({ messageIndex: 1, partIndex: 2 })
+  })
+
   it('partitions an in-message cut into head + fresh tail fragment', () => {
     const loop = {
       id: 'a1',

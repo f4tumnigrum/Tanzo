@@ -1,8 +1,6 @@
-export const COMPACT_PROMPT = `You are compacting a long engineering conversation so work can continue without losing critical context. Read the full transcript above, then produce a structured summary.
+export const COMPACT_PROMPT = `You are compacting a long engineering conversation so work can continue without losing critical context. Read the full transcript above, then write a summary as plain text. Do not wrap the output in XML tags or a code fence — output only the summary itself.
 
-First, think privately inside a single <analysis>...</analysis> block: identify what matters, what is in-flight, and what must not be forgotten. This scratchpad will be discarded.
-
-Then write the final summary inside a single <summary>...</summary> block, using exactly these sections:
+Cover, in order:
 
 1. Primary request and intent — what the user is ultimately trying to achieve, in their own framing.
 2. Key technical concepts — frameworks, patterns, constraints, and decisions established.
@@ -16,20 +14,31 @@ Then write the final summary inside a single <summary>...</summary> block, using
 
 Be specific and complete. Preserve exact identifiers, signatures, and paths. Do not invent facts not present in the transcript.`
 
-export function extractPartialSummary(text: string): string {
-  // Strip completed <analysis> blocks first so their content cannot confuse
-  // the tag search below (the prompt instructs the model to think inside
-  // <analysis> before writing <summary>, so this block often precedes it).
-  const cleaned = text.replace(/<analysis>[\s\S]*?<\/analysis>/gi, '')
-
-  // Match everything between <summary> and </summary>, or between <summary>
-  // and end-of-text while the model is still streaming (partial output).
+/**
+ * Extract the durable summary text from raw model output.
+ *
+ * The current prompt asks for plain text, so this is usually a passthrough.
+ * Tag handling is kept defensively for models that still emit the legacy
+ * <analysis>/<summary> structure (e.g. summaries produced by older prompts
+ * that remain in conversation history):
+ * - completed and trailing-unterminated <analysis> blocks are dropped so
+ *   private reasoning can never leak into the persisted summary
+ * - if a <summary> tag is present, its content is used (up to </summary>,
+ *   or end-of-text when the stream was cut off before the closing tag)
+ */
+function extractSummaryText(text: string): string {
+  const cleaned = text
+    .replace(/<analysis>[\s\S]*?<\/analysis>/gi, '')
+    .replace(/<analysis>[\s\S]*$/i, '')
   const match = cleaned.match(/<summary>([\s\S]*?)(?:<\/summary>|$)/i)
-  return match ? match[1].trimStart() : ''
+  return match ? match[1] : cleaned
+}
+
+/** Streaming preview variant: trims only the start so the live view is stable while text grows. */
+export function extractPartialSummary(text: string): string {
+  return extractSummaryText(text).trimStart()
 }
 
 export function stripAnalysis(text: string): string {
-  const summaryMatch = text.match(/<summary>([\s\S]*?)<\/summary>/i)
-  if (summaryMatch && summaryMatch[1]) return summaryMatch[1].trim()
-  return text.replace(/<analysis>[\s\S]*?<\/analysis>/gi, '').trim()
+  return extractSummaryText(text).trim()
 }

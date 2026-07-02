@@ -80,7 +80,23 @@ export function findCut(messages: TanzoUIMessage[], retainedRecentSteps: number)
   }
   if (cutSegment >= segments.length) return { messageIndex: messages.length, partIndex: 0 }
   const segment = segments[cutSegment]
-  return { messageIndex: segment.messageIndex, partIndex: segment.partStart }
+  const cut: Cut = { messageIndex: segment.messageIndex, partIndex: segment.partStart }
+  // Guard: if the head portion of a split assistant message contains tool-invocations,
+  // their results live in later (tail) messages and would become orphaned. Fall back to
+  // a whole-message boundary so the entire message stays in the tail.
+  if (cut.partIndex > 0 && headPartsHaveToolInvocation(messages[cut.messageIndex], cut.partIndex)) {
+    return { messageIndex: cut.messageIndex, partIndex: 0 }
+  }
+  return cut
+}
+
+function headPartsHaveToolInvocation(message: TanzoUIMessage, partIndex: number): boolean {
+  // Tool invocation parts in TanzoUIMessage are named 'tool-{toolName}' or 'dynamic-tool'
+  // (consistent with the store.ts filter). Any such part in the head fragment implies
+  // a result may live in a subsequent tool-role message that will end up in the tail.
+  return message.parts
+    .slice(0, partIndex)
+    .some((p) => p.type.startsWith('tool-') || p.type === 'dynamic-tool')
 }
 
 function normalizeTailParts(parts: Part[]): Part[] {

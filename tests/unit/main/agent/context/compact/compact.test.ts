@@ -103,9 +103,26 @@ describe('main/agent/context/compact', () => {
     expect(tail[0].parts).toEqual([{ type: 'step-start' }, { type: 'text', text: 'y'.repeat(8) }])
   })
 
+  it('passes plain-text summaries through unchanged', () => {
+    expect(stripAnalysis('Just a plain summary.\nWith two lines.')).toBe(
+      'Just a plain summary.\nWith two lines.'
+    )
+  })
+
   it('extracts summary blocks and removes private analysis fallback blocks', () => {
     expect(stripAnalysis('<analysis>hidden</analysis><summary>keep me</summary>')).toBe('keep me')
     expect(stripAnalysis('<analysis>hidden</analysis>fallback')).toBe('fallback')
+  })
+
+  it('never persists analysis content when the summary tag is unterminated', () => {
+    // Regression: a stream cut off before </summary> used to fall back to the
+    // raw text (analysis included) becoming the durable summary.
+    expect(stripAnalysis('<analysis>secret reasoning</analysis><summary>good part')).toBe(
+      'good part'
+    )
+    // Unterminated analysis with no summary yields nothing rather than leaking
+    // the reasoning; buildCompactionResult then aborts on the empty summary.
+    expect(stripAnalysis('<analysis>secret reasoning only')).toBe('')
   })
 
   it('extracts only the visible partial summary without leaking analysis', () => {
