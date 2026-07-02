@@ -3,6 +3,7 @@ import type {
   ChatApi,
   ChatRunError,
   ChatRunFrame,
+  ChatRunKind,
   ChatRunSnapshot,
   ChatRunStateEvent
 } from '@shared/chat'
@@ -158,17 +159,32 @@ export async function connectRun(
     handlers.onChunk(frame.chunk)
   }
 
-  const attach = async (expectedRunId?: string): Promise<ChatRunSnapshot | null> => {
+  const attach = async (
+    expected?: { runId: string; runKind: ChatRunKind }
+  ): Promise<ChatRunSnapshot | null> => {
     if (attaching || live || closed) return null
     attaching = true
     try {
       const snapshot = await api.runSnapshot(chatId)
       if (closed) return snapshot
       if (!snapshot) {
-        if (expectedRunId && (handlers.persistent || handlers.attachExisting === false)) {
+        if (expected && (handlers.persistent || handlers.attachExisting === false)) {
           gate = createFrameGate()
-          gate.lock(expectedRunId)
+          gate.lock(expected.runId)
           live = true
+          // The main process is running this turn but its snapshot isn't queryable
+          // yet. Notify onRunStart anyway (with empty base messages, which merge to
+          // keep the current display) so the consumer can build its message sink;
+          // otherwise live frames replayed below would be silently dropped.
+          handlers.onRunStart?.({
+            chatId,
+            runId: expected.runId,
+            runKind: expected.runKind,
+            status: 'running',
+            baseMessages: [],
+            notifications: [],
+            frames: []
+          })
           for (const frame of liveFrames) push(frame)
           settleIfTerminalArrived()
         }
@@ -195,7 +211,7 @@ export async function connectRun(
 
   unsubscribe = api.onEvent(chatId, (event) => {
     if (event.kind === 'run-state') {
-      if (event.status === 'running' && !live) void attach(event.runId)
+      if (event.status === 'running' && !live) void attach({ runId: event.runId, runKind: event.runKind })
       if (event.status === 'failed' && event.error) {
         terminalRunErrors.set(event.runId, event.error)
       }

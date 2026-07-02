@@ -588,6 +588,117 @@ describe('renderer/chat-session', () => {
     })
   })
 
+  it('streams the chat run that follows an auto-compaction run when its snapshot is available', async () => {
+    const history = [userMessage('m1', 'hello')]
+    const { chatId, session } = openSession(history)
+    await flush()
+
+    // 1) Auto-compaction run: starts, streams a compaction status, finishes.
+    mocks.chatClient.runSnapshot.mockResolvedValueOnce({
+      chatId,
+      runId: 'run-compact',
+      runKind: 'compaction',
+      status: 'running',
+      baseMessages: history,
+      notifications: [],
+      frames: []
+    } as never)
+    emitState(chatId, 'run-compact', 'running', 'compaction')
+    await flush()
+    expect(session.getState().activeRunKind).toBe('compaction')
+
+    const compacted = [
+      {
+        id: 'sum-1',
+        role: 'user',
+        parts: [
+          { type: 'text', text: 'summary' },
+          { type: 'data-compaction', data: { stage: 'complete', summaryId: 'sum-1' } }
+        ]
+      } as TanzoUIMessage,
+      userMessage('m2', 'next question')
+    ]
+    mocks.messagesByChat.set(chatId, compacted)
+    emitState(chatId, 'run-compact', 'finished', 'compaction')
+    await flush()
+    await flush()
+
+    // 2) Chat run: run-state:running arrives, snapshot is available immediately.
+    mocks.chatClient.runSnapshot.mockResolvedValueOnce({
+      chatId,
+      runId: 'run-chat',
+      runKind: 'chat',
+      status: 'running',
+      baseMessages: compacted,
+      notifications: [],
+      frames: []
+    } as never)
+    emitState(chatId, 'run-chat', 'running')
+    await flush()
+
+    expect(session.getState().activeRunKind).toBe('chat')
+
+    emitFrame(chatId, 'run-chat', { type: 'start', messageId: 'a1' })
+    emitFrame(chatId, 'run-chat', { type: 'text-start', id: 't1' })
+    emitFrame(chatId, 'run-chat', { type: 'text-delta', id: 't1', delta: 'The answer' })
+    await flush()
+
+    // The streaming assistant message must be visible.
+    expect(session.getState().messages.at(-1)).toMatchObject({ id: 'a1', role: 'assistant' })
+  })
+
+  it('REPRO: drops the chat run after compaction when its snapshot resolves null', async () => {
+    const history = [userMessage('m1', 'hello')]
+    const { chatId, session } = openSession(history)
+    await flush()
+
+    // 1) Auto-compaction run finishes.
+    mocks.chatClient.runSnapshot.mockResolvedValueOnce({
+      chatId,
+      runId: 'run-compact',
+      runKind: 'compaction',
+      status: 'running',
+      baseMessages: history,
+      notifications: [],
+      frames: []
+    } as never)
+    emitState(chatId, 'run-compact', 'running', 'compaction')
+    await flush()
+    expect(session.getState().activeRunKind).toBe('compaction')
+
+    const compacted = [
+      {
+        id: 'sum-1',
+        role: 'user',
+        parts: [
+          { type: 'text', text: 'summary' },
+          { type: 'data-compaction', data: { stage: 'complete', summaryId: 'sum-1' } }
+        ]
+      } as TanzoUIMessage,
+      userMessage('m2', 'next question')
+    ]
+    mocks.messagesByChat.set(chatId, compacted)
+    emitState(chatId, 'run-compact', 'finished', 'compaction')
+    await flush()
+    await flush()
+
+    // 2) Chat run starts, but runSnapshot returns null (main side hasn't published
+    //    the running session yet by the time the renderer queries). The connection
+    //    is persistent, so attach() locks onto the runId via the null-snapshot path.
+    mocks.chatClient.runSnapshot.mockResolvedValue(null)
+    emitState(chatId, 'run-chat', 'running')
+    await flush()
+
+    // 3) Chat run streams its response frames.
+    emitFrame(chatId, 'run-chat', { type: 'start', messageId: 'a1' })
+    emitFrame(chatId, 'run-chat', { type: 'text-start', id: 't1' })
+    emitFrame(chatId, 'run-chat', { type: 'text-delta', id: 't1', delta: 'The answer' })
+    await flush()
+
+    // The run is happening, but the streaming assistant message must still surface.
+    expect(session.getState().messages.at(-1)).toMatchObject({ id: 'a1', role: 'assistant' })
+  })
+
   it('tears down the session after release and recreates it on the next acquire', async () => {
     vi.useFakeTimers()
     try {
