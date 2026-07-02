@@ -141,13 +141,20 @@ export function createAgentService(deps: AgentServiceDeps): AgentService {
       submitUserMessage: submitUserMessageQueued,
       instructTask: (chatId, text) => {
         void text
-        tasks.resumeByChat(chatId)
+        // Best-effort background resume; the inbox does not await it.
+        void tasks.resumeByChat(chatId)
       },
       ...(deps.recordPluginMentions ? { recordPluginMentions: deps.recordPluginMentions } : {})
     }
   )
 
   function cancel(chatId: string): void {
+    // An explicit user cancel advances BOTH clocks: bumpCancelGeneration marks
+    // the intent (so any scheduled goal continuation for the prior generation is
+    // dropped in startGoalContinuation), and abort advances the epoch + aborts
+    // the active/preparing controllers (so in-flight runs and sub-agent tasks
+    // observe the supersede/cancel). A plain abort() alone would NOT drop a
+    // pending goal continuation — see the RunEngine clock contract.
     engine.bumpCancelGeneration(chatId)
     engine.abort(chatId)
     turnLoop.discardPendingChangeCapture(chatId)
@@ -224,7 +231,10 @@ export function createAgentService(deps: AgentServiceDeps): AgentService {
         stopHookActive: false,
         lastAssistantMessage: await lastAssistantText(chatId)
       })
-      .catch(() => null)
+      .catch((error) => {
+        deps.logger?.warn('stop hook failed', { chatId, stopHookActive: false, error })
+        return null
+      })
     if (!outcome?.stopped && !outcome?.feedback?.length) return
 
     await turnLoop.run(chatId, await deps.store.load(chatId))
@@ -234,7 +244,9 @@ export function createAgentService(deps: AgentServiceDeps): AgentService {
         stopHookActive: true,
         lastAssistantMessage: await lastAssistantText(chatId)
       })
-      .catch(() => {})
+      .catch((error) => {
+        deps.logger?.warn('stop hook failed', { chatId, stopHookActive: true, error })
+      })
   }
 
   return {

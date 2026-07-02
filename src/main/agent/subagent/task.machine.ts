@@ -1,5 +1,5 @@
 /**
- * Subagent task state machine (pure core). See docs/state-machine-unification.md §4.3.
+ * Subagent task state machine (pure core). See the machine contract in ../runtime/machine/types.ts.
  *
  * State graph (status field of SubagentTask):
  *

@@ -1,5 +1,5 @@
 /**
- * Turn-loop decision core (pure). See docs/state-machine-unification.md §4.1.
+ * Turn-loop decision core (pure). See the machine contract in ./machine/types.ts.
  *
  * After a chat stream finishes, exactly one of four continuation paths applies.
  * The decision is a priority cascade over the final stream state plus a snapshot

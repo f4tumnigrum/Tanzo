@@ -69,7 +69,7 @@ export function useChatNavigation(): ChatNavigation {
   }, [workspaces])
 
   useEffect(() => {
-    void window.electron.pet.setActiveChatId(activeChatId)
+    void window.electron?.pet?.setActiveChatId(activeChatId)
   }, [activeChatId])
 
   useEffect(() => {

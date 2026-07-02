@@ -24,7 +24,11 @@ describe('main/ipc/router', () => {
     const { handlers, target } = ipcTarget()
     const event = { sender: { id: 7 } }
     registerIpcHandlers(target as never, [
-      ['demo:event', (received: unknown, value: unknown) => ({ received, value }), { passEvent: true }]
+      [
+        'demo:event',
+        (received: unknown, value: unknown) => ({ received, value }),
+        { passEvent: true }
+      ]
     ])
 
     expect(handlers.get('demo:event')?.(event, 'x')).toEqual({ received: event, value: 'x' })

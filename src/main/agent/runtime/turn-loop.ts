@@ -246,6 +246,73 @@ export function createTurnLoop(
     )
   }
 
+  interface ChangeCapture {
+    /** The capture id for this logical turn (stable across approval-pause resumes). */
+    runId: string
+    /** True while a before-checkpoint is live and must be finalized or discarded. */
+    started: boolean
+    cwd: string | undefined
+    carried: boolean
+  }
+
+  /**
+   * Begin (or resume) the change-set capture for a turn. A capture carried over
+   * from an approval pause already has a before-checkpoint, so it is not
+   * re-captured. Returns the capture state the run() finally uses to finalize,
+   * defer, or discard the preview. A failed before-capture leaves `started`
+   * false so nothing is finalized later.
+   */
+  async function beginChangeCapture(chatId: string): Promise<ChangeCapture> {
+    const carriedId = pendingChangeCapture.get(chatId)
+    const capture: ChangeCapture = {
+      runId: carriedId ?? randomUUID(),
+      cwd: deps.store.getConversation(chatId)?.cwd,
+      carried: carriedId !== undefined,
+      started: carriedId !== undefined
+    }
+    if (deps.changeSet && capture.cwd && !capture.carried) {
+      capture.started = true
+      await deps.changeSet
+        .captureBeforeRun({
+          runId: capture.runId,
+          chatId,
+          assistantMessageId: capture.runId,
+          cwd: capture.cwd
+        })
+        .catch((error) => {
+          deps.logger?.warn('change-set captureBeforeRun failed', { chatId, error })
+          capture.started = false
+        })
+    }
+    return capture
+  }
+
+  /**
+   * Finalize the change-set capture at the true end of a turn. When the turn
+   * paused for approval, the before-checkpoint is carried to the resuming run()
+   * instead of being finalized. Otherwise the preview is captured once (or
+   * discarded on failure). No-op when nothing was captured.
+   */
+  async function settleChangeCapture(
+    chatId: string,
+    capture: ChangeCapture,
+    turnAwaitingApproval: boolean
+  ): Promise<void> {
+    if (!capture.started || !deps.changeSet || !capture.cwd) return
+    if (turnAwaitingApproval) {
+      // Deferred: keep the before-checkpoint alive for the resuming run(). A
+      // cancel/delete clears it explicitly via discardPendingChangeCapture, so
+      // a paused capture can never leak past the turn it belongs to.
+      pendingChangeCapture.set(chatId, capture.runId)
+      return
+    }
+    pendingChangeCapture.delete(chatId)
+    await finalizeChangeSet(chatId, capture.runId).catch((error) => {
+      deps.logger?.warn('change-set captureAfterRun failed', { chatId, error })
+      deps.changeSet?.discard(capture.runId)
+    })
+  }
+
   async function run(
     chatId: string,
     incoming: TanzoUIMessage[],
@@ -271,30 +338,13 @@ export function createTurnLoop(
     }
 
     let messages = stripIncompleteInputToolParts(incoming)
-    // Resume a capture carried over from an approval pause, or start a new one.
-    // Resumed captures already have a before-checkpoint, so don't re-capture.
-    const carriedChangeCapture = pendingChangeCapture.get(chatId)
-    const changeSetRunId = carriedChangeCapture ?? randomUUID()
-    const changeSetCwd = deps.store.getConversation(chatId)?.cwd
-    let changeCaptureStarted = carriedChangeCapture !== undefined
-    if (deps.changeSet && changeSetCwd && !carriedChangeCapture) {
-      changeCaptureStarted = true
-      await deps.changeSet
-        .captureBeforeRun({
-          runId: changeSetRunId,
-          chatId,
-          assistantMessageId: changeSetRunId,
-          cwd: changeSetCwd
-        })
-        .catch((error) => {
-          deps.logger?.warn('change-set captureBeforeRun failed', { chatId, error })
-          changeCaptureStarted = false
-        })
-      if (stopIfPreparationCancelled()) {
-        if (changeCaptureStarted) deps.changeSet?.discard(changeSetRunId)
-        releaseActiveRun()
-        return
-      }
+    const changeCapture = await beginChangeCapture(chatId)
+    if (changeCapture.started && !changeCapture.carried && stopIfPreparationCancelled()) {
+      // A brand-new before-checkpoint was just taken but preparation was already
+      // cancelled: discard it here since the run() finally will not execute.
+      deps.changeSet?.discard(changeCapture.runId)
+      releaseActiveRun()
+      return
     }
     let pendingTerminal: {
       runId: string
@@ -423,20 +473,7 @@ export function createTurnLoop(
       }
     } finally {
       endPreparation()
-      if (changeCaptureStarted && deps.changeSet && changeSetCwd) {
-        // Deferred: keep the before-checkpoint alive for the resuming run(). A
-        // cancel/delete clears it explicitly via discardPendingChangeCapture, so
-        // a paused capture can never leak past the turn it belongs to.
-        if (turnAwaitingApproval) {
-          pendingChangeCapture.set(chatId, changeSetRunId)
-        } else {
-          pendingChangeCapture.delete(chatId)
-          await finalizeChangeSet(chatId, changeSetRunId).catch((error) => {
-            deps.logger?.warn('change-set captureAfterRun failed', { chatId, error })
-            deps.changeSet?.discard(changeSetRunId)
-          })
-        }
-      }
+      await settleChangeCapture(chatId, changeCapture, turnAwaitingApproval)
       if (pendingTerminal) {
         safeFinishStream(
           chatId,
@@ -501,6 +538,13 @@ export function createTurnLoop(
     chatId: string,
     scheduledGeneration?: number
   ): Promise<void> {
+    // Guard on the CANCEL clock, not the epoch. A goal continuation is scheduled
+    // through the mailbox and may execute after other legitimate run activity has
+    // begun on this chat. We only want to abandon it if the user explicitly
+    // cancelled between scheduling and execution — which is exactly what
+    // cancelGeneration tracks. Using the epoch clock here would also drop the
+    // continuation whenever any normal run started in the gap. See the RunEngine
+    // "two generation clocks" contract note.
     if (
       scheduledGeneration !== undefined &&
       engine.currentCancelGeneration(chatId) !== scheduledGeneration

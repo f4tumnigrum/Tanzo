@@ -75,7 +75,10 @@ describe('main/agent/context/compact/segments', () => {
       role: 'assistant',
       parts: [
         { type: 'step-start' },
-        { type: 'tool-fileRead', toolInvocation: { toolCallId: 'tc1', toolName: 'fileRead', state: 'call', input: {} } },
+        {
+          type: 'tool-fileRead',
+          toolInvocation: { toolCallId: 'tc1', toolName: 'fileRead', state: 'call', input: {} }
+        },
         { type: 'step-start' },
         { type: 'text', text: 'done' }
       ]

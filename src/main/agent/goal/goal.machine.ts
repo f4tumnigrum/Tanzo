@@ -1,5 +1,5 @@
 /**
- * Goal state machine (pure core). See docs/state-machine-unification.md §4.2.
+ * Goal state machine (pure core). See the machine contract in ../runtime/machine/types.ts.
  *
  * State graph (status derived via deriveStatus):
  *

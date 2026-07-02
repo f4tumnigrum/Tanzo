@@ -29,6 +29,32 @@ export type RunPublishResult =
   | { status: 'accepted'; frame: ChatRunFrame }
   | { status: 'stale' }
 
+/**
+ * Renderer-facing projection of the run lifecycle. This registry is the single
+ * authority for a broadcastable {@link ChatRunStatus} and the frame buffer that
+ * a reconnecting renderer replays via {@link ChatRunSessionRegistry.snapshot}.
+ *
+ * Coordination invariant (kept by call-ordering, not by a shared type — see
+ * `turn-loop.ts` `startChatRun`/`run` and `run-engine.ts` `run`):
+ *
+ *   - For any (chatId, runId) there is exactly one `start` and exactly one
+ *     terminal `finish`. `start` is driven from `run-engine.run` via its
+ *     `streams.start` hook; the terminal `finish` is driven by `run-engine.run`'s
+ *     `finally` for non-deferred runs, and by `turn-loop.run`'s `finally`
+ *     (pendingTerminal / retry paths) for `deferTerminal` runs.
+ *   - `finish` DELETES the session, so every subsequent finish for the same
+ *     runId is an idempotent no-op returning null. The multiple finish paths for
+ *     deferred runs rely on this: first writer wins, the rest short-circuit on a
+ *     missing/mismatched runId. Do not change `finish` to resurrect or retain a
+ *     finished session without revisiting that choreography.
+ *   - This registry keys everything on `runId`; the RunEngine never does (it
+ *     keys on AbortController identity + epoch). A newer `start` supersedes an
+ *     older still-`running` session by emitting a synthetic `aborted` terminal.
+ *   - The persistence registry (`run-persistence-registry.ts`) brackets the same
+ *     runId but owns NO status: it derives write permission from engine closures
+ *     (`handle.isCurrent()`, `handle.signal.aborted`) and so cannot contradict
+ *     the status broadcast from here.
+ */
 export interface ChatRunSessionRegistry {
   start(
     chatId: string,

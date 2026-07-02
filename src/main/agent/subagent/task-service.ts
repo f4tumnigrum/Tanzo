@@ -14,6 +14,7 @@ import { createKeyedSemaphores, createSemaphore } from '../runtime/concurrency'
 import { createSignalQueue } from '../runtime/signal-queue'
 import { applyApprovalResponse, extractPendingApprovals, lastAssistantText } from './approval-utils'
 import { isTaskTerminal, taskTransition, type TaskEvent } from './task.machine'
+import type { AgentDefinition } from '../agents/types'
 import type { AgentRuntimeDeps, Logger } from '../runtime/types'
 import type { AgentStreamFinalState } from '../runtime/stream-runner'
 import type { StartStreamInput } from '../runtime/turn-loop'
@@ -30,6 +31,14 @@ const MAX_CONCURRENT_PER_ROOT = 20
 // Shared single source of truth with the foreground turn-loop continuation cap.
 const MAX_CONTEXT_CONTINUATION_PASSES = MAX_CONTINUATION_PASSES
 
+/**
+ * Thrown to unwind a task driver when its run is no longer current. `reason`
+ * is diagnostic only: the catch site (see runTask spawn wiring) treats
+ * 'cancelled' and 'superseded' identically — both silently unwind without
+ * marking the task failed. The distinction reflects *why* the run stopped
+ * (explicit cancel vs. a newer run taking the epoch) but does not drive control
+ * flow, so the abort-vs-supersede ordering does not affect terminal status.
+ */
 class TaskInterrupted extends Error {
   constructor(
     readonly chatId: string,
@@ -56,7 +65,7 @@ export interface TaskService {
   redefine(rootChatId: string, taskId: string, objective: string): Promise<void>
   cancel(rootChatId: string, taskId: string): void
   retry(rootChatId: string, taskId: string): void
-  resumeByChat(chatId: string): void
+  resumeByChat(chatId: string): Promise<void>
   reportPhase(chatId: string, phase: string): void
   submitResult(chatId: string, result: SubagentTaskResult): void
   listApprovals(rootChatId: string): SubagentTaskApprovalView[]
@@ -319,6 +328,83 @@ export function createTaskService(
     dispatch(rootChatId, taskId, { kind: 'set-phase', phase, now: Date.now() })
   }
 
+  /**
+   * Acquire the per-root slot before the global one: this bounds each
+   * conversation's share and avoids holding a scarce global slot while queued
+   * behind a busy root. Returns a single `release` that frees both in reverse
+   * order. On abort during either acquire, rolls back any slot already held and
+   * throws TaskInterrupted so the caller treats it as a cancellation.
+   */
+  async function acquireRunSlots(
+    rootChatId: string,
+    chatId: string,
+    signal: AbortSignal
+  ): Promise<() => void> {
+    let releaseRoot: () => void
+    try {
+      releaseRoot = await rootSlots.acquire(rootChatId, signal)
+    } catch (error) {
+      if (signal.aborted) throw new TaskInterrupted(chatId, 'cancelled')
+      throw error
+    }
+    let releaseGlobal: () => void
+    try {
+      releaseGlobal = await backgroundSlots.acquire(signal)
+    } catch (error) {
+      releaseRoot()
+      if (signal.aborted) throw new TaskInterrupted(chatId, 'cancelled')
+      throw error
+    }
+    return () => {
+      releaseGlobal()
+      releaseRoot()
+    }
+  }
+
+  /**
+   * Run a single stream pass while holding the concurrency slots, draining the
+   * progress queue until the run settles. Slots are always released in the
+   * finally. `onEpoch` is called if the underlying run reports a new epoch on
+   * start, so the caller can keep its supersede check current.
+   */
+  async function runStreamPass(params: {
+    chatId: string
+    def: AgentDefinition
+    messages: TanzoUIMessage[]
+    depth: number
+    runId: string
+    signal: AbortSignal
+    release: () => void
+    onEpoch: (epoch: number) => void
+  }): Promise<AgentStreamFinalState | undefined> {
+    const { chatId, def, messages, depth, runId, signal, release, onEpoch } = params
+    const progress = createSignalQueue()
+    let finalState: AgentStreamFinalState | undefined
+    const runPromise = callbacks
+      .startChatRun({
+        chatId,
+        def,
+        messages,
+        depth,
+        broadcast: true,
+        runId,
+        signal,
+        onProgress: () => progress.signal(),
+        onStart: (token) => onEpoch(token.epoch)
+      })
+      .finally(() => progress.close())
+    try {
+      while (await progress.next()) {
+        // Stream progress is observed by the UI via run frames; the task row
+        // is updated only on phase/approval/result transitions.
+      }
+      finalState = await runPromise
+    } finally {
+      release()
+    }
+    return finalState
+  }
+
   async function runTask(
     taskId: string,
     rootChatId: string,
@@ -346,55 +432,19 @@ export function createTaskService(
       )
       forceCompaction = false
 
-      // Acquire the per-root slot before the global one: this bounds each
-      // conversation's share and avoids holding a scarce global slot while
-      // queued behind a busy root.
-      let releaseRoot: () => void
-      try {
-        releaseRoot = await rootSlots.acquire(rootChatId, signal)
-      } catch (error) {
-        if (signal.aborted) throw new TaskInterrupted(chatId, 'cancelled')
-        throw error
-      }
-      let releaseGlobal: () => void
-      try {
-        releaseGlobal = await backgroundSlots.acquire(signal)
-      } catch (error) {
-        releaseRoot()
-        if (signal.aborted) throw new TaskInterrupted(chatId, 'cancelled')
-        throw error
-      }
-      const release = (): void => {
-        releaseGlobal()
-        releaseRoot()
-      }
-
-      const progress = createSignalQueue()
-      let finalState: AgentStreamFinalState | undefined
-      const runPromise = callbacks
-        .startChatRun({
-          chatId,
-          def,
-          messages,
-          depth,
-          broadcast: true,
-          runId,
-          signal,
-          onProgress: () => progress.signal(),
-          onStart: (token) => {
-            observedEpoch = token.epoch
-          }
-        })
-        .finally(() => progress.close())
-      try {
-        while (await progress.next()) {
-          // Stream progress is observed by the UI via run frames; the task row
-          // is updated only on phase/approval/result transitions.
+      const release = await acquireRunSlots(rootChatId, chatId, signal)
+      const finalState = await runStreamPass({
+        chatId,
+        def,
+        messages,
+        depth,
+        runId,
+        signal,
+        release,
+        onEpoch: (epoch) => {
+          observedEpoch = epoch
         }
-        finalState = await runPromise
-      } finally {
-        release()
-      }
+      })
 
       if (callbacks.hasAdvancedSince(chatId, observedEpoch)) {
         throw new TaskInterrupted(chatId, 'superseded')
@@ -661,10 +711,26 @@ export function createTaskService(
     if (restarted) startDriver(restarted)
   }
 
+  async function resumeByChat(chatId: string): Promise<void> {
+    const task = deps.store.tasks.getByChat(chatId)
+    if (!task || isTerminal(task.status)) return
+    // Await the old driver's teardown before starting a new one, matching
+    // instruct/redefine. Without this, aborting the controller and immediately
+    // dispatching a resume can overlap two drivers writing the same chat.
+    const oldDone = driverDone.get(task.chatId)
+    controllers.get(task.chatId)?.abort()
+    callbacks.abortRun(task.chatId)
+    await oldDone
+    const resumed = dispatch(task.rootChatId, task.id, { kind: 'resume', now: Date.now() })
+    if (resumed) startDriver(resumed)
+  }
+
   function retry(rootChatId: string, taskId: string): void {
     const task = deps.store.tasks.get(rootChatId, taskId)
     if (!task) return
     if (task.status !== 'failed' && task.status !== 'cancelled') return
+    // No teardown await needed: retry only runs from a terminal (failed/cancelled)
+    // state, so the prior driver has already settled and driverDone is cleared.
     writeObjective(task.chatId, task.objective)
     const restarted = dispatch(rootChatId, taskId, { kind: 'retry', now: Date.now() })
     if (restarted) startDriver(restarted)
@@ -745,14 +811,7 @@ export function createTaskService(
     redefine,
     cancel,
     retry,
-    resumeByChat: (chatId) => {
-      const task = deps.store.tasks.getByChat(chatId)
-      if (!task || isTerminal(task.status)) return
-      controllers.get(task.chatId)?.abort()
-      callbacks.abortRun(task.chatId)
-      const resumed = dispatch(task.rootChatId, task.id, { kind: 'resume', now: Date.now() })
-      if (resumed) startDriver(resumed)
-    },
+    resumeByChat,
     reportPhase: (chatId, phase) => {
       const task = deps.store.tasks.getByChat(chatId)
       if (task) setPhase(task.rootChatId, task.id, phase)

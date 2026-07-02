@@ -203,4 +203,40 @@ describe('agent/runtime/run-session-registry', () => {
     expect(streams.finish('chat-1', 'run-1', 'finished')).toBeNull()
     expect(streams.snapshot('chat-1')).toMatchObject({ runId: 'run-2' })
   })
+
+  // Coordination-invariant guards (see the ChatRunSessionRegistry doc comment).
+  // The deferred-run finish choreography drives `finish` from multiple code
+  // paths for the same runId and relies on finish-by-deletion being idempotent.
+  it('INVARIANT: a duplicate terminal finish is a no-op and does not re-broadcast', () => {
+    const events: ChatEvent[] = []
+    const streams = createChatRunSessionRegistry({ deliver: (event) => events.push(event) })
+
+    streams.start('chat-1', 'run-1', baseMessages)
+    const terminal = streams.finish('chat-1', 'run-1', 'finished')
+    expect(terminal).not.toBeNull()
+
+    const terminalCount = events.filter(
+      (event) => event.kind === 'run-state' && event.status !== 'running'
+    ).length
+    expect(terminalCount).toBe(1)
+
+    // A second finish for the same runId (e.g. engine finally + turn-loop finally)
+    // must return null and must not deliver another terminal event.
+    expect(streams.finish('chat-1', 'run-1', 'aborted')).toBeNull()
+    const terminalCountAfter = events.filter(
+      (event) => event.kind === 'run-state' && event.status !== 'running'
+    ).length
+    expect(terminalCountAfter).toBe(1)
+  })
+
+  it('INVARIANT: publish after finish is stale because the session is deleted', () => {
+    const streams = createChatRunSessionRegistry()
+    streams.start('chat-1', 'run-1', baseMessages)
+    streams.finish('chat-1', 'run-1', 'finished')
+
+    expect(streams.publish('chat-1', { type: 'text-start', id: 't1' }, { runId: 'run-1' })).toEqual(
+      { status: 'stale' }
+    )
+    expect(streams.snapshot('chat-1')).toBeNull()
+  })
 })

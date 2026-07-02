@@ -126,7 +126,9 @@ export function createChatInbox(
   async function submitMessage(chatId: string, message: TanzoUIMessage): Promise<void> {
     const history = await deps.store.load(chatId)
     if (deps.hooks && history.length === 0) {
-      await deps.hooks.runSessionStart({ chatId, source: 'startup' }).catch(() => {})
+      await deps.hooks.runSessionStart({ chatId, source: 'startup' }).catch((error) => {
+        deps.logger?.warn('SessionStart hook failed', { chatId, error })
+      })
     }
     if (deps.hooks && message.role === 'user') {
       const prompt = promptTextOf(message)

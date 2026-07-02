@@ -45,5 +45,29 @@ export default defineConfig(
       'react-refresh/only-export-components': 'off'
     }
   },
+  {
+    // Architecture invariant: only src/renderer/src/platform/* may touch
+    // window.electron. Every other layer must go through a platform client so
+    // it inherits the shared IPC error decoding. Warn (not error) for now:
+    // the pet feature still calls the bridge directly and needs a dedicated
+    // platform/electron/pet-client.ts migration before this can be an error.
+    files: ['src/renderer/src/**/*.{ts,tsx}'],
+    ignores: ['src/renderer/src/platform/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-syntax': [
+        'warn',
+        {
+          selector: "MemberExpression[object.name='window'][property.name='electron']",
+          message:
+            'Access window.electron only from src/renderer/src/platform/*. Route this call through a platform client so it inherits IPC error decoding.'
+        },
+        {
+          selector: "OptionalMemberExpression[object.name='window'][property.name='electron']",
+          message:
+            'Access window.electron only from src/renderer/src/platform/*. Route this call through a platform client so it inherits IPC error decoding.'
+        }
+      ]
+    }
+  },
   eslintConfigPrettier
 )

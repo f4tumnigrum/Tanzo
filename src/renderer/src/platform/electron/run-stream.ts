@@ -159,9 +159,10 @@ export async function connectRun(
     handlers.onChunk(frame.chunk)
   }
 
-  const attach = async (
-    expected?: { runId: string; runKind: ChatRunKind }
-  ): Promise<ChatRunSnapshot | null> => {
+  const attach = async (expected?: {
+    runId: string
+    runKind: ChatRunKind
+  }): Promise<ChatRunSnapshot | null> => {
     if (attaching || live || closed) return null
     attaching = true
     try {
@@ -211,7 +212,8 @@ export async function connectRun(
 
   unsubscribe = api.onEvent(chatId, (event) => {
     if (event.kind === 'run-state') {
-      if (event.status === 'running' && !live) void attach({ runId: event.runId, runKind: event.runKind })
+      if (event.status === 'running' && !live)
+        void attach({ runId: event.runId, runKind: event.runKind })
       if (event.status === 'failed' && event.error) {
         terminalRunErrors.set(event.runId, event.error)
       }
