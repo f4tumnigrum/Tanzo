@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { PageHeader } from '@/components/layout/page-header'
+import { AppHeaderContent } from '@/components/layout/app-header'
 import { useAppShellStore } from '@/app/app-shell-store'
 import { getSettingsSection } from './model'
 
@@ -21,7 +21,7 @@ export default function SettingsPage() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <PageHeader
+      <AppHeaderContent
         title={sectionLabel}
         {...(SectionHeaderActions ? { actions: <SectionHeaderActions /> } : {})}
       />

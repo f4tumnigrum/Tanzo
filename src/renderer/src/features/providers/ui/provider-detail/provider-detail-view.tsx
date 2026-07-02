@@ -5,8 +5,6 @@ import { Button } from '@/components/ui/button'
 import { EntityDetailScaffold } from '@/components/layout/page-scaffold'
 import { PillTabsBar, PillTabsTrigger } from '@/components/layout/pill-tabs'
 import { Tabs, TabsContent } from '@/components/ui/tabs'
-import { pageHeaderIconBtnCls } from '@/components/layout/page-header'
-import { cn } from '@/lib/utils'
 import type { ModelFamily, ProviderId } from '@/common/contracts'
 import { useProviderDetailStore, useProviderWorkspace } from '../../model'
 import { providerFamilyTab, sortedFamilies } from '../../lib/provider-utils'
@@ -70,12 +68,11 @@ export function ProviderDetailView({ providerId }: ProviderDetailViewProps) {
       actions={
         <Button
           type="button"
-          variant="ghost"
-          size="sm"
-          className={cn(pageHeaderIconBtnCls, 'w-auto gap-1.5 px-2.5')}
+          variant="toolbar"
+          size="toolbar"
           onClick={() => window.open(provider.docsUrl, '_blank', 'noopener,noreferrer')}
         >
-          <span className="text-xs">{t('providers.page.actions.docs')}</span>
+          <span>{t('providers.page.actions.docs')}</span>
           <ExternalLink className="size-3" />
         </Button>
       }

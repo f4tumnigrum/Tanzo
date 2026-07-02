@@ -53,9 +53,8 @@ export function ServerDetailView({ server }: ServerDetailViewProps) {
       actions={
         <div className="flex items-center gap-2">
           <Button
-            variant="ghost"
-            size="sm"
-            className="gap-1.5 px-2.5 text-xs"
+            variant="toolbar"
+            size="toolbar"
             disabled={reconnectDisabled}
             onClick={() => reconnect.mutate(server.name)}
           >

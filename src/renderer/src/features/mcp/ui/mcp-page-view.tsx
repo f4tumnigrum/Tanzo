@@ -2,9 +2,7 @@ import { Plus, Server } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
-import { pageHeaderIconBtnCls } from '@/components/layout/page-header'
 import { ListPageScaffold } from '@/components/layout/page-scaffold'
-import { cn } from '@/lib/utils'
 import type { useMcpPageController } from '../model/use-mcp-page-controller'
 import { ServerDetailView } from './client/server-detail-view'
 import { ServerEditorDialog } from './client/server-editor-dialog'
@@ -38,14 +36,9 @@ export function McpPageView({ controller }: { controller: McpPageController }) {
         <ServerEditorDialog
           mode="create"
           trigger={
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className={cn(pageHeaderIconBtnCls, 'w-auto gap-1.5 px-2.5')}
-            >
+            <Button type="button" variant="toolbar" size="toolbar">
               <Plus className="size-3.5" />
-              <span className="text-xs">{t('mcp.server.create.button')}</span>
+              <span>{t('mcp.server.create.button')}</span>
             </Button>
           }
         />

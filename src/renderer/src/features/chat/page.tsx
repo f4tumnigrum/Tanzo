@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, useTransition } from 'react'
 import { Globe } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { usePanelRef } from 'react-resizable-panels'
-import { PageHeader, pageHeaderIconBtnCls } from '@/components/layout/page-header'
+import { AppHeaderContent } from '@/components/layout/app-header'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { Spinner } from '@/components/ui/spinner'
@@ -91,7 +91,7 @@ export default function ChatPage(): React.JSX.Element {
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <PageHeader
+      <AppHeaderContent
         title={headerTitle}
         actions={
           <>
@@ -109,9 +109,9 @@ export default function ChatPage(): React.JSX.Element {
                   <Button
                     {...triggerProps}
                     type="button"
-                    variant="ghost"
-                    size="icon"
-                    className={cn(pageHeaderIconBtnCls, 'hover:bg-transparent')}
+                    variant="toolbar"
+                    size="toolbar-icon"
+                    className="hover:bg-transparent"
                     onClick={toggleBrowser}
                     aria-label={t('browser.toggle')}
                     aria-pressed={browserOpen}

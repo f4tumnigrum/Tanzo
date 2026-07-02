@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { HashRouter, matchPath, Route, Routes, useLocation } from 'react-router-dom'
 import { APP_ROUTES } from '@/app/route-registry'
 import { AppShell } from '@/app/app-shell'
+import { RouteActivityContext } from '@/app/route-activity'
 import { ThemeProvider } from '@/components/theme/theme-provider'
 import { Toaster } from '@/components/ui/sonner'
 import { WallpaperLayer } from '@/components/wallpaper-layer'
@@ -68,13 +69,11 @@ function AppRoutes() {
         const active = Boolean(matchPath({ path, end: true }, pathname))
 
         return (
-          <div
-            key={path}
-            className={active ? 'h-full min-h-0 flex-1' : 'hidden'}
-            aria-hidden={!active}
-          >
-            <Component />
-          </div>
+          <RouteActivityContext.Provider key={path} value={active}>
+            <div className={active ? 'h-full min-h-0 flex-1' : 'hidden'} aria-hidden={!active}>
+              <Component />
+            </div>
+          </RouteActivityContext.Provider>
         )
       })}
       {!activeKeepAliveRoute ? (

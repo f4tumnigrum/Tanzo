@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Spinner } from '@/components/ui/spinner'
-import { pageHeaderIconBtnCls } from '@/components/layout/page-header'
 import { ListPageScaffold } from '@/components/layout/page-scaffold'
 import { cn } from '@/lib/utils'
 import type { useSkillsPageController } from '../model'
@@ -64,23 +63,21 @@ export function SkillsPageView({
           <div className="flex items-center gap-1">
             <Button
               type="button"
-              variant="ghost"
-              size="sm"
-              className={cn(pageHeaderIconBtnCls, 'w-auto gap-1.5 px-2.5')}
+              variant="toolbar"
+              size="toolbar"
               onClick={() => controller.setInstallOpen(true)}
             >
               <Download className="size-3.5" />
-              <span className="text-xs">{t('skills.page.actions.install')}</span>
+              <span>{t('skills.page.actions.install')}</span>
             </Button>
             <Button
               type="button"
-              variant="ghost"
-              size="sm"
-              className={cn(pageHeaderIconBtnCls, 'w-auto gap-1.5 px-2.5')}
+              variant="toolbar"
+              size="toolbar"
               onClick={() => void controller.reload()}
             >
               <RefreshCw className={cn('size-3.5', controller.reloading && 'animate-spin')} />
-              <span className="text-xs">{t('skills.page.actions.reload')}</span>
+              <span>{t('skills.page.actions.reload')}</span>
             </Button>
           </div>
         }

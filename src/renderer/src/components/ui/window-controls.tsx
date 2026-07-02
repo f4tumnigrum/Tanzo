@@ -2,8 +2,6 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 
-type Platform = 'darwin' | 'win32' | 'linux' | 'unknown'
-
 const ICON_PROPS = {
   viewBox: '0 0 12 12',
   className: 'size-full'
@@ -42,23 +40,15 @@ const ariaMap = {
  * both draw the custom controls; Linux keeps its native frame and draws nothing.
  * Anything that needs to reserve space for the overlay (e.g. a header inset)
  * should gate on this so it never reserves space where no controls exist.
+ *
+ * Platform comes from the synchronous preload bridge, so this is a plain
+ * computation — no IPC round-trip, no re-render.
  */
 export function useWindowControlsVisible(): boolean {
-  const [platform, setPlatform] = useState<Platform>('unknown')
-  const controls = window.electron?.windowControls
-
-  useEffect(() => {
-    if (!controls) return
-    let active = true
-    void window.electron?.getPlatform().then((info) => {
-      if (active) setPlatform(info.platform as Platform)
-    })
-    return () => {
-      active = false
-    }
-  }, [controls])
-
-  return Boolean(controls) && (platform === 'darwin' || platform === 'win32')
+  const electron = window.electron
+  if (!electron?.windowControls) return false
+  const platform = electron.platformInfo.platform
+  return platform === 'darwin' || platform === 'win32'
 }
 
 export function WindowControls({ className }: { className?: string }) {

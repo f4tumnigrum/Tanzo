@@ -21,7 +21,6 @@ import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { pageHeaderIconBtnCls } from '@/components/layout/page-header'
 import { useHookMutations, useHooksList } from '../model/use-hooks'
 
 const EVENT_ICONS: Partial<Record<HookEvent, LucideIcon>> = {
@@ -77,9 +76,8 @@ export function SettingsHooksHeaderActions(): React.JSX.Element {
           <Button
             {...triggerProps}
             type="button"
-            variant="ghost"
-            size="icon"
-            className={pageHeaderIconBtnCls}
+            variant="toolbar"
+            size="toolbar-icon"
             disabled={reload.isPending}
             onClick={() => reload.mutate()}
             aria-label={label}

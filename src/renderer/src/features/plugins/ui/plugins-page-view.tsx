@@ -12,7 +12,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle
 } from '@/components/ui/alert-dialog'
-import { pageHeaderIconBtnCls } from '@/components/layout/page-header'
 import { ListPageScaffold } from '@/components/layout/page-scaffold'
 import { cn } from '@/lib/utils'
 import type { usePluginsPageController } from '../model/use-plugins-page-controller'
@@ -56,33 +55,30 @@ export function PluginsPageView({ controller }: { controller: Controller }): Rea
           <div className="flex items-center gap-1">
             <Button
               type="button"
-              variant="ghost"
-              size="sm"
-              className={cn(pageHeaderIconBtnCls, 'w-auto gap-1.5 px-2.5')}
+              variant="toolbar"
+              size="toolbar"
               onClick={() => controller.setAddMarketplaceOpen(true)}
             >
               <Plus className="size-3.5" />
-              <span className="text-xs">{t('plugins.marketplace.add.action')}</span>
+              <span>{t('plugins.marketplace.add.action')}</span>
             </Button>
             <Button
               type="button"
-              variant="ghost"
-              size="sm"
-              className={cn(pageHeaderIconBtnCls, 'w-auto gap-1.5 px-2.5')}
+              variant="toolbar"
+              size="toolbar"
               onClick={() => controller.setManageMarketplacesOpen(true)}
             >
               <Store className="size-3.5" />
-              <span className="text-xs">{t('plugins.marketplace.manage.action')}</span>
+              <span>{t('plugins.marketplace.manage.action')}</span>
             </Button>
             <Button
               type="button"
-              variant="ghost"
-              size="sm"
-              className={cn(pageHeaderIconBtnCls, 'w-auto gap-1.5 px-2.5')}
+              variant="toolbar"
+              size="toolbar"
               onClick={() => void controller.reload()}
             >
               <RefreshCw className={cn('size-3.5', controller.reloading && 'animate-spin')} />
-              <span className="text-xs">{t('plugins.page.actions.reload')}</span>
+              <span>{t('plugins.page.actions.reload')}</span>
             </Button>
           </div>
         }

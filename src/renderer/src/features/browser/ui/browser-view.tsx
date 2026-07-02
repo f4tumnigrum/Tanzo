@@ -17,7 +17,6 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { pageHeaderIconBtnCls } from '@/components/layout/page-header'
 import { cn } from '@/lib/utils'
 import { useBrowserUiStore, type BrowserTab } from '../model/store'
 import { normalizeAddressInput } from '../model/normalize-url'
@@ -47,12 +46,9 @@ export function ToolbarButton({
           <Button
             {...triggerProps}
             type="button"
-            variant="ghost"
-            size="icon"
-            className={cn(
-              pageHeaderIconBtnCls,
-              active && 'bg-primary/15 text-primary hover:bg-primary/20'
-            )}
+            variant="toolbar"
+            size="toolbar-icon"
+            className={cn(active && 'bg-primary/15 text-primary hover:bg-primary/20')}
             onClick={onClick}
             disabled={disabled}
             aria-pressed={active}

@@ -329,6 +329,13 @@
   --compose-surface-blur: 0px;
 }
 
+/* Window-chrome layout tokens. Every drag strip, traffic-light inset and
+   overlay derives from these two values so they can never drift apart. */
+:root {
+  --titlebar-height: 2.75rem;
+  --traffic-lights-width: 108px;
+}
+
 .app-titlebar {
   -webkit-app-region: drag;
 }

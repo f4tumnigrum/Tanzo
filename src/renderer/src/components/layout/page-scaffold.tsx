@@ -1,17 +1,15 @@
 import { type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { PageHeader, type PageHeaderStat } from '@/components/layout/page-header'
+import { AppHeaderContent, type AppHeaderStat } from '@/components/layout/app-header'
 import { SearchInput, type ActiveFilters, type FilterGroup } from '@/components/ui/search-input'
 import { cn } from '@/lib/utils'
 
-export type { ActiveFilters, FilterGroup, PageHeaderStat }
+export type { ActiveFilters, FilterGroup, AppHeaderStat }
 
 export interface PageScaffoldProps {
   title: string
-  titleMeta?: ReactNode
-  stats?: PageHeaderStat[]
+  stats?: AppHeaderStat[]
   actions?: ReactNode
-  leadingActions?: ReactNode
   onBack?: () => void
   children: ReactNode
 }
@@ -29,10 +27,8 @@ export interface ListPageScaffoldProps extends PageScaffoldProps {
 
 export function ListPageScaffold({
   title,
-  titleMeta,
   stats,
   actions,
-  leadingActions,
   onBack,
   searchValue,
   onSearchChange,
@@ -50,14 +46,7 @@ export function ListPageScaffold({
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <PageHeader
-        title={title}
-        titleMeta={titleMeta}
-        stats={stats}
-        actions={actions}
-        leadingActions={leadingActions}
-        onBack={onBack}
-      />
+      <AppHeaderContent title={title} stats={stats} actions={actions} onBack={onBack} />
 
       <div className={cn('flex-1 overflow-y-auto scrollbar-elegant', scrollClassName)}>
         <div className="flex min-h-full flex-col">
@@ -94,10 +83,8 @@ export interface EntityDetailScaffoldProps extends PageScaffoldProps {
 
 export function EntityDetailScaffold({
   title,
-  titleMeta,
   stats,
   actions,
-  leadingActions,
   onBack,
   contentClassName,
   scrollClassName,
@@ -106,10 +93,8 @@ export function EntityDetailScaffold({
   return (
     <ListPageScaffold
       title={title}
-      titleMeta={titleMeta}
       stats={stats}
       actions={actions}
-      leadingActions={leadingActions}
       onBack={onBack}
       contentClassName={contentClassName}
       scrollClassName={scrollClassName}

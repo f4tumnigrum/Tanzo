@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLocation } from 'react-router-dom'
 import { useGroupRef, usePanelRef } from 'react-resizable-panels'
@@ -7,8 +7,9 @@ import { cn } from '@/lib/utils'
 import { ConversationSidebar } from '@/features/chat/ui/conversation/conversation-sidebar'
 import { SettingsNav } from '@/features/settings/ui/settings-nav'
 import { WindowControls, useWindowControlsVisible } from '@/components/ui/window-controls'
+import { AppHeader, AppHeaderProvider } from '@/components/layout/app-header'
 import { useChatNavigation } from '@/features/chat/model/use-chat-navigation'
-import { AppShellContext, type AppShellContextValue } from './app-shell-context'
+import { useAppShellStore } from './app-shell-store'
 
 const DEFAULT_LAYOUT = { sidebar: 28, content: 72 } as const
 
@@ -21,7 +22,8 @@ export function AppShell({ children }: AppShellProps): React.JSX.Element {
   const { pathname } = useLocation()
   const groupRef = useGroupRef()
   const sidebarPanelRef = usePanelRef()
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const sidebarCollapsed = useAppShellStore((state) => state.sidebarCollapsed)
+  const setSidebarCollapsed = useAppShellStore((state) => state.setSidebarCollapsed)
 
   const isSettings = pathname.startsWith('/settings')
   const navigation = useChatNavigation()
@@ -49,17 +51,10 @@ export function AppShell({ children }: AppShellProps): React.JSX.Element {
     const panel = sidebarPanelRef.current
     if (!panel) return
     setSidebarCollapsed(panel.isCollapsed())
-  }, [sidebarPanelRef])
-
-  const toggleSidebar = useCallback(() => setSidebarCollapsed((value) => !value), [])
-
-  const contextValue = useMemo<AppShellContextValue>(
-    () => ({ sidebarCollapsed, toggleSidebar }),
-    [sidebarCollapsed, toggleSidebar]
-  )
+  }, [setSidebarCollapsed, sidebarPanelRef])
 
   return (
-    <AppShellContext.Provider value={contextValue}>
+    <AppHeaderProvider>
       <ResizablePanelGroup
         id="app-shell"
         orientation="horizontal"
@@ -79,8 +74,8 @@ export function AppShell({ children }: AppShellProps): React.JSX.Element {
           className="min-h-0 min-w-0 transition-[flex-basis] duration-200 ease-linear"
         >
           <div className="sidebar-surface flex h-full min-h-0 w-full min-w-0 flex-col">
-            <div className="app-titlebar h-11 shrink-0">
-              <div className="app-no-drag h-full w-[108px]" aria-hidden="true" />
+            <div className="app-titlebar h-(--titlebar-height) shrink-0">
+              <div className="app-no-drag h-full w-(--traffic-lights-width)" aria-hidden="true" />
             </div>
             <div className="min-h-0 flex-1">
               {isSettings ? (
@@ -124,7 +119,10 @@ export function AppShell({ children }: AppShellProps): React.JSX.Element {
           minSize="30%"
           className="min-h-0 min-w-0 transition-[flex-basis] duration-200 ease-linear"
         >
-          <div className="main-surface flex h-full min-h-0 min-w-0 flex-col">{children}</div>
+          <div className="main-surface flex h-full min-h-0 min-w-0 flex-col">
+            <AppHeader />
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
+          </div>
         </ResizablePanel>
       </ResizablePanelGroup>
       {/* A single persistent traffic-light overlay pinned to the window's
@@ -132,10 +130,10 @@ export function AppShell({ children }: AppShellProps): React.JSX.Element {
           `app-titlebar` drag regions in headers below it (macOS composes
           draggable regions in DOM order). */}
       {windowControlsVisible ? (
-        <div className="app-no-drag pointer-events-auto fixed left-0 top-0 z-[1000] flex h-11 w-[108px] items-center px-5">
+        <div className="app-no-drag pointer-events-auto fixed left-0 top-0 z-[1000] flex h-(--titlebar-height) w-(--traffic-lights-width) items-center px-5">
           <WindowControls className="app-no-drag pointer-events-auto" />
         </div>
       ) : null}
-    </AppShellContext.Provider>
+    </AppHeaderProvider>
   )
 }
