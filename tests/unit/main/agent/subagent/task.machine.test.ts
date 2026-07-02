@@ -102,6 +102,23 @@ describe('agent/subagent/task.machine', () => {
     ])
   })
 
+  it('ignores a late set-result after the task reached a terminal state', () => {
+    const done = task({ status: 'done', result: { summary: 'final', resultSource: 'inferred' } })
+    const result = taskTransition(done, {
+      kind: 'set-result',
+      result: { summary: 'late overwrite' }
+    })
+    expect(result.state).toBe(done)
+    expect(result.effects).toEqual([])
+    expect(done.result).toEqual({ summary: 'final', resultSource: 'inferred' })
+  })
+
+  it('applies set-result while the task is still running', () => {
+    const result = taskTransition(task(), { kind: 'set-result', result: { summary: 'progress' } })
+    expect(result.state.result).toEqual({ summary: 'progress' })
+    expect(result.effects).toEqual([{ kind: 'persist' }])
+  })
+
   it('exposes a terminal predicate matching done/failed/cancelled', () => {
     expect(isTaskTerminal('done')).toBe(true)
     expect(isTaskTerminal('failed')).toBe(true)

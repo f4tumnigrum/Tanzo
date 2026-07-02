@@ -157,6 +157,10 @@ export function taskTransition(
       )
 
     case 'set-result':
+      // Terminal guard: a late set-result (e.g. an async report() landing after
+      // the task already completed/failed/was cancelled) must not overwrite the
+      // terminal result that awaiters have already observed.
+      if (isTaskTerminal(task.status)) return stay(task)
       return next({ ...task, result: event.result }, PERSIST)
 
     case 'reset-dependency': {

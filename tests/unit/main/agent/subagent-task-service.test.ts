@@ -115,4 +115,207 @@ describe('agent/subagent/task-service', () => {
     expect(tasks.get('explore-3')?.status).toBe('done')
     expect(tasks.get('explore-1')?.result?.errorMessage).toContain('restarted')
   })
+
+  it('fails a self-dependent spawn instead of leaving it pending forever', () => {
+    const tasks = new Map<string, SubagentTask>()
+    const callbacks = {
+      abortRun: vi.fn(),
+      clearTransientChatState: vi.fn(),
+      currentRunEpoch: vi.fn(() => 0),
+      hasAdvancedSince: vi.fn(() => false),
+      isInflight: vi.fn(() => false),
+      startChatRun: vi.fn()
+    }
+    const service = createTaskService(
+      {
+        store: {
+          rootOf: vi.fn(() => 'root-chat'),
+          transaction: vi.fn((fn: () => unknown) => fn()),
+          getConversation: vi.fn(() => ({ id: 'root-chat' })),
+          createConversation: vi.fn(() => ({ id: 'child-chat' })),
+          save: vi.fn(),
+          tasks: {
+            get: vi.fn((_rootChatId: string, taskId: string) => tasks.get(taskId)),
+            getByChat: vi.fn(),
+            listByRoot: vi.fn(() => [...tasks.values()]),
+            update: vi.fn((next: SubagentTask) => tasks.set(next.id, next)),
+            insert: vi.fn((t: SubagentTask) => tasks.set(t.id, t)),
+            nextSeq: vi.fn(() => 1),
+            countByAgent: vi.fn(() => 0)
+          }
+        },
+        send: vi.fn(),
+        sendTo: vi.fn(),
+        identity: {
+          resolveAgentType: vi.fn(() => ({
+            id: 'explore',
+            kind: 'subagent',
+            allowedTools: ['fileRead']
+          }))
+        },
+        providerService: {},
+        buildTools: vi.fn(),
+        policy: {}
+      } as never,
+      { compaction: {} as never, policy: { remember: vi.fn() } as never },
+      callbacks
+    )
+
+    // 'explore-1' is the id readableId() will assign (countByAgent=0 → n=1),
+    // so declaring dependsOn:['explore-1'] makes the task depend on itself.
+    const spawned = service.spawn({
+      parentChatId: 'root-chat',
+      objective: 'wait on myself',
+      agentType: 'explore',
+      dependsOn: ['explore-1']
+    })
+
+    const stored = tasks.get(spawned.id)
+    expect(stored?.status).toBe('failed')
+    expect(stored?.result?.errorMessage).toContain('cannot depend on itself')
+    // The driver must never start for a task that can never run.
+    expect(callbacks.startChatRun).not.toHaveBeenCalled()
+  })
+
+  it('fails a spawn whose dependency id does not exist', () => {
+    const tasks = new Map<string, SubagentTask>()
+    const callbacks = {
+      abortRun: vi.fn(),
+      clearTransientChatState: vi.fn(),
+      currentRunEpoch: vi.fn(() => 0),
+      hasAdvancedSince: vi.fn(() => false),
+      isInflight: vi.fn(() => false),
+      startChatRun: vi.fn()
+    }
+    const service = createTaskService(
+      {
+        store: {
+          rootOf: vi.fn(() => 'root-chat'),
+          transaction: vi.fn((fn: () => unknown) => fn()),
+          getConversation: vi.fn(() => ({ id: 'root-chat' })),
+          createConversation: vi.fn(() => ({ id: 'child-chat' })),
+          save: vi.fn(),
+          tasks: {
+            get: vi.fn((_rootChatId: string, taskId: string) => tasks.get(taskId)),
+            getByChat: vi.fn(),
+            listByRoot: vi.fn(() => [...tasks.values()]),
+            update: vi.fn((next: SubagentTask) => tasks.set(next.id, next)),
+            insert: vi.fn((t: SubagentTask) => tasks.set(t.id, t)),
+            nextSeq: vi.fn(() => 1),
+            countByAgent: vi.fn(() => 0)
+          }
+        },
+        send: vi.fn(),
+        sendTo: vi.fn(),
+        identity: {
+          resolveAgentType: vi.fn(() => ({
+            id: 'explore',
+            kind: 'subagent',
+            allowedTools: ['fileRead']
+          }))
+        },
+        providerService: {},
+        buildTools: vi.fn(),
+        policy: {}
+      } as never,
+      { compaction: {} as never, policy: { remember: vi.fn() } as never },
+      callbacks
+    )
+
+    const spawned = service.spawn({
+      parentChatId: 'root-chat',
+      objective: 'wait on a ghost',
+      agentType: 'explore',
+      dependsOn: ['nonexistent-9']
+    })
+
+    const stored = tasks.get(spawned.id)
+    expect(stored?.status).toBe('failed')
+    expect(stored?.result?.errorMessage).toContain("'nonexistent-9'")
+    expect(callbacks.startChatRun).not.toHaveBeenCalled()
+  })
+
+  // Fix #11: instruct/redefine must await the previous driver's done promise before
+  // starting a new one (driverDone map). The guard-path tests below verify the
+  // functions are async and handle missing tasks safely. Full concurrency coverage
+  // (two overlapping drivers) requires an integration harness that controls runTask.
+
+  it('instruct returns immediately when the task does not exist', async () => {
+    const callbacks = {
+      abortRun: vi.fn(),
+      clearTransientChatState: vi.fn(),
+      currentRunEpoch: vi.fn(() => 0),
+      hasAdvancedSince: vi.fn(() => false),
+      isInflight: vi.fn(() => false),
+      startChatRun: vi.fn()
+    }
+    const service = createTaskService(
+      {
+        store: {
+          rootOf: vi.fn(() => 'root-chat'),
+          transaction: vi.fn((fn: () => unknown) => fn()),
+          tasks: {
+            get: vi.fn(() => undefined),
+            getByChat: vi.fn(),
+            listByRoot: vi.fn(() => []),
+            update: vi.fn(),
+            insert: vi.fn(),
+            nextSeq: vi.fn(() => 1),
+            countByAgent: vi.fn(() => 0)
+          }
+        },
+        send: vi.fn(),
+        sendTo: vi.fn(),
+        identity: {},
+        providerService: {},
+        buildTools: vi.fn(),
+        policy: {}
+      } as never,
+      { compaction: {} as never, policy: { remember: vi.fn() } as never },
+      callbacks
+    )
+
+    // Must resolve (not hang) when task is missing — the guard `if (!task) return` exits.
+    await expect(service.instruct('root-chat', 'ghost-1', 'hello')).resolves.toBeUndefined()
+    expect(callbacks.abortRun).not.toHaveBeenCalled()
+  })
+
+  it('redefine returns immediately when the task does not exist', async () => {
+    const callbacks = {
+      abortRun: vi.fn(),
+      clearTransientChatState: vi.fn(),
+      currentRunEpoch: vi.fn(() => 0),
+      hasAdvancedSince: vi.fn(() => false),
+      isInflight: vi.fn(() => false),
+      startChatRun: vi.fn()
+    }
+    const service = createTaskService(
+      {
+        store: {
+          rootOf: vi.fn(() => 'root-chat'),
+          transaction: vi.fn((fn: () => unknown) => fn()),
+          tasks: {
+            get: vi.fn(() => undefined),
+            getByChat: vi.fn(),
+            listByRoot: vi.fn(() => []),
+            update: vi.fn(),
+            insert: vi.fn(),
+            nextSeq: vi.fn(() => 1),
+            countByAgent: vi.fn(() => 0)
+          }
+        },
+        send: vi.fn(),
+        sendTo: vi.fn(),
+        identity: {},
+        providerService: {},
+        buildTools: vi.fn(),
+        policy: {}
+      } as never,
+      { compaction: {} as never, policy: { remember: vi.fn() } as never },
+      callbacks
+    )
+
+    await expect(service.redefine('root-chat', 'ghost-1', 'new objective')).resolves.toBeUndefined()
+    expect(callbacks.abortRun).not.toHaveBeenCalled()
+  })
 })

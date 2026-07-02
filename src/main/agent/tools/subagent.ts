@@ -119,25 +119,32 @@ export function awaitTool(
           return id
         }
 
+        let timeoutTimer: ReturnType<typeof setTimeout> | undefined
         const timeout = new Promise<'timeout'>((resolve) => {
           if (timeoutMs === undefined) return
-          const timer = setTimeout(() => resolve('timeout'), timeoutMs)
-          abortSignal?.addEventListener('abort', () => clearTimeout(timer), { once: true })
+          timeoutTimer = setTimeout(() => resolve('timeout'), timeoutMs)
         })
 
-        if (settle === 'first') {
-          const winner = await Promise.race(
-            timeoutMs === undefined ? known.map(collect) : [...known.map(collect), timeout]
-          )
-          if (winner === 'timeout') timedOut = true
-        } else {
-          const all = Promise.all(known.map(collect))
-          if (timeoutMs === undefined) {
-            await all
+        try {
+          if (settle === 'first') {
+            const winner = await Promise.race(
+              timeoutMs === undefined ? known.map(collect) : [...known.map(collect), timeout]
+            )
+            if (winner === 'timeout') timedOut = true
           } else {
-            const race = await Promise.race([all.then(() => 'done' as const), timeout])
-            if (race === 'timeout') timedOut = true
+            const all = Promise.all(known.map(collect))
+            if (timeoutMs === undefined) {
+              await all
+            } else {
+              const race = await Promise.race([all.then(() => 'done' as const), timeout])
+              if (race === 'timeout') timedOut = true
+            }
           }
+        } finally {
+          // Always clear the timer: without this, every await call with a
+          // timeoutMs leaks a pending setTimeout (up to 60min) after tasks
+          // settle normally.
+          if (timeoutTimer !== undefined) clearTimeout(timeoutTimer)
         }
 
         const results = known

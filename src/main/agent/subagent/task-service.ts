@@ -87,6 +87,10 @@ export function createTaskService(
   const backgroundSlots = createSemaphore(MAX_CONCURRENT_BACKGROUND)
   const rootSlots = createKeyedSemaphores(MAX_CONCURRENT_PER_ROOT)
   const controllers = new Map<string, AbortController>()
+  // Tracks the Promise for each running driver so instruct/redefine can await
+  // the old driver's full teardown before starting a new one, preventing two
+  // concurrent drivers writing to the same chat simultaneously.
+  const driverDone = new Map<string, Promise<void>>()
   const settleWaiters = new Map<string, Set<() => void>>()
   const approvalWaiters = new Map<string, () => void>()
   const approvalChains = new Map<string, Promise<void>>()
@@ -230,9 +234,30 @@ export function createTaskService(
     })
     broadcastTasks(rootChatId)
     if (task.status === 'pending') {
-      const blocker = dependencyUnsatisfiable(task)
-      if (blocker)
-        failTask(rootChatId, task.id, `Dependency ${blocker} did not complete successfully.`)
+      // Self-dependency can never be satisfied (the task would wait on its own
+      // completion forever) and is invisible to dependencyUnsatisfiable, which
+      // finds the freshly inserted row in a non-terminal state. Fail fast.
+      if (task.dependsOn.includes(task.id)) {
+        failTask(
+          rootChatId,
+          task.id,
+          `Task '${task.id}' cannot depend on itself; dependsOn must reference other, already-spawned task ids.`
+        )
+      } else {
+        const blocker = dependencyUnsatisfiable(task)
+        if (blocker) {
+          const dep = deps.store.tasks.get(rootChatId, blocker)
+          // Quote the dependency id so cascadeRetryDependents can trace this
+          // failure back to the dep (it matches on `'${depId}'`).
+          failTask(
+            rootChatId,
+            task.id,
+            dep
+              ? `Dependency '${blocker}' failed: ${dep.result?.errorMessage ?? 'did not complete successfully'}`
+              : `Dependency '${blocker}' not found; dependsOn must reference already-spawned task ids.`
+          )
+        }
+      }
     }
     if (task.status === 'running') startDriver(task)
     return task
@@ -245,7 +270,7 @@ export function createTaskService(
     // difference between "waiting for a semaphore slot" and "actively running".
     // The first report() call from the sub-agent will overwrite this phase.
     setPhase(task.rootChatId, task.id, 'queued: waiting for capacity')
-    void runTask(task.id, task.rootChatId, task.chatId, controller.signal)
+    const done = runTask(task.id, task.rootChatId, task.chatId, controller.signal)
       .catch((error) => {
         if (error instanceof TaskInterrupted) return
         deps.logger?.warn('subagent task failed', { chatId: task.chatId, error })
@@ -253,8 +278,10 @@ export function createTaskService(
       })
       .finally(() => {
         if (controllers.get(task.chatId) === controller) controllers.delete(task.chatId)
+        if (driverDone.get(task.chatId) === done) driverDone.delete(task.chatId)
         maybeUnblockDependents(task.rootChatId)
       })
+    driverDone.set(task.chatId, done)
   }
 
   function dependencyUnsatisfiable(task: SubagentTask): string | null {
@@ -609,8 +636,10 @@ export function createTaskService(
   async function instruct(rootChatId: string, taskId: string, instruction: string): Promise<void> {
     const task = deps.store.tasks.get(rootChatId, taskId)
     if (!task) return
+    const oldDone = driverDone.get(task.chatId)
     controllers.get(task.chatId)?.abort()
     callbacks.abortRun(task.chatId)
+    await oldDone
     const history = await deps.store.load(task.chatId)
     deps.store.save(task.chatId, [
       ...history,
@@ -623,8 +652,10 @@ export function createTaskService(
   async function redefine(rootChatId: string, taskId: string, objective: string): Promise<void> {
     const task = deps.store.tasks.get(rootChatId, taskId)
     if (!task) return
+    const oldDone = driverDone.get(task.chatId)
     controllers.get(task.chatId)?.abort()
     callbacks.abortRun(task.chatId)
+    await oldDone
     writeObjective(task.chatId, objective)
     const restarted = dispatch(rootChatId, taskId, { kind: 'redefine', objective, now: Date.now() })
     if (restarted) startDriver(restarted)

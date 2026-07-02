@@ -213,6 +213,20 @@ describe('main/agent/tools/subagent (tasks)', () => {
     expect(result.results.map((r) => r.task)).toEqual(['explore-1'])
   })
 
+  it('clears the timeout timer when tasks settle before the deadline', async () => {
+    vi.useFakeTimers()
+    try {
+      const d = deps()
+      const tool = awaitTool(d, 'parent')
+      await exec(tool, { tasks: ['explore-1'], timeoutMs: 60 * 60_000 })
+      // The pending timer must be cleared on the normal completion path;
+      // otherwise every await with timeoutMs leaks a timer for up to an hour.
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('inspects one task and lists tasks', async () => {
     const d = deps()
     d.spawnTask({
