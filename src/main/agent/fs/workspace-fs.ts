@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { StringDecoder } from 'node:string_decoder'
 import { createReadStream } from 'node:fs'
 import {
@@ -15,7 +15,7 @@ import {
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { TanzoValidationError } from '@shared/errors'
 import type { FileMeta, TextWindow, WorkspaceFs, WorkspaceFsOptions } from './types'
-import { assertNonSensitivePath } from '../security/path-safety'
+import { assertNonGitPath, assertNonSensitivePath } from '../security/path-safety'
 
 const MAX_EDIT_BYTES = 20 * 1024 * 1024
 
@@ -95,6 +95,27 @@ export function createWorkspaceFs(root: string, options: WorkspaceFsOptions = {}
     const abs = toAbs(p)
     if (dangerous || within(abs, normalizedRoot)) return abs
     throw new TanzoValidationError('FS_PATH_ESCAPE', `Path escapes workspace sandbox: ${p}`)
+  }
+
+  // Guard the write surface in depth: the policy layer has similar rules, but
+  // the fs layer is the actual authority boundary for fileWrite/fileEdit.
+  // Credential paths stay blocked even in dangerous mode (same as reads);
+  // .git writes (hooks = code execution on the next git op) are blocked in
+  // sandbox mode only, since dangerous mode is an explicit full-disk opt-in.
+  const assertWritablePath = (p: string, abs: string): void => {
+    for (const candidate of [p, relative(normalizedRoot, abs)]) {
+      if (!candidate) continue
+      assertNonSensitivePath(candidate, {
+        code: 'FS_CREDENTIAL_PATH',
+        message: 'Refusing to write credential path'
+      })
+      if (!dangerous) {
+        assertNonGitPath(candidate, {
+          code: 'FS_GIT_PATH',
+          message: 'Refusing to write inside the .git directory'
+        })
+      }
+    }
   }
 
   const assertRealWithinRead = async (abs: string, original: string): Promise<void> => {
@@ -336,7 +357,8 @@ export function createWorkspaceFs(root: string, options: WorkspaceFsOptions = {}
         )
       }
       const buf = await readFile(abs, signal ? { signal } : {})
-      return { ...detectAndDecode(buf), stamp: { mtimeMs: info.mtimeMs, size: info.size } }
+      const contentHash = createHash('sha256').update(buf).digest('hex')
+      return { ...detectAndDecode(buf), stamp: { mtimeMs: info.mtimeMs, size: info.size, contentHash } }
     },
     readTextWindow,
     async readBinary(p, signal) {
@@ -358,16 +380,38 @@ export function createWorkspaceFs(root: string, options: WorkspaceFsOptions = {}
       return readdir(abs)
     },
     async writeAtomic(p, content, signal) {
-      await atomicWrite(resolveWrite(p), content, signal)
+      const abs = resolveWrite(p)
+      assertWritablePath(p, abs)
+      await atomicWrite(abs, content, signal)
     },
     async writeTextMeta(p, content, meta, signal, expected) {
       const abs = resolveWrite(p)
+      assertWritablePath(p, abs)
       if (expected) {
         const current = await stat(abs).catch((error: unknown) => {
           if (isErrno(error, 'ENOENT')) return null
           throw error
         })
-        if (!current || current.mtimeMs !== expected.mtimeMs || current.size !== expected.size) {
+        const mismatch =
+          !current ||
+          current.mtimeMs !== expected.mtimeMs ||
+          current.size !== expected.size
+        if (!mismatch && expected.contentHash) {
+          // Re-read and hash-compare only when mtime+size appear unchanged;
+          // this is the narrow window that the hash closes: same-length/same-mtime
+          // concurrent writes that would otherwise slip past the stamp check.
+          const currentBuf = await readFile(abs).catch(() => null)
+          if (
+            currentBuf !== null &&
+            createHash('sha256').update(currentBuf).digest('hex') !== expected.contentHash
+          ) {
+            throw new TanzoValidationError(
+              'FS_STALE_WRITE',
+              `File changed on disk since it was read: ${p}. Re-read it with fileRead before editing.`,
+              { recoverable: true }
+            )
+          }
+        } else if (mismatch) {
           throw new TanzoValidationError(
             'FS_STALE_WRITE',
             `File changed on disk since it was read: ${p}. Re-read it with fileRead before editing.`,

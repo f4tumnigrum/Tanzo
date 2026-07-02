@@ -89,6 +89,79 @@ describe('main/agent/fs/workspace-fs', () => {
     )
   })
 
+  it('rejects stale writes when content changed but mtime+size appear unchanged', async () => {
+    const root = await tempRoot()
+    const fs = createWorkspaceFs(root)
+    // Write two files of the same length so the mtime+size check alone could miss it.
+    await writeFile(join(root, 'a.txt'), 'AAAA')
+    const { meta, stamp } = await fs.readTextMeta('a.txt')
+
+    // Overwrite with different content of the same byte length.
+    await writeFile(join(root, 'a.txt'), 'BBBB')
+    // Force the mtime to the original value so only the hash differs.
+    const { utimesSync } = await import('node:fs')
+    utimesSync(join(root, 'a.txt'), new Date(stamp.mtimeMs), new Date(stamp.mtimeMs))
+
+    await expect(fs.writeTextMeta('a.txt', 'ours', meta, undefined, stamp)).rejects.toMatchObject({
+      code: 'FS_STALE_WRITE'
+    })
+    expect(await readFile(join(root, 'a.txt'), 'utf8')).toBe('BBBB')
+  })
+
+  it('stamp returned by readTextMeta includes a non-empty contentHash', async () => {
+    const root = await tempRoot()
+    const fs = createWorkspaceFs(root)
+    await writeFile(join(root, 'f.txt'), 'hello')
+    const { stamp } = await fs.readTextMeta('f.txt')
+    expect(stamp.contentHash).toMatch(/^[0-9a-f]{64}$/) // sha256 hex
+  })
+
+  it('refuses to write credential and .git paths inside the workspace', async () => {
+    const root = await tempRoot()
+    const fs = createWorkspaceFs(root)
+
+    for (const path of ['.env', '.env.local', '.ssh/authorized_keys', '.aws/credentials']) {
+      await expect(fs.writeAtomic(path, 'x')).rejects.toMatchObject({
+        code: 'FS_CREDENTIAL_PATH'
+      })
+      await expect(
+        fs.writeTextMeta(path, 'x', { eol: 'lf', encoding: 'utf8', bom: false })
+      ).rejects.toMatchObject({ code: 'FS_CREDENTIAL_PATH' })
+    }
+
+    for (const path of ['.git/hooks/post-checkout', '.git/config']) {
+      await expect(fs.writeAtomic(path, 'x')).rejects.toMatchObject({ code: 'FS_GIT_PATH' })
+    }
+
+    // Absolute form of the same paths must be caught too (resolveWrite accepts
+    // absolute paths inside the root; the guard re-checks the relative form).
+    await expect(fs.writeAtomic(join(root, '.env'), 'x')).rejects.toMatchObject({
+      code: 'FS_CREDENTIAL_PATH'
+    })
+    await expect(
+      fs.writeAtomic(join(root, '.git', 'hooks', 'pre-commit'), 'x')
+    ).rejects.toMatchObject({ code: 'FS_GIT_PATH' })
+
+    // Ordinary writes are unaffected.
+    await fs.writeAtomic('src/ok.txt', 'fine')
+    expect(await readFile(join(root, 'src', 'ok.txt'), 'utf8')).toBe('fine')
+    // Files merely containing "env"/"git" in the name are not blocked.
+    await fs.writeAtomic('environment.ts', 'fine')
+    await fs.writeAtomic('gitlog.txt', 'fine')
+  })
+
+  it('still refuses credential writes in dangerous mode but allows .git writes', async () => {
+    const root = await tempRoot()
+    const fs = createWorkspaceFs(root, { dangerous: true })
+
+    await expect(fs.writeAtomic(join(root, '.env'), 'x')).rejects.toMatchObject({
+      code: 'FS_CREDENTIAL_PATH'
+    })
+    // dangerous mode is an explicit full-disk opt-in; .git is writable there.
+    await fs.writeAtomic(join(root, '.git', 'info', 'exclude'), 'node_modules')
+    expect(await readFile(join(root, '.git', 'info', 'exclude'), 'utf8')).toBe('node_modules')
+  })
+
   it('allows absolute paths outside the workspace in dangerous mode', async () => {
     const root = await tempRoot()
     const outside = await tempRoot()

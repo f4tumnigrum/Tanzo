@@ -5,13 +5,19 @@ export interface FileMeta {
 }
 
 /**
- * A snapshot of a file's on-disk identity, captured at read time and re-checked
+ * A snapshot of a file's on-disk identity captured at read time and re-checked
  * before an edit writes back. Used to detect that the file changed underneath
  * an edit tool between read and write (concurrent/external modification).
+ *
+ * `contentHash` is the hex-encoded SHA-256 of the raw file buffer. It guards
+ * against the false-positive window in mtime+size comparison: two writes that
+ * land within the mtime resolution AND produce the same byte length (e.g. a
+ * same-length reformatting by an external tool) now still trigger FS_STALE_WRITE.
  */
 export interface FileStamp {
   mtimeMs: number
   size: number
+  contentHash: string
 }
 
 export interface TextWindow {
