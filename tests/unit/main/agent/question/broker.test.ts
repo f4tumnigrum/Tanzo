@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createQuestionBroker } from '@main/agent/question/broker'
 
 const input = {
@@ -167,5 +167,66 @@ describe('main/agent/question/broker', () => {
     await expect(
       broker.respond('chat-1', 'call-1', { kind: 'answers', answers: [] })
     ).rejects.toThrow('Question is no longer pending.')
+  })
+
+  it('auto-resolves as declined when the timeout fires', async () => {
+    vi.useFakeTimers()
+    try {
+      const broker = createQuestionBroker()
+      const promise = broker.ask('chat-1', 'call-1', input, undefined, 5_000)
+
+      // Should still be pending before the deadline.
+      vi.advanceTimersByTime(4_999)
+      expect(vi.getTimerCount()).toBe(1)
+
+      vi.advanceTimersByTime(1)
+      const result = await promise
+      expect(result).toMatchObject({ declined: true, note: expect.stringContaining('timed out') })
+
+      // Timer must be cleared after settlement.
+      expect(vi.getTimerCount()).toBe(0)
+
+      // A respond after timeout is a no-op error (question is gone from pending).
+      await expect(
+        broker.respond('chat-1', 'call-1', { kind: 'answers', answers: [] })
+      ).rejects.toThrow('Question is no longer pending.')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('clears the timer when the question is answered normally', async () => {
+    vi.useFakeTimers()
+    try {
+      const broker = createQuestionBroker()
+      const promise = broker.ask('chat-1', 'call-1', input, undefined, 60_000)
+      expect(vi.getTimerCount()).toBe(1)
+
+      await broker.respond('chat-1', 'call-1', {
+        kind: 'answers',
+        answers: [{ id: 'scope', type: 'single_select', values: ['current'], custom: false }]
+      })
+      await promise
+      // Timer must be cleared on normal settlement — no leak.
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('clears the timer when the question is aborted', async () => {
+    vi.useFakeTimers()
+    try {
+      const broker = createQuestionBroker()
+      const controller = new AbortController()
+      const promise = broker.ask('chat-1', 'call-1', input, controller.signal, 60_000)
+      expect(vi.getTimerCount()).toBe(1)
+
+      controller.abort()
+      await expect(promise).rejects.toMatchObject({ name: 'AbortError' })
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

@@ -5,12 +5,21 @@ export type QuestionReply =
   | { kind: 'answers'; answers: AskQuestionAnswer[] }
   | { kind: 'declined'; note?: string }
 
+/**
+ * Default timeout before an unanswered question self-resolves as declined.
+ * Prevents a turn from hanging forever when the user closes the panel without
+ * explicitly answering or cancelling. 30 minutes is generous enough for a real
+ * user working at the desk but short enough to avoid indefinite slot starvation.
+ */
+const DEFAULT_QUESTION_TIMEOUT_MS = 30 * 60_000
+
 export interface QuestionBroker {
   ask(
     chatId: string,
     questionId: string,
     input: AskQuestionInput,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    timeoutMs?: number
   ): Promise<AskQuestionOutput>
   respond(chatId: string, questionId: string, reply: QuestionReply): Promise<void>
   clearForChat(chatId: string): void
@@ -20,6 +29,7 @@ interface PendingQuestionState {
   payload: PendingQuestion
   resolve: (output: AskQuestionOutput) => void
   reject: (error: Error) => void
+  timer: ReturnType<typeof setTimeout> | undefined
 }
 
 function abortError(): Error {
@@ -73,14 +83,20 @@ function validateAnswers(input: AskQuestionInput, answers: AskQuestionAnswer[]):
 export function createQuestionBroker(): QuestionBroker {
   const pending = new Map<string, PendingQuestionState>()
 
+  /**
+   * Remove the question from `pending`, clear its timer, and return the state
+   * so the caller can settle it. Idempotent — returns undefined when already cleared.
+   */
   function clear(questionId: string): PendingQuestionState | undefined {
     const state = pending.get(questionId)
+    if (!state) return undefined
     pending.delete(questionId)
+    if (state.timer !== undefined) clearTimeout(state.timer)
     return state
   }
 
   return {
-    ask(chatId, questionId, input, signal) {
+    ask(chatId, questionId, input, signal, timeoutMs = DEFAULT_QUESTION_TIMEOUT_MS) {
       const existing = clear(questionId)
       existing?.reject(new Error('Question was replaced by a newer request.'))
 
@@ -90,21 +106,40 @@ export function createQuestionBroker(): QuestionBroker {
           return
         }
 
+        const settle = (output: AskQuestionOutput): void => {
+          signal?.removeEventListener('abort', onAbort)
+          resolve(output)
+        }
+
         const onAbort = (): void => {
           clear(questionId)
           reject(abortError())
         }
 
+        // Auto-resolve as declined after the timeout window so the agent turn
+        // is never stuck waiting for a user who closed the panel or walked away.
+        const timer = setTimeout(() => {
+          // clear() removes from map and clears the timer reference itself;
+          // use the returned state to guard against a race where respond() fired
+          // concurrently with the timer callback.
+          const s = clear(questionId)
+          if (s) {
+            signal?.removeEventListener('abort', onAbort)
+            s.resolve({
+              declined: true,
+              note: 'Question timed out: no response within the allowed window.'
+            })
+          }
+        }, timeoutMs)
+
         pending.set(questionId, {
           payload: { chatId, questionId, input },
-          resolve: (output) => {
-            signal?.removeEventListener('abort', onAbort)
-            resolve(output)
-          },
+          resolve: settle,
           reject: (error) => {
             signal?.removeEventListener('abort', onAbort)
             reject(error)
-          }
+          },
+          timer
         })
         signal?.addEventListener('abort', onAbort, { once: true })
       })
