@@ -205,7 +205,7 @@ export const validationDataSchemas = {
     windowTokens: z.number().optional(),
     compactionTriggerTokens: z.number().optional(),
     compactionTriggered: z.boolean().optional(),
-    source: z.enum(['unavailable', 'reported']),
+    source: z.enum(['unavailable', 'reported', 'estimated']),
     cacheKind: z.enum(['ephemeral', 'auto', 'unsupported']),
     serverCompaction: z.boolean(),
     hitRatio: z.number().optional()

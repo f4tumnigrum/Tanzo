@@ -369,13 +369,17 @@ describe('main/agent/context budget and compaction policy', () => {
     expect(usage.exceeds(9_999)).toBe(true)
   })
 
-  it('does not provide estimated input tokens without reported usage', () => {
+  it('uses char-based estimate when no reported usage anchor is available', () => {
     const budget = createBudget()
+    // "hello world" = 11 chars → ceil(11/4) = 3 tokens estimated
     const messages: ModelMessage[] = [{ role: 'user', content: 'hello world' }]
 
-    expect(budget.measureUsage('c', messages)).toMatchObject({ source: 'unavailable' })
-    expect(budget.measureUsage('c', messages).inputTokens).toBeUndefined()
-    expect(budget.measureUsage('c', messages).exceeds(1)).toBe(false)
+    const usage = budget.measureUsage('c', messages)
+    expect(usage.source).toBe('estimated')
+    expect(usage.inputTokens).toBe(3)
+    // Does not exceed a threshold larger than the estimate.
+    expect(usage.exceeds(3)).toBe(false)
+    expect(usage.exceeds(2)).toBe(true)
   })
 
   it('uses reported budget anchors for automatic compaction decisions', () => {

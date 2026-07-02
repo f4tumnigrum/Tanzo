@@ -292,7 +292,7 @@ export type TanzoDataParts = {
     windowTokens?: number
     compactionTriggerTokens?: number
     compactionTriggered?: boolean
-    source: 'unavailable' | 'reported'
+    source: 'unavailable' | 'reported' | 'estimated'
     cacheKind: 'ephemeral' | 'auto' | 'unsupported'
     serverCompaction: boolean
 

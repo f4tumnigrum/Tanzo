@@ -28,7 +28,7 @@ export interface ContextSnapshot {
   windowTokens: number
   compactionTriggerTokens: number
   compactionTriggered: boolean
-  source: 'unavailable' | 'reported'
+  source: 'unavailable' | 'reported' | 'estimated'
   cacheKind: CacheKind
   serverCompaction: boolean
   hitRatio?: number

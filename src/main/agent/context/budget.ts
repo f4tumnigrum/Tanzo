@@ -7,8 +7,42 @@ export interface Anchor {
 
 export interface ContextUsage {
   inputTokens?: number
-  source: 'reported' | 'unavailable'
+  source: 'reported' | 'unavailable' | 'estimated'
   exceeds(tokenCount: number): boolean
+}
+
+/**
+ * Rough character-to-token heuristic (4 chars ≈ 1 token) applied to the full
+ * message array. Used as a conservative fallback when no provider-reported
+ * anchor is available — e.g. right after compaction clears the anchor, or
+ * when a provider does not report usage. The estimate intentionally over-counts
+ * (structured parts are counted by their JSON length) so it fails safe toward
+ * triggering compaction rather than missing it.
+ */
+function estimateTokensFromMessages(messages: ModelMessage[]): number {
+  let chars = 0
+  for (const msg of messages) {
+    const content = msg.content
+    if (typeof content === 'string') {
+      chars += content.length
+    } else if (Array.isArray(content)) {
+      for (const part of content) {
+        if (typeof part === 'object' && part !== null) {
+          if ('text' in part && typeof part.text === 'string') {
+            chars += part.text.length
+          } else {
+            // Structured parts (tool calls, images, etc.) – use JSON length as proxy.
+            try {
+              chars += JSON.stringify(part).length
+            } catch {
+              chars += 64 // conservative minimum per opaque part
+            }
+          }
+        }
+      }
+    }
+  }
+  return Math.ceil(chars / 4)
 }
 
 export function createBudget() {
@@ -23,13 +57,39 @@ export function createBudget() {
     return a ? { tokens: a.inputTokens, source: 'reported' } : { source: 'unavailable' }
   }
 
-  function measureUsage(chatId: string, _messages: ModelMessage[]): ContextUsage {
-    void _messages
-    const { tokens, source } = reportedInput(chatId)
+  /**
+   * Measure the effective context size for `chatId` given the current
+   * `messages`. Strategy:
+   *
+   *  1. If a provider-reported anchor exists, use it as the authoritative
+   *     floor — it reflects actual tokenisation by the model.
+   *  2. Compute a char-based estimate from `messages` as a fallback / safety
+   *     net. This fires when:
+   *     - No anchor yet (first turn, or just after compaction cleared it).
+   *     - The anchor is stale because the conversation grew substantially since
+   *       the last reported turn (e.g. a large user paste between turns).
+   *  3. Return the maximum of anchor and estimate so neither path can mask an
+   *     over-limit condition.
+   */
+  function measureUsage(chatId: string, messages: ModelMessage[]): ContextUsage {
+    const { tokens: anchorTokens, source } = reportedInput(chatId)
+    const estimate = estimateTokensFromMessages(messages)
+
+    if (anchorTokens !== undefined) {
+      // Use max so a large paste between turns isn't hidden by a stale anchor.
+      const effective = Math.max(anchorTokens, estimate)
+      return {
+        inputTokens: effective,
+        source: effective > anchorTokens ? 'estimated' : source,
+        exceeds: (tokenCount: number) => effective > tokenCount
+      }
+    }
+
+    // No anchor at all (post-compaction or first turn).
     return {
-      ...(tokens !== undefined ? { inputTokens: tokens } : {}),
-      source,
-      exceeds: (tokenCount: number) => tokens !== undefined && tokens > tokenCount
+      inputTokens: estimate,
+      source: 'estimated',
+      exceeds: (tokenCount: number) => estimate > tokenCount
     }
   }
 
