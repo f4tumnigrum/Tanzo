@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-07-03
+
+### Added
+
+- Providers: OpenAI Chat Completions is available as a separate `openai-chat`
+  provider alongside the existing OpenAI Responses API provider, with dedicated
+  Chat Completions options, model discovery, context strategy routing, and a
+  migration that preserves existing provider data while widening provider-id
+  constraints.
+
 ### Changed
 
 - Dependencies: AI SDK moved from the v7 beta line to stable releases
@@ -18,6 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dependencies: routine patch/minor updates across the stack (TanStack Query
   5.101, better-sqlite3 12.11, recharts 3.9, Vite 8.1, Vitest 4.1.9,
   Tailwind 4.3.2, electron-builder 26.15.3, and others).
+- Message persistence now keeps a per-conversation in-memory mirror and memoizes
+  message JSON validation, removing the synchronous O(conversation) hot paths
+  that ran during active streams and conversation loads.
+- Streaming chat scrolling now uses React Virtuoso's native follow/autoscroll
+  machinery instead of a manual sticky-bottom hook, avoiding competing scroll
+  writers while messages grow in place.
 
 ## [0.2.5] - 2026-07-03
 
@@ -110,7 +126,8 @@ Initial public release.
 - Subprocess hooks compatible with Codex / Claude Code event triggers.
 - Architecture reference under `docs/architecture/`.
 
-[Unreleased]: https://github.com/f4tumnigrum/Tanzo/compare/v0.2.5...HEAD
+[Unreleased]: https://github.com/f4tumnigrum/Tanzo/compare/v0.2.6...HEAD
+[0.2.6]: https://github.com/f4tumnigrum/Tanzo/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/f4tumnigrum/Tanzo/compare/v0.2.4...v0.2.5
 [0.1.1]: https://github.com/f4tumnigrum/Tanzo/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/f4tumnigrum/Tanzo/releases/tag/v0.1.0
