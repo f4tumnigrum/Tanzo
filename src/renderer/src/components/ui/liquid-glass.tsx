@@ -123,7 +123,17 @@ function LiquidGlass({
     <div
       ref={ref}
       data-slot="liquid-glass"
-      style={refract ? ({ '--lg-filter': `url(#${filterId})` } as React.CSSProperties) : undefined}
+      style={
+        refract
+          ? // Anchor the filter reference to the document URL: fragment-only
+            // url(#id) inside var() resolves against the stylesheet that uses
+            // it, which is an external CSS chunk in production builds, so the
+            // reference silently breaks after packaging.
+            ({
+              '--lg-filter': `url("${window.location.href.split('#')[0]}#${filterId}")`
+            } as React.CSSProperties)
+          : undefined
+      }
       className={cn('relative isolate rounded-xl', className)}
       onPointerMove={handlePointerMove}
       {...props}
