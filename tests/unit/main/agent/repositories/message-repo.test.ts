@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TanzoUIMessage } from '@shared/agent-message'
+import type { SqlDatabase } from '@main/database/types'
 import { createMessageRepo } from '@main/agent/repositories/message-repo'
 import { createRealDb, type RealDb } from '../../../../helpers/real-db'
 
@@ -45,6 +46,37 @@ function insertRawMessage(db: RealDb, chatId: string, message: TanzoUIMessage, s
     message_json: JSON.stringify({ v: 1, message }),
     created_at: 0
   })
+}
+
+/**
+ * Wrap a db so we can count how many times the full active-log SELECT runs.
+ * That query is uniquely identified by the exact `selectLog` WHERE/ORDER tail;
+ * `selectRowsAfterSeq`/`selectRowsInSeqRange` carry an extra `AND m.seq ...`.
+ */
+function instrumentLogSelect(source: RealDb): {
+  db: SqlDatabase
+  logSelectCount: () => number
+} {
+  let count = 0
+  const wrapped: SqlDatabase = {
+    exec: (sql) => source.exec(sql),
+    transaction: (fn) => source.transaction(fn),
+    pragma: (directive) => source.pragma(directive),
+    close: () => source.close(),
+    prepare: (sql) => {
+      const stmt = source.prepare(sql)
+      if (!sql.includes('WHERE m.conversation_id = ? ORDER BY m.seq')) return stmt
+      return {
+        run: (params) => stmt.run(params),
+        get: (params) => stmt.get(params),
+        all: (params) => {
+          count += 1
+          return stmt.all(params)
+        }
+      }
+    }
+  }
+  return { db: wrapped, logSelectCount: () => count }
 }
 
 describe('message-repo (real sqlite engine)', () => {
@@ -314,5 +346,111 @@ describe('message-repo (real sqlite engine)', () => {
       .prepare('SELECT id FROM quarantined_messages WHERE conversation_id = ?')
       .all(['c1']) as Array<{ id: string }>
     expect(quarantined.map((row) => row.id)).toEqual(['a1'])
+  })
+
+  it('hydrates the write mirror once and skips the full-log SELECT on later writes', async () => {
+    const { db: instrumented, logSelectCount } = instrumentLogSelect(db)
+    const repo = createMessageRepo(instrumented, logger)
+
+    repo.writeActive('c1', [userMessage('u1', 'hi'), assistantMessage('a1', '')])
+    const afterHydration = logSelectCount()
+    expect(afterHydration).toBe(1)
+
+    // 20 streaming steps growing the same assistant message. Each step used to
+    // re-run the full active-log SELECT inside the write transaction.
+    for (let i = 1; i <= 20; i += 1) {
+      repo.writeActive('c1', [userMessage('u1', 'hi'), assistantMessage('a1', 'x'.repeat(i))])
+    }
+
+    // The mirror served every subsequent write, so no extra full-log SELECT ran.
+    expect(logSelectCount()).toBe(afterHydration)
+
+    const loaded = await repo.load('c1')
+    expect((loaded[1].parts[0] as { text: string }).text).toBe('x'.repeat(20))
+  })
+
+  it('restarts seq numbering after deleteAll invalidates the mirror', async () => {
+    const repo = createMessageRepo(db, logger)
+    repo.writeActive('c1', [userMessage('m1', 'one'), userMessage('m2', 'two')])
+    repo.deleteAll('c1')
+    repo.writeActive('c1', [userMessage('m3', 'three')])
+    expect(
+      db.prepare('SELECT id, seq FROM messages WHERE conversation_id = ? ORDER BY seq').all(['c1'])
+    ).toEqual([{ id: 'm3', seq: 0 }])
+  })
+
+  it('reuses renumbered seqs after finalizeCompaction invalidates the mirror', async () => {
+    const repo = createMessageRepo(db, logger)
+    repo.writeActive('c1', [userMessage('m1', 'one'), userMessage('m2', 'two')])
+    repo.finalizeCompaction('c1', ['m1'], 'sum', [summaryMessage('sum'), userMessage('m2', 'two')])
+
+    // After compaction renumbers the retained tail, a fresh append must land on
+    // a seq computed from the current DB state, not a stale cached counter.
+    expect(() =>
+      repo.writeActive('c1', [
+        summaryMessage('sum'),
+        userMessage('m2', 'two'),
+        userMessage('m3', 'three')
+      ])
+    ).not.toThrow()
+    expect((await repo.load('c1')).map((m) => m.id)).toEqual(['sum', 'm2', 'm3'])
+  })
+
+  it('re-hydrates the mirror after a rolled-back writeActive', async () => {
+    const repo = createMessageRepo(db, logger)
+    repo.writeActive('c1', [userMessage('m1', 'one')])
+    expect(() =>
+      repo.writeActive('c1', [userMessage('m2', 'a'), userMessage('m2', 'b')])
+    ).toThrow()
+    // The failed m2 insert was rolled back and the mirror discarded, so the next
+    // write appends at seq 1 instead of a stale seq left behind by the abort.
+    repo.writeActive('c1', [userMessage('m1', 'one'), userMessage('m3', 'three')])
+    expect(
+      db.prepare('SELECT id, seq FROM messages WHERE conversation_id = ? ORDER BY seq').all(['c1'])
+    ).toEqual([
+      { id: 'm1', seq: 0 },
+      { id: 'm3', seq: 1 }
+    ])
+  })
+
+  it('serves repeated loads from the validation cache (same object identity)', async () => {
+    const repo = createMessageRepo(db, logger)
+    repo.writeActive('c1', [userMessage('m1', 'hello'), userMessage('m2', 'world')])
+
+    const first = await repo.loadDisplay('c1')
+    const second = await repo.loadDisplay('c1')
+
+    // Identical references prove Zod validation did not re-run on the second load.
+    expect(second[0]).toBe(first[0])
+    expect(second[1]).toBe(first[1])
+  })
+
+  it('revalidates only the message whose content changed between loads', async () => {
+    const repo = createMessageRepo(db, logger)
+    repo.writeActive('c1', [userMessage('m1', 'stable'), assistantMessage('a1', 'draft')])
+    const first = await repo.loadDisplay('c1')
+
+    repo.writeActive('c1', [userMessage('m1', 'stable'), assistantMessage('a1', 'final')])
+    const second = await repo.loadDisplay('c1')
+
+    // Unchanged message comes from the cache; changed message is a fresh object.
+    expect(second[0]).toBe(first[0])
+    expect(second[1]).not.toBe(first[1])
+    expect((second[1].parts[0] as { text: string }).text).toBe('final')
+  })
+
+  it('shares the validation cache across load variants', async () => {
+    const repo = createMessageRepo(db, logger)
+    repo.writeActive('c1', [userMessage('m1', 'one'), userMessage('m2', 'two')])
+
+    const display = await repo.loadDisplay('c1')
+    const history = await repo.loadFullHistory('c1')
+    const context = await repo.load('c1')
+
+    // All read paths flow through validateRows and reuse the same entries.
+    expect(history[0]).toBe(display[0])
+    expect(history[1]).toBe(display[1])
+    expect(context[0]).toBe(display[0])
+    expect(context[1]).toBe(display[1])
   })
 })
