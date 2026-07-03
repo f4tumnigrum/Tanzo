@@ -7,12 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.7] - 2026-07-03
+
 ### Changed
 
 - Chat message list and conversation sidebar no longer use virtualization
   (`react-virtuoso` removed). Both render plain scrollers; off-screen content
   is skipped via CSS `content-visibility: auto`, and streaming sticky-bottom
   is a single ResizeObserver re-pin with native scroll anchoring disabled.
+
+### Added
+
+- Liquid-glass UI primitive applied across the compose menus, buttons, and the
+  scroll-to-bottom control.
 
 ## [0.2.6] - 2026-07-03
 
@@ -133,7 +140,8 @@ Initial public release.
 - Subprocess hooks compatible with Codex / Claude Code event triggers.
 - Architecture reference under `docs/architecture/`.
 
-[Unreleased]: https://github.com/f4tumnigrum/Tanzo/compare/v0.2.6...HEAD
+[Unreleased]: https://github.com/f4tumnigrum/Tanzo/compare/v0.2.7...HEAD
+[0.2.7]: https://github.com/f4tumnigrum/Tanzo/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/f4tumnigrum/Tanzo/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/f4tumnigrum/Tanzo/compare/v0.2.4...v0.2.5
 [0.1.1]: https://github.com/f4tumnigrum/Tanzo/compare/v0.1.0...v0.1.1
