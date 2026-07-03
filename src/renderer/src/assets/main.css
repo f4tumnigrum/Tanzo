@@ -603,7 +603,8 @@
 }
 
 /* Liquid glass surface (see components/ui/liquid-glass.tsx).
-   Backdrop refraction + frost run in one backdrop-filter pass on ::before;
+   Backdrop refraction + frost run on a real child element instead of ::before;
+   keeping the SVG filter URL in inline style avoids production CSS chunk URL resolution issues.
    ::after draws a pointer-tracking specular ring via mask-composite. */
 [data-slot='liquid-glass'] {
   --lg-px: 0.5;
@@ -611,8 +612,7 @@
   box-shadow: var(--glass-shadow);
 }
 
-[data-slot='liquid-glass']::before {
-  content: '';
+[data-slot='liquid-glass-backdrop'] {
   position: absolute;
   inset: 0;
   z-index: -1;
@@ -620,13 +620,6 @@
   background: var(--glass-surface-bg);
   backdrop-filter: blur(var(--glass-surface-blur)) saturate(var(--glass-surface-saturation));
   -webkit-backdrop-filter: blur(var(--glass-surface-blur)) saturate(var(--glass-surface-saturation));
-}
-
-[data-slot='liquid-glass'][data-lg-ready]::before {
-  backdrop-filter: var(--lg-filter) blur(var(--glass-surface-blur))
-    saturate(var(--glass-surface-saturation));
-  -webkit-backdrop-filter: var(--lg-filter) blur(var(--glass-surface-blur))
-    saturate(var(--glass-surface-saturation));
 }
 
 [data-slot='liquid-glass']::after {
@@ -652,8 +645,7 @@
 }
 
 @media (prefers-reduced-transparency: reduce) {
-  [data-slot='liquid-glass']::before,
-  [data-slot='liquid-glass'][data-lg-ready]::before {
+  [data-slot='liquid-glass-backdrop'] {
     background: var(--card);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;

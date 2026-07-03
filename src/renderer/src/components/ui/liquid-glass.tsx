@@ -59,6 +59,7 @@ function LiquidGlass({
   const reactId = React.useId()
   const filterId = `lg-${reactId.replace(/[^a-zA-Z0-9_-]/g, '')}`
   const ref = React.useRef<HTMLDivElement>(null)
+  const backdropRef = React.useRef<HTMLDivElement>(null)
   const mapRefs = React.useRef<(SVGFEImageElement | null)[]>([])
   const rafRef = React.useRef(0)
   // Frost tier: no SVG filter at all. Mounting the displacement filter with
@@ -68,7 +69,8 @@ function LiquidGlass({
 
   React.useLayoutEffect(() => {
     const el = ref.current
-    if (!el || !refract) return
+    const backdrop = backdropRef.current
+    if (!el || !backdrop || !refract) return
     let cancelled = false
     let latest = ''
     const refresh = (): void => {
@@ -88,6 +90,9 @@ function LiquidGlass({
       const apply = (): void => {
         if (cancelled || uri !== latest) return
         for (const node of mapRefs.current) node?.setAttribute('href', uri)
+        const filter = `url(#${filterId}) blur(var(--glass-surface-blur)) saturate(var(--glass-surface-saturation))`
+        backdrop.style.backdropFilter = filter
+        backdrop.style.setProperty('-webkit-backdrop-filter', filter)
         el.setAttribute('data-lg-ready', '')
       }
       img.decode().then(apply, apply)
@@ -99,7 +104,7 @@ function LiquidGlass({
       cancelled = true
       observer.disconnect()
     }
-  }, [aberration, refract])
+  }, [aberration, filterId, refract])
 
   React.useEffect(() => () => cancelAnimationFrame(rafRef.current), [])
 
@@ -123,21 +128,11 @@ function LiquidGlass({
     <div
       ref={ref}
       data-slot="liquid-glass"
-      style={
-        refract
-          ? // Anchor the filter reference to the document URL: fragment-only
-            // url(#id) inside var() resolves against the stylesheet that uses
-            // it, which is an external CSS chunk in production builds, so the
-            // reference silently breaks after packaging.
-            ({
-              '--lg-filter': `url("${window.location.href.split('#')[0]}#${filterId}")`
-            } as React.CSSProperties)
-          : undefined
-      }
       className={cn('relative isolate rounded-xl', className)}
       onPointerMove={handlePointerMove}
       {...props}
     >
+      <div ref={backdropRef} data-slot="liquid-glass-backdrop" aria-hidden="true" />
       {refract ? (
         <svg width="0" height="0" aria-hidden="true" className="absolute">
           <defs>
