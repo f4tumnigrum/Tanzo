@@ -14,7 +14,7 @@ import { RunNotice } from './compose/run-notice'
 import { StreamingIndicator } from './message/streaming-indicator'
 import { CompactionMessage } from './message/compaction-message'
 import { SubagentApprovalCard } from './tool/subagent-approval-card'
-import { VirtualizedMessages } from './virtualized-messages'
+import { MessageList } from './message-list'
 
 export function ActiveChat({
   chatId,
@@ -91,7 +91,7 @@ export function ActiveChat({
       {state.messages.length > 0 ? (
         <div className="relative min-h-0 flex-1">
           <div className="absolute inset-0">
-            <VirtualizedMessages
+            <MessageList
               messages={state.messages}
               activeStreamingMessageId={streamingMessageId}
               isStreaming={state.isStreaming}

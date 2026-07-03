@@ -5,6 +5,7 @@ import { ArrowUp, CircleStop, Paperclip, ShieldAlert, ShieldQuestion, Skull } fr
 import type { SlashCommandDef } from '@shared/slash-command'
 import type { PermissionMode } from '@shared/policy'
 import { Button } from '@/components/ui/button'
+import { LiquidGlass } from '@/components/ui/liquid-glass'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
@@ -13,7 +14,7 @@ import { useSlashMenu } from './use-slash-menu'
 import { MentionMenu } from './mention-menu'
 import { useMentionMenu, type PluginMentionOption } from './use-mention-menu'
 import { useAttachments } from './use-attachments'
-import { composeSurfaceClass, toolbarBaseButtonClass } from './surface-style'
+import { toolbarBaseButtonClass } from './surface-style'
 import { ComposerAttachment } from './composer-attachment'
 
 const MODE_ORDER: readonly PermissionMode[] = ['default', 'plan', 'yolo', 'dangerous']
@@ -305,13 +306,12 @@ export function ChatInput({
           />
         </div>
       ) : null}
-      <div
+      <LiquidGlass
+        aberration
         className={cn(
-          'group relative flex min-h-[114px] flex-col overflow-hidden',
-          'rounded-[var(--radius-xl)]',
-          composeSurfaceClass,
-          'backdrop-blur-xl backdrop-saturate-[1.6]',
-          'transition-[background-color,border-color,box-shadow] duration-200 ease-out',
+          'flex min-h-[114px] flex-col overflow-hidden',
+          'rounded-[var(--radius-xl)] shadow-none!',
+          'transition-shadow duration-200 ease-out',
           isDragging && 'ring-2 ring-ring/60'
         )}
       >
@@ -437,7 +437,7 @@ export function ChatInput({
             ) : null}
             {trailingSlot}
 
-            <div className="ml-0.5 inline-flex items-center gap-0.5 rounded-[var(--radius-4xl)] border border-[var(--compose-control-border)] bg-[var(--compose-control-bg)] p-0.5 shadow-xs backdrop-blur-[var(--compose-surface-blur)]">
+            <div className="ml-0.5 inline-flex items-center gap-0.5 rounded-[var(--radius-4xl)] border border-[var(--compose-control-border)] bg-[var(--compose-control-bg)] p-0.5 shadow-xs">
               <Tooltip>
                 <TooltipTrigger
                   render={(triggerProps) => (
@@ -505,7 +505,7 @@ export function ChatInput({
             </div>
           </div>
         </div>
-      </div>
+      </LiquidGlass>
     </div>
   )
 }

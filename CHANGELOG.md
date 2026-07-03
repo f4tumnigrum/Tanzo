@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Chat message list and conversation sidebar no longer use virtualization
+  (`react-virtuoso` removed). Both render plain scrollers; off-screen content
+  is skipped via CSS `content-visibility: auto`, and streaming sticky-bottom
+  is a single ResizeObserver re-pin with native scroll anchoring disabled.
+
 ## [0.2.6] - 2026-07-03
 
 ### Added

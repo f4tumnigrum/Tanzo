@@ -154,6 +154,11 @@
   --toolbar-surface-bg: color-mix(in oklab, var(--background) 88%, transparent);
   --toolbar-surface-blur: 14px;
   --toolbar-surface-saturation: 1.04;
+  --glass-surface-bg: color-mix(in oklab, var(--background) 52%, transparent);
+  --glass-surface-blur: 3px;
+  --glass-surface-saturation: 1.5;
+  --glass-highlight: oklch(1 0 0);
+  --glass-shadow: 0 16px 40px rgb(15 23 42 / 0.25);
   --compose-surface-bg: color-mix(in oklab, var(--card) 78%, transparent);
   --compose-surface-border: color-mix(in oklab, var(--border) 64%, transparent);
   --compose-surface-blur: 18px;
@@ -249,6 +254,11 @@
   --toolbar-surface-bg: color-mix(in oklab, var(--background) 84%, transparent);
   --toolbar-surface-blur: 16px;
   --toolbar-surface-saturation: 1;
+  --glass-surface-bg: color-mix(in oklab, var(--background) 16%, transparent);
+  --glass-surface-blur: 4px;
+  --glass-surface-saturation: 1.4;
+  --glass-highlight: oklch(0.95 0.004 255);
+  --glass-shadow: 0 16px 44px rgb(0 0 0 / 0.5);
   --compose-surface-bg: color-mix(
     in oklab,
     var(--input) 38%,
@@ -590,6 +600,64 @@
   backdrop-filter: blur(var(--toolbar-surface-blur)) saturate(var(--toolbar-surface-saturation));
   -webkit-backdrop-filter: blur(var(--toolbar-surface-blur))
     saturate(var(--toolbar-surface-saturation));
+}
+
+/* Liquid glass surface (see components/ui/liquid-glass.tsx).
+   Backdrop refraction + frost run in one backdrop-filter pass on ::before;
+   ::after draws a pointer-tracking specular ring via mask-composite. */
+[data-slot='liquid-glass'] {
+  --lg-px: 0.5;
+  --lg-py: 0.5;
+  box-shadow: var(--glass-shadow);
+}
+
+[data-slot='liquid-glass']::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--glass-surface-bg);
+  backdrop-filter: blur(var(--glass-surface-blur)) saturate(var(--glass-surface-saturation));
+  -webkit-backdrop-filter: blur(var(--glass-surface-blur)) saturate(var(--glass-surface-saturation));
+}
+
+[data-slot='liquid-glass'][data-lg-ready]::before {
+  backdrop-filter: var(--lg-filter) blur(var(--glass-surface-blur))
+    saturate(var(--glass-surface-saturation));
+  -webkit-backdrop-filter: var(--lg-filter) blur(var(--glass-surface-blur))
+    saturate(var(--glass-surface-saturation));
+}
+
+[data-slot='liquid-glass']::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    calc(115deg + (var(--lg-px) - 0.5) * 60deg),
+    color-mix(in oklab, var(--glass-highlight) 6%, transparent),
+    color-mix(in oklab, var(--glass-highlight) calc(14% + var(--lg-py) * 12%), transparent) 45%,
+    color-mix(in oklab, var(--glass-highlight) 38%, transparent) 70%,
+    color-mix(in oklab, var(--glass-highlight) 6%, transparent)
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  [data-slot='liquid-glass']::before,
+  [data-slot='liquid-glass'][data-lg-ready]::before {
+    background: var(--card);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 
 @keyframes compaction-shimmer {

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Blocks, File, Folder } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { composeSurfaceClass } from './surface-style'
+import { LiquidGlass } from '@/components/ui/liquid-glass'
 import { mentionItemId, type MentionItem } from './use-mention-menu'
 
 interface MentionMenuProps {
@@ -104,31 +104,31 @@ export function MentionMenu({
   if (items.length === 0) return null
 
   return (
-    <div
-      ref={listRef}
+    <LiquidGlass
+      aberration
       className={cn(
-        'pointer-events-auto max-h-[208px] w-[min(440px,calc(100vw-2rem))] overflow-y-auto rounded-[calc(var(--radius)+8px)] p-1.5',
-        composeSurfaceClass,
-        'transition-[background-color,border-color,box-shadow] duration-200 ease-out',
+        'pointer-events-auto w-[min(440px,calc(100vw-2rem))] overflow-hidden rounded-[calc(var(--radius)+8px)] shadow-none!',
         className
       )}
     >
-      {groups.map((group) => (
-        <div key={group.kind} className="px-0.5">
-          <div className="px-1.5 py-0.5 text-[0.625rem] font-medium text-muted-foreground/60">
-            {t(`chat.composer.mentions.groups.${group.kind}`)}
+      <div ref={listRef} className="max-h-[208px] overflow-y-auto p-1.5">
+        {groups.map((group) => (
+          <div key={group.kind} className="px-0.5">
+            <div className="px-1.5 py-0.5 text-[0.625rem] font-medium text-muted-foreground/60">
+              {t(`chat.composer.mentions.groups.${group.kind}`)}
+            </div>
+            {group.rows.map(({ item, index }) => (
+              <MentionRow
+                key={mentionItemId(item)}
+                item={item}
+                selected={index === highlightedIndex}
+                onHighlight={() => onHighlight(index)}
+                onSelect={() => onSelect(item)}
+              />
+            ))}
           </div>
-          {group.rows.map(({ item, index }) => (
-            <MentionRow
-              key={mentionItemId(item)}
-              item={item}
-              selected={index === highlightedIndex}
-              onHighlight={() => onHighlight(index)}
-              onSelect={() => onSelect(item)}
-            />
-          ))}
-        </div>
-      ))}
-    </div>
+        ))}
+      </div>
+    </LiquidGlass>
   )
 }

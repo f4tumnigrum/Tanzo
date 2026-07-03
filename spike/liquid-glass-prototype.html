@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Liquid Glass Prototype — vector displacement map + backdrop-filter</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; font-family: system-ui, sans-serif; }
+
+  /* ---- busy background to judge refraction quality ---- */
+  body {
+    background:
+      radial-gradient(1200px 600px at 20% 10%, #ff9a9e 0%, transparent 55%),
+      radial-gradient(900px 700px at 80% 20%, #a18cd1 0%, transparent 55%),
+      radial-gradient(1000px 800px at 50% 90%, #fbc2eb 0%, transparent 55%),
+      linear-gradient(160deg, #0f172a 0%, #1e293b 60%, #334155 100%);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  .bg-text {
+    position: fixed; inset: 0; z-index: 0;
+    display: flex; flex-direction: column; gap: 18px; padding: 40px;
+    color: rgba(255,255,255,.85); font-size: 28px; font-weight: 700;
+    pointer-events: none;
+  }
+  .bg-text .stripes {
+    height: 90px;
+    background: repeating-linear-gradient(90deg, #22d3ee 0 22px, #0ea5e9 22px 44px, #f472b6 44px 66px, #fde047 66px 88px);
+    border-radius: 12px;
+  }
+  .bg-text .grid {
+    height: 120px;
+    background:
+      repeating-linear-gradient(0deg, rgba(255,255,255,.7) 0 2px, transparent 2px 20px),
+      repeating-linear-gradient(90deg, rgba(255,255,255,.7) 0 2px, transparent 2px 20px);
+    border-radius: 12px;
+  }
+
+  main {
+    position: relative; z-index: 1;
+    display: flex; flex-direction: column; align-items: center; gap: 56px;
+    padding: 120px 24px 200px;
+  }
+
+  /* =========================================================
+     TIER 2 — "lens" : displacement INSIDE backdrop-filter
+     ========================================================= */
+  .glass-lens {
+    --glass-radius: 28px;
+    --px: 0.5;  /* pointer x 0..1, drives specular */
+    --py: 0.5;
+    --tx: 0px;  /* elastic translation */
+    --ty: 0px;
+    --sx: 1;    /* elastic scale */
+    --sy: 1;
+    position: relative;
+    width: 460px;
+    border-radius: var(--glass-radius);
+    padding: 28px 32px;
+    color: #fff;
+    isolation: isolate;
+    transform: translate(var(--tx), var(--ty)) scale(var(--sx), var(--sy));
+    transition: transform .18s cubic-bezier(.2,.9,.3,1.2);
+    box-shadow: 0 20px 50px rgba(0,0,0,.35);
+    will-change: transform;
+  }
+  /* backdrop layer: refraction + frost + saturation, all in ONE backdrop-filter */
+  .glass-lens::before {
+    content: "";
+    position: absolute; inset: 0; z-index: -1;
+    border-radius: inherit;
+    backdrop-filter: url(#lg-lens) blur(2px) saturate(1.5);
+    background: rgba(255,255,255,.04);
+  }
+  /* specular border: single mask-composited ring, gradient angle follows pointer */
+  .glass-lens::after {
+    content: "";
+    position: absolute; inset: 0; z-index: 0;
+    border-radius: inherit;
+    padding: 1.5px;
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+            mask-composite: exclude;
+    background: linear-gradient(
+      calc(115deg + (var(--px) - .5) * 60deg),
+      rgba(255,255,255,.10),
+      rgba(255,255,255,calc(.35 + var(--py) * .3)) 45%,
+      rgba(255,255,255,.9) 70%,
+      rgba(255,255,255,.10));
+    pointer-events: none;
+  }
+  .glass-lens h2 { font-size: 20px; margin-bottom: 8px; text-shadow: 0 1px 8px rgba(0,0,0,.35); }
+  .glass-lens p  { font-size: 14px; opacity: .92; line-height: 1.5; }
+
+  /* =========================================================
+     TIER 2b — same but with chromatic aberration filter
+     ========================================================= */
+  .glass-aberration::before { backdrop-filter: url(#lg-lens-ca) blur(2px) saturate(1.5); }
+
+  /* =========================================================
+     TIER 1 — pure CSS glass (no SVG filter at all)
+     ========================================================= */
+  .glass-css {
+    position: relative;
+    width: 460px; border-radius: 28px; padding: 28px 32px; color: #fff;
+    isolation: isolate;
+    backdrop-filter: blur(14px) saturate(1.6) brightness(1.05);
+    background:
+      radial-gradient(120% 90% at 50% 0%, rgba(255,255,255,.14), rgba(255,255,255,.03) 60%);
+    box-shadow:
+      0 20px 50px rgba(0,0,0,.35),
+      inset 0 1px 0 rgba(255,255,255,.45),
+      inset 0 -1px 0 rgba(255,255,255,.12),
+      inset 1px 0 0 rgba(255,255,255,.12),
+      inset -1px 0 0 rgba(255,255,255,.12);
+  }
+  .glass-css h2 { font-size: 20px; margin-bottom: 8px; }
+  .glass-css p { font-size: 14px; opacity: .92; line-height: 1.5; }
+
+  .label { color: #fff; font: 600 13px/1 system-ui; opacity: .7; margin-bottom: -40px; }
+</style>
+</head>
+<body>
+  <div class="bg-text">
+    <div class="stripes"></div>
+    <p>The quick brown fox jumps over the lazy dog — 0123456789</p>
+    <div class="grid"></div>
+    <p>Sharpness reference line — should bend at glass edges only.</p>
+    <div class="stripes"></div>
+    <p>Liquid Glass refraction test — Tanzo prototype.</p>
+    <div class="grid"></div>
+    <div class="stripes"></div>
+    <p>The quick brown fox jumps over the lazy dog — 0123456789</p>
+    <div class="grid"></div>
+  </div>
+
+  <!-- hidden SVG filter defs; displacement map href is set from JS -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <!-- simple lens: 1 displacement -->
+      <filter id="lg-lens" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB" primitiveUnits="objectBoundingBox">
+        <feImage href="" x="0" y="0" width="1" height="1" preserveAspectRatio="none" result="map" />
+        <feDisplacementMap in="SourceGraphic" in2="map" scale="0.14" xChannelSelector="R" yChannelSelector="B" />
+      </filter>
+      <!-- lens + chromatic aberration: 3 displacements, screen-blended -->
+      <filter id="lg-lens-ca" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB" primitiveUnits="objectBoundingBox">
+        <feImage href="" x="0" y="0" width="1" height="1" preserveAspectRatio="none" result="map" />
+        <feDisplacementMap in="SourceGraphic" in2="map" scale="0.17" xChannelSelector="R" yChannelSelector="B" result="dr" />
+        <feColorMatrix in="dr" type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0" result="r" />
+        <feDisplacementMap in="SourceGraphic" in2="map" scale="0.14" xChannelSelector="R" yChannelSelector="B" result="dg" />
+        <feColorMatrix in="dg" type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0" result="g" />
+        <feDisplacementMap in="SourceGraphic" in2="map" scale="0.11" xChannelSelector="R" yChannelSelector="B" result="db" />
+        <feColorMatrix in="db" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0" result="b" />
+        <feBlend in="g" in2="b" mode="screen" result="gb" />
+        <feBlend in="r" in2="gb" mode="screen" />
+      </filter>
+    </defs>
+  </svg>
+
+  <main>
+    <div class="label">TIER 2 — vector map + backdrop-filter lens</div>
+    <section class="glass-lens" id="lens1">
+      <h2>Liquid Glass — lens tier</h2>
+      <p>Refraction happens inside backdrop-filter. Content stays sharp because the map is neutral gray in the center. Move the pointer to see elasticity + specular tracking.</p>
+    </section>
+
+    <div class="label">TIER 2b — with chromatic aberration</div>
+    <section class="glass-lens glass-aberration" id="lens2">
+      <h2>Liquid Glass — aberration tier</h2>
+      <p>Same vector map, three displacement taps at slightly different scales, screen-blended for RGB fringing at the edges.</p>
+    </section>
+
+    <div class="label">TIER 1 — pure CSS (no SVG filter)</div>
+    <section class="glass-css">
+      <h2>Frosted tier (cheapest)</h2>
+      <p>backdrop blur + saturation + inset highlights only. For popovers, menus, tooltips where refraction is overkill.</p>
+    </section>
+  </main>
+
+<script>
+/* ---------- vector displacement map: pure SVG data URI, any size, no canvas ---------- */
+function displacementMapURI(w, h, radius, bezel) {
+  // R channel: x-displacement (255 at left -> samples toward center = magnify)
+  // B channel: y-displacement (255 at top  -> samples toward center)
+  // Center: neutral #808080 (=> zero displacement, content stays sharp)
+  const r = Math.min(radius, Math.min(w, h) / 2);
+  const inner = Math.max(0, r - bezel);
+  const blur = bezel / 2;
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">` +
+      `<defs>` +
+        `<linearGradient id="x" x1="0" y1="0" x2="1" y2="0">` +
+          `<stop offset="0" stop-color="#ff0000"/><stop offset="1" stop-color="#000000"/>` +
+        `</linearGradient>` +
+        `<linearGradient id="y" x1="0" y1="0" x2="0" y2="1">` +
+          `<stop offset="0" stop-color="#0000ff"/><stop offset="1" stop-color="#000000"/>` +
+        `</linearGradient>` +
+      `</defs>` +
+      `<rect width="${w}" height="${h}" fill="#808080"/>` +
+      `<rect width="${w}" height="${h}" rx="${r}" fill="url(#x)"/>` +
+      `<rect width="${w}" height="${h}" rx="${r}" fill="url(#y)" style="mix-blend-mode:screen"/>` +
+      `<rect x="${bezel}" y="${bezel}" width="${w - 2 * bezel}" height="${h - 2 * bezel}" rx="${inner}" fill="#808080" style="filter:blur(${blur}px)"/>` +
+    `</svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
+/* set map on both filters, sized to the first lens card */
+function refreshMaps() {
+  const el = document.getElementById('lens1');
+  const rect = el.getBoundingClientRect();
+  const uri = displacementMapURI(Math.round(rect.width), Math.round(rect.height), 28, 46);
+  for (const id of ['lg-lens', 'lg-lens-ca']) {
+    const img = document.querySelector(`#${id} feImage`);
+    img.setAttribute('href', uri);
+  }
+}
+new ResizeObserver(refreshMaps).observe(document.getElementById('lens1'));
+refreshMaps();
+
+/* ---------- interaction: CSS custom props via rAF, zero React-style re-render ---------- */
+const cards = [...document.querySelectorAll('.glass-lens')];
+let raf = 0, lastEvent = null;
+window.addEventListener('pointermove', (e) => {
+  lastEvent = e;
+  if (!raf) raf = requestAnimationFrame(() => {
+    raf = 0;
+    const { clientX: mx, clientY: my } = lastEvent;
+    for (const card of cards) {
+      const r = card.getBoundingClientRect();
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      const dx = mx - cx, dy = my - cy;
+      const edge = Math.hypot(Math.max(0, Math.abs(dx) - r.width / 2), Math.max(0, Math.abs(dy) - r.height / 2));
+      const zone = 180;
+      const f = edge > zone ? 0 : 1 - edge / zone; // fade-in factor
+      const elastic = 0.12;
+      card.style.setProperty('--tx', (dx * elastic * 0.12 * f).toFixed(2) + 'px');
+      card.style.setProperty('--ty', (dy * elastic * 0.12 * f).toFixed(2) + 'px');
+      const d = Math.hypot(dx, dy) || 1;
+      const s = Math.min(d / 300, 1) * elastic * f;
+      card.style.setProperty('--sx', (1 + (Math.abs(dx / d)) * s * 0.3 - Math.abs(dy / d) * s * 0.15).toFixed(4));
+      card.style.setProperty('--sy', (1 + (Math.abs(dy / d)) * s * 0.3 - Math.abs(dx / d) * s * 0.15).toFixed(4));
+      card.style.setProperty('--px', Math.max(0, Math.min(1, (mx - r.left) / r.width)).toFixed(3));
+      card.style.setProperty('--py', Math.max(0, Math.min(1, (my - r.top) / r.height)).toFixed(3));
+    }
+  });
+}, { passive: true });
+</script>
+</body>
+</html>

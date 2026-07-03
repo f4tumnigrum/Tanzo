@@ -1,7 +1,6 @@
 import { memo, useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
-import { Virtuoso } from 'react-virtuoso'
 import { ChevronDown, FolderOpen, Plus, Settings, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -95,7 +94,7 @@ type SidebarRow =
       isLast: boolean
     }
 
-const sidebarRowKey = (_index: number, row: SidebarRow): string => row.key
+const sidebarRowKey = (row: SidebarRow): string => row.key
 
 export interface ConversationSidebarProps {
   sidebar?: SidebarModel
@@ -286,7 +285,7 @@ export function ConversationSidebar({
   }, [activeChatId, expandedBranchFamilies, sidebar])
 
   const renderRow = useCallback(
-    (_index: number, row: SidebarRow) => {
+    (row: SidebarRow) => {
       if (row.type === 'workspace') {
         const { group } = row
         return (
@@ -506,13 +505,13 @@ export function ConversationSidebar({
             isPicking={isPickingWorkspace}
           />
         ) : (
-          <Virtuoso<SidebarRow>
-            className="scrollbar-subtle h-full"
-            data={rows}
-            computeItemKey={sidebarRowKey}
-            itemContent={renderRow}
-            increaseViewportBy={{ top: 160, bottom: 240 }}
-          />
+          <div className="scrollbar-subtle h-full overflow-y-auto">
+            {rows.map((row) => (
+              <div key={sidebarRowKey(row)} className="[content-visibility:auto]">
+                {renderRow(row)}
+              </div>
+            ))}
+          </div>
         )}
       </div>
       <footer className="flex shrink-0 items-center gap-1.5 px-3 py-2">
