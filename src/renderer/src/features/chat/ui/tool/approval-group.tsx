@@ -178,7 +178,7 @@ function ApprovalRow({ context }: { context: ToolRenderContext }): React.JSX.Ele
 
         {detail ? (
           <CollapsibleContent>
-            <pre className="mt-1.5 max-h-44 overflow-auto rounded-md border border-border/15 bg-secondary/20 px-2.5 py-2 font-mono text-[0.6875rem] leading-relaxed break-words whitespace-pre-wrap text-foreground/78">
+            <pre className="mt-1.5 max-h-44 overflow-auto rounded-md border border-border/15 bg-secondary/20 px-2.5 py-2 font-mono text-[length:var(--code-font-size)] leading-relaxed break-words whitespace-pre-wrap text-foreground/78">
               {detail}
             </pre>
           </CollapsibleContent>

@@ -97,7 +97,7 @@ export function ServerDetailInfo({ server }: ServerDetailInfoProps) {
           <span className="w-20 shrink-0 text-[0.6875rem] text-foreground/52">
             {t('mcp.server.detail.transport')}
           </span>
-          <span className="inline-flex items-center gap-1 rounded-[5px] border border-border/35 bg-muted/15 px-1.5 py-0.5 font-mono text-[0.625rem] font-medium text-foreground/72">
+          <span className="inline-flex items-center gap-1 rounded-[5px] border border-border/35 bg-muted/15 px-1.5 py-0.5 font-mono text-[length:var(--code-font-size-sm)] font-medium text-foreground/72">
             <Globe className="size-2.5 text-foreground/40" />
             {server.transport.toUpperCase()}
           </span>
@@ -108,7 +108,7 @@ export function ServerDetailInfo({ server }: ServerDetailInfoProps) {
             <span className="w-20 shrink-0 text-[0.6875rem] text-foreground/52">
               {t('mcp.server.detail.server')}
             </span>
-            <span className="text-[0.6875rem] font-mono text-foreground/72">
+            <span className="text-[length:var(--code-font-size)] font-mono text-foreground/72">
               {connectionState.serverInfo.name}@{connectionState.serverInfo.version}
             </span>
           </div>
@@ -130,7 +130,7 @@ export function ServerDetailInfo({ server }: ServerDetailInfoProps) {
             <span className="w-20 shrink-0 text-[0.6875rem] text-foreground/52">
               {t('mcp.server.detail.createdAt')}
             </span>
-            <span className="flex items-center gap-1 text-[0.6875rem] font-mono text-foreground/72">
+            <span className="flex items-center gap-1 text-[length:var(--code-font-size)] font-mono text-foreground/72">
               <Calendar className="size-2.5 text-foreground/40" />
               {createdAtLabel}
             </span>
@@ -189,11 +189,11 @@ export function ServerDetailInfo({ server }: ServerDetailInfoProps) {
           <div className={SERVER_CARD_BODY_CLASS}>
             {envEntries.map(([key, value]) => (
               <div key={key} className={cn(ROW_CLASS, 'gap-2')}>
-                <code className="shrink-0 rounded-[4px] bg-muted/25 px-1.5 py-0.5 font-mono text-[0.625rem] text-foreground/72">
+                <code className="shrink-0 rounded-[4px] bg-muted/25 px-1.5 py-0.5 font-mono text-[length:var(--code-font-size-sm)] text-foreground/72">
                   {key}
                 </code>
                 <span className="text-[0.625rem] text-foreground/40">=</span>
-                <code className="min-w-0 break-all font-mono text-[0.625rem] text-foreground/62">
+                <code className="min-w-0 break-all font-mono text-[length:var(--code-font-size-sm)] text-foreground/62">
                   {value}
                 </code>
               </div>

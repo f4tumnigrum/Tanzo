@@ -51,7 +51,7 @@ function ToolRow({ tool }: { tool: McpTool }) {
         <span className={cn('mt-0.5 size-1.5 shrink-0 rounded-full', 'bg-emerald-500/78')} />
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-2">
-            <span className="shrink-0 truncate font-mono text-[0.6875rem] leading-5 font-medium tracking-[0.01em] text-foreground/82">
+            <span className="shrink-0 truncate font-mono text-[length:var(--code-font-size)] leading-5 font-medium tracking-[0.01em] text-foreground/82">
               {tool.name}
             </span>
           </div>
@@ -89,7 +89,7 @@ function ToolRow({ tool }: { tool: McpTool }) {
       </div>
       {schemaOpen && tool.inputSchema && (
         <div className="px-3 pb-2.5">
-          <pre className="ml-5 overflow-x-auto rounded-md bg-muted/20 p-2 font-mono text-[0.5625rem] leading-4 text-foreground/62">
+          <pre className="ml-5 overflow-x-auto rounded-md bg-muted/20 p-2 font-mono text-[length:var(--code-font-size-xs)] leading-4 text-foreground/62">
             {JSON.stringify(tool.inputSchema, null, 2)}
           </pre>
         </div>

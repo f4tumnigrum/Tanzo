@@ -118,14 +118,14 @@ export function SkillDetailView({
             </InfoRow>
             {skill.modelRef ? (
               <InfoRow label={t('skills.detail.fields.model')}>
-                <span className="font-mono text-[0.625rem]">{skill.modelRef}</span>
+                <span className="font-mono text-[length:var(--code-font-size-sm)]">{skill.modelRef}</span>
               </InfoRow>
             ) : null}
             {skill.license ? (
               <InfoRow label={t('skills.detail.fields.license')}>{skill.license}</InfoRow>
             ) : null}
             <InfoRow label={t('skills.detail.fields.path')}>
-              <span className="break-all font-mono text-[0.625rem]">{skill.skillDir}</span>
+              <span className="break-all font-mono text-[length:var(--code-font-size-sm)]">{skill.skillDir}</span>
             </InfoRow>
           </dl>
         </section>

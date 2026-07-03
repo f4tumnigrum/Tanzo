@@ -31,9 +31,9 @@ export const GIT_DIALOG_TYPO_ITEM_CLASSNAME =
 export const GIT_DIALOG_TYPO_LABEL_CLASSNAME =
   'text-[0.6875rem] font-semibold uppercase tracking-[0.04em] text-foreground/60'
 export const GIT_DIALOG_TYPO_CODE_CLASSNAME =
-  'font-mono text-[0.75rem] leading-[1.55] text-foreground/82'
+  'font-mono text-[length:var(--code-font-size-lg)] leading-[1.55] text-foreground/82'
 export const GIT_DIALOG_TYPO_CODE_META_CLASSNAME =
-  'font-mono text-[0.6875rem] leading-[1.5] text-foreground/45'
+  'font-mono text-[length:var(--code-font-size)] leading-[1.5] text-foreground/45'
 export const GIT_DIALOG_TYPO_ACTION_CLASSNAME = 'text-[0.6875rem] font-medium tracking-[0.01em]'
 export const GIT_DIALOG_HEADER_PILL_CLASSNAME =
   'inline-flex h-7 items-center gap-1.5 rounded-[min(var(--radius-md),10px)] border border-border/24 bg-background/68 px-2.5 text-foreground/64 shadow-none backdrop-blur-sm'

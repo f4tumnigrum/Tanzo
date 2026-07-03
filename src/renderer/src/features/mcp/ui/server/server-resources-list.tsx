@@ -31,7 +31,7 @@ export function ServerResourcesList({ resources }: ServerResourcesListProps) {
             <span className="mt-0.5 size-1.5 shrink-0 rounded-full bg-emerald-500/78" />
             <div className="min-w-0 flex-1">
               <div className="flex min-w-0 items-center gap-2">
-                <span className="shrink-0 truncate font-mono text-[0.6875rem] leading-5 font-medium tracking-[0.01em] text-foreground/82">
+                <span className="shrink-0 truncate font-mono text-[length:var(--code-font-size)] leading-5 font-medium tracking-[0.01em] text-foreground/82">
                   {resource.name}
                 </span>
                 {resource.mimeType && (

@@ -15,7 +15,7 @@ const SECTION_CLASS = cn(
 const SECTION_TITLE_CLASS =
   'px-4 py-2.5 text-[0.625rem] font-medium uppercase tracking-[0.05em] text-foreground/45'
 const CODE_CLASS =
-  'rounded-[4px] bg-muted/30 px-1.5 py-0.5 font-mono text-[0.625rem] text-foreground/75'
+  'rounded-[4px] bg-muted/30 px-1.5 py-0.5 font-mono text-[length:var(--code-font-size-sm)] text-foreground/75'
 
 export function PluginDetailView({
   plugin,
@@ -87,7 +87,7 @@ export function PluginDetailView({
               </Badge>
               <Badge
                 variant="secondary"
-                className="h-4.5 gap-1 rounded-md px-1.5 font-mono text-[0.625rem] leading-none"
+                className="h-4.5 gap-1 rounded-md px-1.5 font-mono text-[length:var(--code-font-size-sm)] leading-none"
               >
                 <Tag className="size-2.5" />
                 {plugin.version}
@@ -168,7 +168,7 @@ export function PluginDetailView({
               ) : null}
               {root ? (
                 <InfoRow icon={FolderOpen} label={t('plugins.detail.path')}>
-                  <span className="break-all font-mono text-[0.625rem]">{root}</span>
+                  <span className="break-all font-mono text-[length:var(--code-font-size-sm)]">{root}</span>
                 </InfoRow>
               ) : null}
               {keywords.length > 0 ? (

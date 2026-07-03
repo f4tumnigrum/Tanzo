@@ -93,7 +93,7 @@ export function SubagentApprovalCard({
           </p>
 
           {inputSummary ? (
-            <p className="rounded-md bg-background/40 px-2 py-1 font-mono text-[0.625rem] leading-[1.45] text-foreground/82">
+            <p className="rounded-md bg-background/40 px-2 py-1 font-mono text-[length:var(--code-font-size-sm)] leading-[1.45] text-foreground/82">
               {inputSummary}
             </p>
           ) : null}

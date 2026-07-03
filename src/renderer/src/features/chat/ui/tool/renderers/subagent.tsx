@@ -286,7 +286,7 @@ function SpawnSummary({
                 {dependsOn.map((depId) => (
                   <code
                     key={depId}
-                    className="rounded bg-amber-500/12 px-1 py-px font-mono text-[0.5625rem] text-amber-700 dark:text-amber-300"
+                    className="rounded bg-amber-500/12 px-1 py-px font-mono text-[length:var(--code-font-size-xs)] text-amber-700 dark:text-amber-300"
                   >
                     {depId}
                   </code>
@@ -699,7 +699,7 @@ function TaskBlockLine({ task }: { task: SubagentTask }): React.JSX.Element | nu
         {task.block.taskIds.map((depId) => (
           <code
             key={depId}
-            className="rounded bg-amber-500/12 px-1 py-px font-mono text-[0.5625rem] text-amber-700 dark:text-amber-300"
+            className="rounded bg-amber-500/12 px-1 py-px font-mono text-[length:var(--code-font-size-xs)] text-amber-700 dark:text-amber-300"
           >
             {depId}
           </code>
@@ -729,7 +729,7 @@ function TaskBlockLine({ task }: { task: SubagentTask }): React.JSX.Element | nu
         {task.dependsOn.map((depId) => (
           <code
             key={depId}
-            className="rounded bg-amber-500/12 px-1 py-px font-mono text-[0.5625rem] text-amber-700 dark:text-amber-300"
+            className="rounded bg-amber-500/12 px-1 py-px font-mono text-[length:var(--code-font-size-xs)] text-amber-700 dark:text-amber-300"
           >
             {depId}
           </code>

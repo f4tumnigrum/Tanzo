@@ -51,7 +51,7 @@ export function ApprovalBubble({ approval, onRespond }: ApprovalBubbleProps): Re
               <ShimmerText text={t('pet.approval.title')} className="text-[0.6875rem]" />
             </header>
 
-            <p className="rounded-md bg-background/40 px-2 py-1 font-mono text-[0.625rem] leading-[1.45] text-foreground/82">
+            <p className="rounded-md bg-background/40 px-2 py-1 font-mono text-[length:var(--code-font-size-sm)] leading-[1.45] text-foreground/82">
               {approval.toolName}
             </p>
 

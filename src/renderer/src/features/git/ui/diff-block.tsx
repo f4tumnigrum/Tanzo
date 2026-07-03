@@ -45,7 +45,7 @@ const DiffLineRow = memo(function DiffLineRow({
   return (
     <tr className={cn('group [content-visibility:auto]', styles.bg)}>
       <td
-        className="w-7 pl-1 pr-1 text-right align-top select-none text-muted-foreground text-[0.5625rem]"
+        className="w-7 pl-1 pr-1 text-right align-top select-none text-muted-foreground text-[length:var(--code-font-size-xs)]"
         style={diffCellStyle}
       >
         {lineNum ?? ''}
@@ -95,7 +95,7 @@ export const DiffBlock = memo(function DiffBlock({
       >
         <table
           className={cn(
-            'w-full border-collapse font-mono text-[0.625rem]',
+            'w-full border-collapse font-mono text-[length:var(--code-font-size-sm)]',
             wrapLongLines && 'table-fixed'
           )}
         >

@@ -73,7 +73,7 @@ function ToolRow({
     <div className="flex min-h-11 w-full items-center justify-between gap-3 px-3 py-1.5">
       <div className="min-w-0">
         <div className="flex items-center gap-1.5">
-          <span className="truncate font-mono text-[0.75rem] text-foreground/82">
+          <span className="truncate font-mono text-[length:var(--code-font-size-lg)] text-foreground/82">
             {label ?? id}
           </span>
           {readOnly ? (

@@ -31,7 +31,7 @@ export function ServerPromptsList({ prompts }: ServerPromptsListProps) {
             <span className="mt-0.5 size-1.5 shrink-0 rounded-full bg-emerald-500/78" />
             <div className="min-w-0 flex-1">
               <div className="flex min-w-0 items-center gap-2">
-                <span className="shrink-0 truncate font-mono text-[0.6875rem] leading-5 font-medium tracking-[0.01em] text-foreground/82">
+                <span className="shrink-0 truncate font-mono text-[length:var(--code-font-size)] leading-5 font-medium tracking-[0.01em] text-foreground/82">
                   {prompt.name}
                 </span>
                 {prompt.arguments && prompt.arguments.length > 0 && (
@@ -49,7 +49,7 @@ export function ServerPromptsList({ prompts }: ServerPromptsListProps) {
                   <span className="shrink-0">
                     {prompt.arguments.map((a) => (
                       <span key={a.name} className="mr-1.5">
-                        <code className="rounded-[4px] bg-muted/25 px-1 py-0.5 font-mono text-[0.5625rem] text-foreground/62">
+                        <code className="rounded-[4px] bg-muted/25 px-1 py-0.5 font-mono text-[length:var(--code-font-size-xs)] text-foreground/62">
                           {a.name}
                         </code>
                         <span className="ml-0.5 text-[0.5625rem] text-foreground/35">

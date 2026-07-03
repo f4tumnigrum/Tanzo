@@ -46,7 +46,7 @@ export function SimpleCodeView({
       >
         <table
           className={cn(
-            'w-full border-collapse font-mono text-[0.6875rem]',
+            'w-full border-collapse font-mono text-[length:var(--code-font-size)]',
             wrapLongLines && 'table-fixed'
           )}
         >
@@ -61,7 +61,7 @@ export function SimpleCodeView({
                 )}
               >
                 <td
-                  className="w-9 select-none border-r border-border/8 px-1.5 text-right align-top text-[0.5625rem] text-muted-foreground"
+                  className="w-9 select-none border-r border-border/8 px-1.5 text-right align-top text-[length:var(--code-font-size-xs)] text-muted-foreground"
                   style={cellStyle}
                 >
                   {line.lineNumber ?? ''}

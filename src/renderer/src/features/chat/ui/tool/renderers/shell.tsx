@@ -144,7 +144,7 @@ function ShellHeader({ context }: { context: ToolRenderContext }): React.JSX.Ele
 
 function CommandLine({ cmd }: { cmd: string }): React.JSX.Element {
   return (
-    <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-border/10 bg-secondary/80 px-2.5 py-1.5 pr-8 font-mono text-[0.625rem] leading-[1.4] backdrop-blur-sm">
+    <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-border/10 bg-secondary/80 px-2.5 py-1.5 pr-8 font-mono text-[length:var(--code-font-size-sm)] leading-[1.4] backdrop-blur-sm">
       <span className="shrink-0 select-none font-semibold text-emerald-500/80">$</span>
       <span className="min-w-0 flex-1 truncate text-foreground/82">{cmd}</span>
     </div>
@@ -203,13 +203,13 @@ function ShellOutputComp({ context }: { context: ToolRenderContext }): React.JSX
     return (
       <div className="bg-secondary/18 px-2.5 py-1.5">
         {output.sessions.length === 0 ? (
-          <p className="font-mono text-[0.625rem] text-muted-foreground/80">
+          <p className="font-mono text-[length:var(--code-font-size-sm)] text-muted-foreground/80">
             {t('chat.tool.shell.noSessions')}
           </p>
         ) : (
           <div className="space-y-1">
             {output.sessions.map((session) => (
-              <div key={session.sessionId} className="min-w-0 font-mono text-[0.625rem]">
+              <div key={session.sessionId} className="min-w-0 font-mono text-[length:var(--code-font-size-sm)]">
                 <div className="flex items-center gap-1.5">
                   <ToolBadge
                     text={session.status}
@@ -228,7 +228,7 @@ function ShellOutputComp({ context }: { context: ToolRenderContext }): React.JSX
 
   if (isShellStopOutput(output)) {
     return (
-      <div className="bg-secondary/18 px-2.5 py-1.5 font-mono text-[0.625rem] text-foreground/85">
+      <div className="bg-secondary/18 px-2.5 py-1.5 font-mono text-[length:var(--code-font-size-sm)] text-foreground/85">
         {t('chat.tool.shell.stopped')} {output.sessionId}
       </div>
     )
@@ -247,19 +247,19 @@ function ShellOutputComp({ context }: { context: ToolRenderContext }): React.JSX
       >
         <CommandLine cmd={command} />
         {displayWorkdir ? (
-          <div className="flex items-center gap-1.5 border-b border-border/8 px-2.5 py-1 font-mono text-[0.5625rem] text-muted-foreground/60">
+          <div className="flex items-center gap-1.5 border-b border-border/8 px-2.5 py-1 font-mono text-[length:var(--code-font-size-xs)] text-muted-foreground/60">
             <FolderOpen className="size-2.5 shrink-0" aria-hidden="true" />
             <span className="min-w-0 truncate">{displayWorkdir}</span>
           </div>
         ) : null}
         {!stdout && !stderr ? (
-          <p className="px-2.5 py-1.5 font-mono text-[0.625rem] text-muted-foreground/80">
+          <p className="px-2.5 py-1.5 font-mono text-[length:var(--code-font-size-sm)] text-muted-foreground/80">
             {isFinal ? t('chat.tool.shell.noOutput') : t('chat.tool.common.running')}
           </p>
         ) : (
           <>
             {stdout && (
-              <pre className="whitespace-pre-wrap break-words px-2.5 py-1.5 font-mono text-[0.625rem] leading-[1.5] text-foreground/85">
+              <pre className="whitespace-pre-wrap break-words px-2.5 py-1.5 font-mono text-[length:var(--code-font-size-sm)] leading-[1.5] text-foreground/85">
                 <ToolPreText text={stdout} />
               </pre>
             )}
@@ -274,7 +274,7 @@ function ShellOutputComp({ context }: { context: ToolRenderContext }): React.JSX
                   <CopyButton text={stderr} />
                 </div>
                 <StreamLabel text="stderr" tone="danger" />
-                <pre className="whitespace-pre-wrap break-words px-2.5 pb-1.5 font-mono text-[0.625rem] leading-[1.5] text-red-500/85">
+                <pre className="whitespace-pre-wrap break-words px-2.5 pb-1.5 font-mono text-[length:var(--code-font-size-sm)] leading-[1.5] text-red-500/85">
                   <ToolPreText text={stderr} />
                 </pre>
               </div>

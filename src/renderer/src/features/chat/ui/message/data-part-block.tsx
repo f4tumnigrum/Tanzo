@@ -52,11 +52,11 @@ export function DataPartBlock({ part }: { part: DataPartLike }): React.JSX.Eleme
   if (part.type === 'data-fileDiff') {
     return (
       <div className="overflow-hidden rounded-md border border-border/20 bg-card/30">
-        <div className="border-b border-border/15 px-3 py-1.5 font-mono text-[0.6875rem] text-foreground/80">
+        <div className="border-b border-border/15 px-3 py-1.5 font-mono text-[length:var(--code-font-size)] text-foreground/80">
           {part.data.path}
         </div>
         <div className="grid gap-px bg-border/10 sm:grid-cols-2">
-          <pre className="max-h-56 overflow-auto bg-red-500/[0.04] p-2.5 text-[0.625rem] leading-[1.45] whitespace-pre-wrap text-red-700 dark:text-red-300">
+          <pre className="max-h-56 overflow-auto bg-red-500/[0.04] p-2.5 text-[length:var(--code-font-size-sm)] leading-[1.45] whitespace-pre-wrap text-red-700 dark:text-red-300">
             {part.data.before}
           </pre>
           <pre className="max-h-56 overflow-auto bg-emerald-500/[0.05] p-2.5 text-[0.625rem] leading-[1.45] whitespace-pre-wrap text-emerald-700 dark:text-emerald-300">

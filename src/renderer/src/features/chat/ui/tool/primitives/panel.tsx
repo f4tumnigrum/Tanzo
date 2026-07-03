@@ -140,12 +140,12 @@ export function ToolValuePreview({
             className="grid grid-cols-[minmax(4rem,0.34fr)_1fr] gap-2 px-2.5 py-1.25"
           >
             <dt
-              className="truncate font-mono text-[0.5625rem] leading-[1.5] text-muted-foreground/80"
+              className="truncate font-mono text-[length:var(--code-font-size-xs)] leading-[1.5] text-muted-foreground/80"
               title={entry.label}
             >
               {entry.label}
             </dt>
-            <dd className="min-w-0 text-[0.625rem] leading-[1.5] text-foreground/82">
+            <dd className="min-w-0 text-[length:var(--code-font-size-sm)] leading-[1.5] text-foreground/82">
               <PreviewValue value={entry.value} maxTextLength={maxTextLength} />
             </dd>
           </div>
@@ -244,7 +244,7 @@ export function ToolPreformatted({
     <ToolScrollPanel className={className} tone={tone} maxHeight={maxHeight}>
       <pre
         className={cn(
-          'whitespace-pre-wrap break-words px-2.5 py-1.75 text-[0.625rem] leading-[1.45] text-foreground/90',
+          'whitespace-pre-wrap break-words px-2.5 py-1.75 text-[length:var(--code-font-size-sm)] leading-[1.45] text-foreground/90',
           preClassName
         )}
       >
@@ -278,7 +278,7 @@ export function ToolPathLine({
   if (!value) return null
   return (
     <ToolMetaLine
-      className={cn('px-1 font-mono text-[0.5625rem] leading-[1.4] text-foreground/52', className)}
+      className={cn('px-1 font-mono text-[length:var(--code-font-size-xs)] leading-[1.4] text-foreground/52', className)}
     >
       {label ? <span className="mr-1 text-muted-foreground/80">{label}: </span> : null}
       <span className="break-words">{value}</span>

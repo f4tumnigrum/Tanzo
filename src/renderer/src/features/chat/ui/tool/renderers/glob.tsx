@@ -83,7 +83,7 @@ function GlobOutputComp({ context }: { context: ToolRenderContext }): React.JSX.
           return (
             <li
               key={path}
-              className="flex items-center gap-1 px-2.5 py-1 font-mono text-[0.6875rem] leading-[1.4] hover:bg-background/24"
+              className="flex items-center gap-1 px-2.5 py-1 font-mono text-[length:var(--code-font-size)] leading-[1.4] hover:bg-background/24"
             >
               {dir && <span className="truncate text-foreground/40">{dir}/</span>}
               <span className="min-w-0 flex-1 truncate text-foreground/85">{fileName || path}</span>

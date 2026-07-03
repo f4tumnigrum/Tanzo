@@ -83,7 +83,7 @@ function WrapToggle({
 function StickyPathHeader({ path }: { path: string }): React.JSX.Element {
   const { fileName, dir } = splitDirAndFile(path)
   return (
-    <div className="sticky top-0 z-10 flex items-center gap-1 border-b border-border/10 bg-secondary/80 px-2.5 py-1.5 pr-14 font-mono text-[0.5625rem] leading-[1.4] backdrop-blur-sm">
+    <div className="sticky top-0 z-10 flex items-center gap-1 border-b border-border/10 bg-secondary/80 px-2.5 py-1.5 pr-14 font-mono text-[length:var(--code-font-size-xs)] leading-[1.4] backdrop-blur-sm">
       {dir && <span className="truncate text-foreground/40">{dir}/</span>}
       <span className="shrink-0 text-foreground/75">{fileName || path}</span>
     </div>

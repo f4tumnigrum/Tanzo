@@ -260,7 +260,7 @@ export function ChatInput({
     const el = textareaRef.current
     if (!el) return
     el.style.height = 'auto'
-    el.style.height = `${Math.min(el.scrollHeight, 160)}px`
+    el.style.height = `${el.scrollHeight}px`
   }, [value])
 
   const [modeMenuOpen, setModeMenuOpen] = useState(false)
@@ -360,7 +360,7 @@ export function ChatInput({
                 : t('chat.composer.defaultPlaceholder'))
             }
             rows={1}
-            className="min-h-[36px] px-4 py-3 text-base text-foreground"
+            className="min-h-[36px] overflow-hidden px-4 py-3 text-base text-foreground"
           />
         </div>
 

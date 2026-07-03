@@ -115,6 +115,12 @@
   --chart-5: oklch(0.67 0.19 20);
   --font-size-base: 16px;
   --code-font-size: 11px;
+  /* Derived code sizes: scale with --code-font-size so the typography
+     setting reaches every monospace surface, not just the chat code block.
+     Defaults preserve the prior pixel sizes at --code-font-size: 11px. */
+  --code-font-size-sm: calc(var(--code-font-size) - 1px);
+  --code-font-size-xs: calc(var(--code-font-size) - 2px);
+  --code-font-size-lg: calc(var(--code-font-size) + 1px);
   --content-line-height: 1.72;
   --spacing: 0.25rem;
   --tracking-normal: -0.01em;

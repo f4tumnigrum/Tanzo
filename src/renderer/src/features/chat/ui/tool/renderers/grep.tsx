@@ -38,7 +38,7 @@ function groupByFile(matches: GrepMatch[]): Array<{ file: string; rows: GrepMatc
 function FileLabel({ path, count }: { path: string; count?: number }): React.JSX.Element {
   const { fileName, dir } = splitDirAndFile(path)
   return (
-    <div className="flex items-center gap-1 px-2.5 py-1 font-mono text-[0.625rem] leading-[1.4]">
+    <div className="flex items-center gap-1 px-2.5 py-1 font-mono text-[length:var(--code-font-size-sm)] leading-[1.4]">
       {dir && <span className="truncate text-foreground/40">{dir}/</span>}
       <span className="min-w-0 flex-1 truncate text-foreground/75">{fileName || path}</span>
       {typeof count === 'number' && (
@@ -162,7 +162,7 @@ function GrepOutputComp({ context }: { context: ToolRenderContext }): React.JSX.
     return (
       <div>
         <GrepQueryMeta input={input} t={t} />
-        <p className="px-2.5 py-1.5 font-mono text-[0.6875rem] text-foreground/85">
+        <p className="px-2.5 py-1.5 font-mono text-[length:var(--code-font-size)] text-foreground/85">
           {t('chat.tool.grep.matchesCount', { count: result.count })}
         </p>
       </div>
@@ -204,7 +204,7 @@ function GrepOutputComp({ context }: { context: ToolRenderContext }): React.JSX.
               {group.rows.map((m, index) => (
                 <li
                   key={`${index}-${m.line}`}
-                  className="flex gap-2 px-2.5 py-0.5 font-mono text-[0.6875rem] leading-[1.5] hover:bg-background/24"
+                  className="flex gap-2 px-2.5 py-0.5 font-mono text-[length:var(--code-font-size)] leading-[1.5] hover:bg-background/24"
                 >
                   <span className="w-8 shrink-0 select-none text-right tabular-nums text-muted-foreground/70">
                     {m.line}

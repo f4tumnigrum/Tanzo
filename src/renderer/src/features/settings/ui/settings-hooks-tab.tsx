@@ -106,14 +106,14 @@ function PreviewBlock({ preview }: { preview: HookPreviewResult }) {
     <div className="mt-1 overflow-hidden rounded-[var(--radius-md)] border border-border/12 bg-muted/30">
       <div
         className={cn(
-          'px-2.5 py-1 font-mono text-[0.625rem] font-medium tracking-[0.01em]',
+          'px-2.5 py-1 font-mono text-[length:var(--code-font-size-sm)] font-medium tracking-[0.01em]',
           failed ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'
         )}
       >
         {head}
       </div>
       {body ? (
-        <pre className="scrollbar-subtle max-h-32 overflow-auto border-t border-border/10 px-2.5 py-1.5 font-mono text-[0.625rem] leading-4 whitespace-pre-wrap text-foreground/70">
+        <pre className="scrollbar-subtle max-h-32 overflow-auto border-t border-border/10 px-2.5 py-1.5 font-mono text-[length:var(--code-font-size-sm)] leading-4 whitespace-pre-wrap text-foreground/70">
           {body}
         </pre>
       ) : null}
@@ -170,7 +170,7 @@ function HookRow({ entry }: { entry: HookEntrySummary }) {
 
         <div className="min-w-0 flex-1">
           <p
-            className="truncate font-mono text-[0.75rem] leading-snug text-foreground/85"
+            className="truncate font-mono text-[length:var(--code-font-size-lg)] leading-snug text-foreground/85"
             title={entry.command}
           >
             {entry.command}
