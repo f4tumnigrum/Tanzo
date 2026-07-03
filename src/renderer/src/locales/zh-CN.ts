@@ -15,6 +15,11 @@ export const zhCN = {
         settings: '设置'
       }
     },
+    update: {
+      available: '新版本 {{version}} 可用 — 点击下载',
+      downloading: '正在下载更新… {{percent}}%',
+      ready: '更新已就绪 — 点击重启并安装'
+    },
     browser: {
       toggle: '切换浏览器',
       back: '后退',

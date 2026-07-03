@@ -39,4 +39,8 @@ linux:
   category: Utility
 appImage:
   artifactName: ${productName}-${version}.${ext}
+publish:
+  provider: github
+  owner: f4tumnigrum
+  repo: Tanzo
 npmRebuild: false

@@ -1,7 +1,7 @@
 import { memo, useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
-import { ChevronDown, FolderOpen, Plus, Settings, Trash2 } from 'lucide-react'
+import { ChevronDown, Download, FolderOpen, Plus, RefreshCw, Settings, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Spinner } from '@/components/ui/spinner'
@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { cn } from '@/lib/utils'
 import { createLogger } from '@/common/logger'
+import { useAppUpdate } from '@/hooks/use-app-update'
 import { useChatUiStore } from '../../model/store'
 import type {
   SidebarConversationFamilyModel,
@@ -181,6 +182,70 @@ const SidebarEmptyState = memo(function SidebarEmptyState({
   )
 })
 
+function UpdateButton({
+  state,
+  onDownload,
+  onInstall
+}: {
+  state: import('@shared/updater').UpdaterState
+  onDownload: () => void
+  onInstall: () => void
+}): React.JSX.Element | null {
+  const { t } = useTranslation()
+
+  const iconClass =
+    'flex size-7 shrink-0 items-center justify-center rounded-[var(--radius-md)] ' +
+    'text-foreground/65 transition-colors duration-150 ' +
+    'hover:text-foreground active:text-foreground ' +
+    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ' +
+    'disabled:pointer-events-none'
+
+  if (state.status === 'available') {
+    return (
+      <Tooltip>
+        <TooltipTrigger
+          type="button"
+          className={iconClass}
+          onClick={onDownload}
+          aria-label={t('update.available', { version: state.version ?? '' })}
+        >
+          <Download className="size-4" />
+        </TooltipTrigger>
+        <TooltipContent>{t('update.available', { version: state.version ?? '' })}</TooltipContent>
+      </Tooltip>
+    )
+  }
+
+  if (state.status === 'downloading') {
+    return (
+      <Tooltip>
+        <TooltipTrigger type="button" className={iconClass} disabled>
+          <Spinner className="size-4" />
+        </TooltipTrigger>
+        <TooltipContent>{t('update.downloading', { percent: state.percent })}</TooltipContent>
+      </Tooltip>
+    )
+  }
+
+  if (state.status === 'downloaded') {
+    return (
+      <Tooltip>
+        <TooltipTrigger
+          type="button"
+          className={cn(iconClass, 'text-primary hover:text-primary')}
+          onClick={onInstall}
+          aria-label={t('update.ready')}
+        >
+          <RefreshCw className="size-4" />
+        </TooltipTrigger>
+        <TooltipContent>{t('update.ready')}</TooltipContent>
+      </Tooltip>
+    )
+  }
+
+  return null
+}
+
 export function ConversationSidebar({
   sidebar = EMPTY_SIDEBAR,
   onConversationSelect,
@@ -195,6 +260,7 @@ export function ConversationSidebar({
 }: ConversationSidebarProps): React.JSX.Element {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const appUpdate = useAppUpdate()
   const activeChatId = useChatUiStore((state) => state.activeChatId)
   const [isPickingWorkspace, setIsPickingWorkspace] = useState(false)
   const [expandedBranchFamilies, setExpandedBranchFamilies] = useState<Record<string, boolean>>({})
@@ -529,6 +595,11 @@ export function ConversationSidebar({
           <Settings className="size-4" />
           {t('nav.items.settings')}
         </button>
+        <UpdateButton
+          state={appUpdate.state}
+          onDownload={appUpdate.download}
+          onInstall={appUpdate.install}
+        />
       </footer>
       <AlertDialog
         open={removeWorkspaceDialog.open}

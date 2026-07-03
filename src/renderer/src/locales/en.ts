@@ -15,6 +15,11 @@ export const en = {
         settings: 'Settings'
       }
     },
+    update: {
+      available: 'Version {{version}} available — click to download',
+      downloading: 'Downloading update… {{percent}}%',
+      ready: 'Update ready — click to restart and install'
+    },
     browser: {
       toggle: 'Toggle browser',
       back: 'Back',

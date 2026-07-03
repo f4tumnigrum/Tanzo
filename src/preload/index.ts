@@ -12,6 +12,7 @@ import { pluginsApi } from './plugins'
 import { slashCommandApi } from './slash-command'
 import { fileMentionApi } from './file-mention'
 import { systemApi } from './system'
+import { updaterApi } from './updater'
 
 const tanzoApi = {
   ...systemApi,
@@ -31,6 +32,7 @@ const tanzoApi = {
   fileMention: fileMentionApi,
   pet: petApi,
   browser: browserApi,
+  updater: updaterApi,
   process: { versions: process.versions }
 }
 

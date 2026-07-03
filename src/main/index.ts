@@ -24,6 +24,7 @@ import {
   registerWallpaperScheme
 } from './wallpaper'
 import { createWindow } from './window'
+import { initAutoUpdater } from './updater'
 import {
   createPetWindow,
   destroyPetWindow,
@@ -267,6 +268,9 @@ function bootstrap(): void {
 
   showMainWindow()
   markStartup('showMainWindow.called')
+
+  initAutoUpdater(() => mainWindow)
+  markStartup('autoUpdater.init')
 
   syncPetWindow = (): void => {
     ensureMacDockIcon()
