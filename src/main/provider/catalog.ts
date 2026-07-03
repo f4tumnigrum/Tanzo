@@ -87,6 +87,45 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
       speech: { ...speechFamily, modelDiscoveryStrategy: 'api' }
     }
   },
+  'openai-chat': {
+    id: 'openai-chat',
+    name: 'OpenAI Chat',
+    description: 'OpenAI models via the Chat Completions API.',
+    docsUrl: 'https://platform.openai.com/docs/api-reference/chat',
+    credentialFields: [
+      {
+        key: 'apiKey',
+        label: 'API key',
+        type: 'password',
+        required: true,
+        secret: true,
+        placeholder: 'sk-...'
+      },
+      {
+        key: 'baseUrl',
+        label: 'Base URL',
+        type: 'url',
+        required: false,
+        secret: false,
+        placeholder: 'https://api.openai.com/v1'
+      },
+      {
+        key: 'organization',
+        label: 'Organization',
+        type: 'text',
+        required: false,
+        secret: false
+      },
+      {
+        key: 'project',
+        label: 'Project',
+        type: 'text',
+        required: false,
+        secret: false
+      }
+    ],
+    families: { language: languageFamily }
+  },
   anthropic: {
     id: 'anthropic',
     name: 'Anthropic',

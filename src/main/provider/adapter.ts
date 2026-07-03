@@ -5,12 +5,14 @@ import { anthropicAdapter } from './adapters/anthropic'
 import { deepseekAdapter } from './adapters/deepseek'
 import { googleAdapter } from './adapters/google'
 import { openaiAdapter } from './adapters/openai'
+import { openaiChatAdapter } from './adapters/openai-chat'
 import { openaiCompatibleAdapter } from './adapters/openai-compatible'
 
 export type { Credentials, ProviderAdapter, RemoteModel } from './adapter-types'
 
 export const ADAPTERS: Record<ProviderId, ProviderAdapter> = {
   openai: openaiAdapter,
+  'openai-chat': openaiChatAdapter,
   anthropic: anthropicAdapter,
   google: googleAdapter,
   deepseek: deepseekAdapter,

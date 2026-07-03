@@ -15,7 +15,13 @@ export const deepseekOptionSchemas: ProviderOptionSchema[] = [
         path: 'thinking.type',
         label: 'Thinking',
         control: 'select',
-        choices: ['enabled', 'disabled'].map((value) => ({ value, label: value }))
+        choices: ['adaptive', 'enabled', 'disabled'].map((value) => ({ value, label: value }))
+      },
+      {
+        path: 'reasoningEffort',
+        label: 'Reasoning effort',
+        control: 'select',
+        choices: ['low', 'medium', 'high', 'xhigh', 'max'].map((value) => ({ value, label: value }))
       }
     ]
   }

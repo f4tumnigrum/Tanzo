@@ -25,6 +25,7 @@ export function strategyFor(modelRef: string, _chatId: string): ProviderContextS
     case 'anthropic':
       return createAnthropicStrategy()
     case 'openai':
+    case 'openai-chat':
       return createOpenAIStrategy(modelRef)
     case 'openai-compatible':
       return createOpenAICompatibleStrategy(modelRef)

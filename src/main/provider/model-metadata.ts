@@ -42,6 +42,7 @@ type ModelsDevData = z.infer<typeof modelsDevDataSchema>
 
 const PROVIDER_KEY_MAP: Partial<Record<ProviderId, string>> = {
   openai: 'openai',
+  'openai-chat': 'openai',
   anthropic: 'anthropic',
   google: 'google',
   deepseek: 'deepseek'

@@ -20,6 +20,7 @@ export const PROVIDER_CHANNELS = {
 
 export const PROVIDER_IDS = [
   'openai',
+  'openai-chat',
   'anthropic',
   'google',
   'deepseek',

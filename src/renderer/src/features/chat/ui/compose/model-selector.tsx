@@ -17,6 +17,7 @@ import {
 
 const PROVIDER_ICON: Record<string, typeof Cloud> = {
   openai: Bot,
+  'openai-chat': Bot,
   google: Bot,
   anthropic: Brain,
   deepseek: Sparkles,
@@ -25,6 +26,7 @@ const PROVIDER_ICON: Record<string, typeof Cloud> = {
 
 const PROVIDER_DISPLAY_NAME: Partial<Record<ProviderId, string>> = {
   openai: 'OpenAI',
+  'openai-chat': 'OpenAI Chat',
   anthropic: 'Anthropic',
   google: 'Google',
   deepseek: 'DeepSeek',

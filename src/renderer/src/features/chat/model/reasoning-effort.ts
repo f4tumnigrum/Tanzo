@@ -42,6 +42,7 @@ export function reasoningEffortsForProvider(
     case 'anthropic':
       return ANTHROPIC_EFFORTS
     case 'openai':
+    case 'openai-chat':
     case 'openai-compatible':
       return OPENAI_LIKE_EFFORTS
     case 'google':
@@ -62,6 +63,7 @@ export function reasoningEffortFromDefaults(
     case 'anthropic':
       return normalizeEffort(options.effort)
     case 'openai':
+    case 'openai-chat':
     case 'openai-compatible':
       return normalizeEffort(options.reasoningEffort)
     case 'google': {
@@ -100,6 +102,7 @@ function providerOptionsWithReasoningEffort(
     case 'anthropic':
       return setOrDelete(options, 'effort', effort)
     case 'openai':
+    case 'openai-chat':
     case 'openai-compatible':
       return setOrDelete(options, 'reasoningEffort', effort)
     case 'google':

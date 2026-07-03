@@ -11,6 +11,7 @@ import { anthropicOptionSchemas } from './options/anthropic'
 import { deepseekOptionSchemas } from './options/deepseek'
 import { googleOptionSchemas } from './options/google'
 import { openaiOptionSchemas } from './options/openai'
+import { openaiChatOptionSchemas } from './options/openai-chat'
 import { openaiCompatibleOptionSchemas } from './options/openai-compatible'
 
 export const EMPTY_DEFAULTS: ProviderDefaultsState = {
@@ -23,6 +24,7 @@ const UNSAFE_OPTION_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
 
 export const OPTION_SCHEMAS: ProviderOptionSchema[] = [
   ...openaiOptionSchemas,
+  ...openaiChatOptionSchemas,
   ...anthropicOptionSchemas,
   ...googleOptionSchemas,
   ...deepseekOptionSchemas,

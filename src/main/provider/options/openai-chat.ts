@@ -1,10 +1,10 @@
-import type { OpenAILanguageModelResponsesOptions } from '@ai-sdk/openai'
+import type { OpenAILanguageModelChatOptions } from '@ai-sdk/openai'
 import type { ProviderOptionField, ProviderOptionSchema } from '@shared/provider'
 
-const _typecheckOpenAILanguageOptions: Partial<OpenAILanguageModelResponsesOptions> = {}
-void _typecheckOpenAILanguageOptions
+const _typecheckOpenAIChatLanguageOptions: Partial<OpenAILanguageModelChatOptions> = {}
+void _typecheckOpenAIChatLanguageOptions
 
-const openaiLanguageFields: ProviderOptionField[] = [
+const openaiChatLanguageFields: ProviderOptionField[] = [
   {
     path: 'reasoningEffort',
     label: 'Reasoning effort',
@@ -30,7 +30,7 @@ const openaiLanguageFields: ProviderOptionField[] = [
     path: 'store',
     label: 'Store responses',
     control: 'boolean',
-    description: 'Allow OpenAI to store Responses API outputs for later retrieval.'
+    description: 'Allow OpenAI to store completions for later retrieval.'
   },
   {
     path: 'parallelToolCalls',
@@ -48,10 +48,11 @@ const openaiLanguageFields: ProviderOptionField[] = [
     control: 'string'
   },
   {
-    path: 'reasoningSummary',
-    label: 'Reasoning summary',
-    control: 'select',
-    choices: ['auto', 'concise', 'detailed'].map((value) => ({ value, label: value }))
+    path: 'maxCompletionTokens',
+    label: 'Max completion tokens',
+    control: 'number',
+    min: 1,
+    step: 1
   },
   {
     path: 'safetyIdentifier',
@@ -69,15 +70,25 @@ const openaiLanguageFields: ProviderOptionField[] = [
     path: 'metadata',
     label: 'Metadata',
     control: 'json'
+  },
+  {
+    path: 'logitBias',
+    label: 'Logit bias',
+    control: 'json'
+  },
+  {
+    path: 'prediction',
+    label: 'Prediction',
+    control: 'json'
   }
 ]
 
-export const openaiOptionSchemas: ProviderOptionSchema[] = [
+export const openaiChatOptionSchemas: ProviderOptionSchema[] = [
   {
-    providerId: 'openai',
+    providerId: 'openai-chat',
     family: 'language',
     providerKey: 'openai',
-    label: 'OpenAI language options',
-    fields: openaiLanguageFields
+    label: 'OpenAI Chat Completions options',
+    fields: openaiChatLanguageFields
   }
 ]

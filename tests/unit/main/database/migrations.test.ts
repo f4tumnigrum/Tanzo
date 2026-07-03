@@ -13,9 +13,9 @@ describe('database/migrations on real sqlite', () => {
           .all(['tanzo']) as Array<{ version: number }>
       ).map((row) => row.version)
 
-    expect(versions()).toEqual([1, 19, 20])
+    expect(versions()).toEqual([1, 19, 20, 21])
     expect(() => runMigrations(db, [tanzoMigrations])).not.toThrow()
-    expect(versions()).toEqual([1, 19, 20])
+    expect(versions()).toEqual([1, 19, 20, 21])
   })
 
   it('applies plugin_states for databases that already used earlier migration versions', () => {
@@ -32,7 +32,7 @@ describe('database/migrations on real sqlite', () => {
     const insert = db.prepare(
       'INSERT INTO _tanzo_migrations (module, version, name, applied_at) VALUES (?, ?, ?, ?)'
     )
-    for (let version = 1; version <= 18; version++) {
+    for (let version = 2; version <= 18; version++) {
       insert.run(['tanzo', version, `legacy_${version}`, 1])
     }
 
@@ -65,7 +65,7 @@ describe('database/migrations on real sqlite', () => {
     const insert = db.prepare(
       'INSERT INTO _tanzo_migrations (module, version, name, applied_at) VALUES (?, ?, ?, ?)'
     )
-    for (let version = 1; version <= 19; version++) {
+    for (let version = 2; version <= 19; version++) {
       insert.run(['tanzo', version, `legacy_${version}`, 1])
     }
 
@@ -137,6 +137,58 @@ describe('database/migrations on real sqlite', () => {
     expect(db.prepare('SELECT value FROM user_owned_table WHERE id = ?').get(['keep'])).toEqual({
       value: 'data'
     })
+    db.close()
+  })
+
+  it('preserves provider data through the v21 provider_openai_chat rebuild', () => {
+    const db = createRealDb({ migrate: false })
+    runMigrations(db, [{ moduleName: 'tanzo', files: [tanzoMigrations.files[0]] }])
+    db.exec(`
+      INSERT INTO provider_connections (
+        provider_id, public_fields_json, secret_fields_encrypted_json, active_key_id, updated_at
+      ) VALUES ('openai', '{"baseUrl":"https://api.openai.com/v1"}', '{}', 'primary', 1);
+      INSERT INTO provider_keys (
+        id, provider_id, key_id, label, encrypted_value, status, created_at, updated_at
+      ) VALUES ('openai:primary', 'openai', 'primary', 'Primary', 'enc:key', 'valid', 1, 1);
+      INSERT INTO provider_models (
+        provider_id, family, model_id, name, model_json, updated_at
+      ) VALUES ('openai', 'language', 'gpt-5', 'GPT 5', '{"id":"gpt-5","name":"GPT 5"}', 1);
+      INSERT INTO provider_default_models (provider_id, family, model_id, updated_at)
+        VALUES ('openai', 'language', 'gpt-5', 1);
+      INSERT INTO provider_defaults (provider_id, family, defaults_json, updated_at)
+        VALUES ('openai', 'language', '{"callDefaults":{}}', 1);
+    `)
+
+    runMigrations(db, [tanzoMigrations])
+
+    expect(
+      db.prepare('SELECT active_key_id FROM provider_connections WHERE provider_id = ?').get([
+        'openai'
+      ])
+    ).toEqual({ active_key_id: 'primary' })
+    expect(
+      db.prepare('SELECT COUNT(*) AS n FROM provider_keys WHERE provider_id = ?').get(['openai'])
+    ).toEqual({ n: 1 })
+    expect(
+      db
+        .prepare('SELECT model_id FROM provider_default_models WHERE provider_id = ?')
+        .get(['openai'])
+    ).toEqual({ model_id: 'gpt-5' })
+    expect(
+      db.prepare('SELECT COUNT(*) AS n FROM provider_defaults WHERE provider_id = ?').get([
+        'openai'
+      ])
+    ).toEqual({ n: 1 })
+
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO provider_connections (
+             provider_id, public_fields_json, secret_fields_encrypted_json, updated_at
+           ) VALUES ('openai-chat', '{}', '{}', 2)`
+        )
+        .run()
+    ).not.toThrow()
     db.close()
   })
 
