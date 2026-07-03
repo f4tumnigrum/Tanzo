@@ -13,7 +13,7 @@ Key facts (from `package.json`):
 
 - `name: tanzo`, `main: ./out/main/index.js`, author `f4tumnigrum`. (`Lumin Studio` appears only as the
   `appUserModelId` `com.luminstudio.tanzo` and as the packaging maintainer in `electron-builder.yml`.)
-- The runtime core depends on `ai@7.x-beta` and the `@ai-sdk/*` family of beta provider packages; the UI uses
+- The runtime core depends on the stable `ai@7.x` line and the `@ai-sdk/*` family of provider packages; the UI uses
   React 19, `@tanstack/react-query`, `zustand`, and `react-router-dom@7`; persistence is `better-sqlite3`;
   code search is `@vscode/ripgrep`; MCP uses `@ai-sdk/mcp`.
 

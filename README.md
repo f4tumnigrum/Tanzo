@@ -38,7 +38,7 @@ Tanzo is a cross-platform desktop application (Electron + React) that puts an au
 It is not a chat window bolted onto an editor. The agent loop is built on the [Vercel AI SDK](https://ai-sdk.dev/) tool loop and wrapped in a layered runtime (`AgentService` → `RunEngine` → `TurnLoop`) with a single source of truth in local SQLite. Nothing about your conversations or credentials leaves your machine unless you send it to a model provider you configured.
 
 > [!NOTE]
-> Tanzo tracks the AI SDK v7 **beta** line (`ai@7.x-beta` and the `@ai-sdk/*` provider packages). Interfaces may shift between releases. See [Status](#status).
+> Tanzo runs on the **stable** AI SDK v7 line (`ai@7.x` and the `@ai-sdk/*` provider packages). See [Status](#status).
 
 ## Why Tanzo
 
@@ -225,8 +225,7 @@ tests/             # Vitest suites
 
 ## Status
 
-Tanzo is under active development and pre-1.0. It depends on the AI SDK v7 beta line, so provider interfaces and
-behavior can change between releases. Expect breaking changes; pin a version if you need stability. Follow
+Tanzo is under active development and pre-1.0. Expect breaking changes; pin a version if you need stability. Follow
 [Releases](https://github.com/f4tumnigrum/Tanzo/releases) and the [Changelog](./CHANGELOG.md).
 
 ## Contributing

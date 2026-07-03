@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Dependencies: AI SDK moved from the v7 beta line to stable releases
+  (`ai@7.0.12`, `@ai-sdk/anthropic@4.0.6`, `@ai-sdk/openai@4.0.6`,
+  `@ai-sdk/openai-compatible@3.0.4`, `@ai-sdk/google@4.0.7`,
+  `@ai-sdk/deepseek@3.0.4`, `@ai-sdk/mcp@2.0.6`, `@ai-sdk/provider@4.0.1`,
+  `@ai-sdk/provider-utils@5.0.4`). No source changes were required; the API
+  surface is unchanged from the tracked beta.
+- Dependencies: routine patch/minor updates across the stack (TanStack Query
+  5.101, better-sqlite3 12.11, recharts 3.9, Vite 8.1, Vitest 4.1.9,
+  Tailwind 4.3.2, electron-builder 26.15.3, and others).
+
 ## [0.2.5] - 2026-07-03
 
 ### Added
