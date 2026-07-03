@@ -2,8 +2,6 @@ import type {
   ColorThemeDefinition,
   DensityPreset,
   DensityPresetId,
-  FontSizePreset,
-  FontSizePresetId,
   RadiusPreset,
   RadiusPresetId,
   ColorThemeId
@@ -706,26 +704,6 @@ const densityPresets: DensityPreset[] = [
     spacing: '0.3rem'
   }
 ]
-export const fontSizePresets: FontSizePreset[] = [
-  {
-    id: 'small',
-    name: 'Small',
-    description: 'Smaller text for dense information.',
-    value: '14px'
-  },
-  {
-    id: 'default',
-    name: 'Default',
-    description: 'Standard size for most screens.',
-    value: '16px'
-  },
-  {
-    id: 'large',
-    name: 'Large',
-    description: 'Larger text for readability.',
-    value: '18px'
-  }
-]
 const colorThemeMap = new Map<ColorThemeId, ColorThemeDefinition>(
   colorThemes.map((theme) => [theme.id, theme])
 )
@@ -735,13 +713,9 @@ const radiusPresetMap = new Map<RadiusPresetId, RadiusPreset>(
 const densityPresetMap = new Map<DensityPresetId, DensityPreset>(
   densityPresets.map((preset) => [preset.id, preset])
 )
-const fontSizePresetMap = new Map<FontSizePresetId, FontSizePreset>(
-  fontSizePresets.map((preset) => [preset.id, preset])
-)
 const defaultColorTheme = colorThemes[0]
 const defaultRadiusPreset = radiusPresets[1]
 const defaultDensityPreset = densityPresets[1]
-const defaultFontSizePreset = fontSizePresets[1]
 export function getColorThemeById(id: ColorThemeId): ColorThemeDefinition {
   const builtin = colorThemeMap.get(id)
   if (builtin) return builtin
@@ -753,7 +727,4 @@ export function getRadiusPresetById(id: RadiusPresetId): RadiusPreset {
 }
 export function getDensityPresetById(id: DensityPresetId): DensityPreset {
   return densityPresetMap.get(id) ?? defaultDensityPreset
-}
-export function getFontSizePresetById(id: FontSizePresetId): FontSizePreset {
-  return fontSizePresetMap.get(id) ?? defaultFontSizePreset
 }

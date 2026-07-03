@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-04
+
+### Added
+
+- Typography settings: a new Settings → Theme section replaces the old
+  font-size preset with separate interface-font and code-font pickers (bundled:
+  Geist, Inter, Geist Mono, JetBrains Mono; system fonts enumerated via the
+  Local Font Access API), a font-size slider (12–20 px), a code-size slider
+  (9–16 px), and a line-height slider (1.40–2.00), with a live preview panel.
+- Window state persistence: the main window's position, size, and
+  maximized state are saved to `window-state.json` in userData and restored on
+  next launch. Saved bounds are validated against the current displays so an
+  off-screen position (e.g. after unplugging a monitor) falls back to a
+  centered default.
+
+### Changed
+
+- Wallpaper system overhauled: the settings UI now manages a library of up to
+  12 stored assets with per-thumbnail previews. Separate light-mode and
+  dark-mode wallpapers can be assigned independently (sun/moon badges),
+  fit mode is selectable (cover / contain / fill / tile), and a new surface
+  (panel) opacity slider controls the transparency of the sidebar, toolbar, and
+  main area when a wallpaper is active.
+- Dependencies: four `@fontsource-variable` packages (Geist, Geist Mono,
+  Inter, JetBrains Mono) added to bundle the typography fonts.
+- Preferences schema: `fontSizePresetId` replaced by a `typography` object;
+  `WallpaperSettings` expanded with `assets`, `activeId`, `darkAssetId`, `fit`,
+  and `surfaceOpacity`.
+
 ## [0.2.7] - 2026-07-03
 
 ### Changed
@@ -140,7 +169,8 @@ Initial public release.
 - Subprocess hooks compatible with Codex / Claude Code event triggers.
 - Architecture reference under `docs/architecture/`.
 
-[Unreleased]: https://github.com/f4tumnigrum/Tanzo/compare/v0.2.7...HEAD
+[Unreleased]: https://github.com/f4tumnigrum/Tanzo/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/f4tumnigrum/Tanzo/compare/v0.2.9...v0.3.0
 [0.2.7]: https://github.com/f4tumnigrum/Tanzo/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/f4tumnigrum/Tanzo/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/f4tumnigrum/Tanzo/compare/v0.2.4...v0.2.5

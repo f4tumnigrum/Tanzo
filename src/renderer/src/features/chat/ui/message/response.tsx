@@ -26,7 +26,7 @@ export const Response = memo(
       return (
         <p
           className={cn(
-            'whitespace-pre-wrap break-words text-[0.8125rem] leading-[1.7] text-foreground/88',
+            'whitespace-pre-wrap break-words text-[0.8125rem] leading-[var(--content-line-height)] text-foreground/88',
             className
           )}
         >

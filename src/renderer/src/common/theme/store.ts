@@ -1,21 +1,10 @@
 import { useLayoutEffect } from 'react'
 import type { ElectronColorScheme } from '@shared/system'
-import type { ThemeMode } from '@shared/preferences'
+import type { ThemeMode, TypographySettings } from '@shared/preferences'
 import { useTheme } from '@/components/theme/theme-provider'
 import { patchPreferences, usePreferences } from '@/common/preferences'
-import {
-  getColorThemeById,
-  getDensityPresetById,
-  getFontSizePresetById,
-  getRadiusPresetById
-} from './presets'
-import type {
-  ColorThemeId,
-  DensityPresetId,
-  FontSizePresetId,
-  RadiusPresetId,
-  ThemeOverrides
-} from './types'
+import { getColorThemeById, getDensityPresetById, getRadiusPresetById } from './presets'
+import type { ColorThemeId, DensityPresetId, RadiusPresetId, ThemeOverrides } from './types'
 
 const OVERRIDE_KEYS: (keyof ThemeOverrides)[] = [
   'radius',
@@ -38,7 +27,7 @@ interface ApplySpec {
   colorThemeId: ColorThemeId
   radiusPresetId: RadiusPresetId
   densityPresetId: DensityPresetId
-  fontSizePresetId: FontSizePresetId
+  typography: TypographySettings
   mode: 'light' | 'dark'
 }
 
@@ -50,7 +39,7 @@ export function applyThemeSettings({
   colorThemeId,
   radiusPresetId,
   densityPresetId,
-  fontSizePresetId,
+  typography,
   mode
 }: ApplySpec): void {
   if (typeof document === 'undefined') return
@@ -60,7 +49,6 @@ export function applyThemeSettings({
   const overrides = mode === 'dark' ? colorTheme.darkOverrides : colorTheme.lightOverrides
   const radiusPreset = getRadiusPresetById(radiusPresetId)
   const densityPreset = getDensityPresetById(densityPresetId)
-  const fontSizePreset = getFontSizePresetById(fontSizePresetId)
 
   for (const [key, value] of Object.entries(palette)) {
     root.style.setProperty(`--${key}`, value)
@@ -74,11 +62,17 @@ export function applyThemeSettings({
 
   if (overrides?.radius == null) root.style.setProperty('--radius', radiusPreset.value)
   if (overrides?.spacing == null) root.style.setProperty('--spacing', densityPreset.spacing)
-  root.style.setProperty('--font-size-base', fontSizePreset.value)
+
+  // User typography wins over theme overrides: applied last, same inline scope.
+  root.style.setProperty('--font-size-base', `${typography.fontSize}px`)
+  root.style.setProperty('--code-font-size', `${typography.codeFontSize}px`)
+  root.style.setProperty('--content-line-height', `${typography.lineHeight}`)
+  if (typography.sansFont) root.style.setProperty('--font-sans', typography.sansFont)
+  if (typography.monoFont) root.style.setProperty('--font-mono', typography.monoFont)
+
   root.dataset.colorTheme = colorTheme.id
   root.dataset.radius = radiusPreset.id
   root.dataset.density = densityPreset.id
-  root.dataset.fontSize = fontSizePreset.id
 }
 
 export function ThemeInitializer() {
@@ -94,7 +88,7 @@ export function ThemeInitializer() {
       colorThemeId: resolvedColorThemeId,
       radiusPresetId: preferences.radiusPresetId,
       densityPresetId: preferences.densityPresetId,
-      fontSizePresetId: preferences.fontSizePresetId,
+      typography: preferences.typography,
       mode: resolvedTheme
     })
   }, [
@@ -102,7 +96,7 @@ export function ThemeInitializer() {
     preferences.customThemes,
     preferences.radiusPresetId,
     preferences.densityPresetId,
-    preferences.fontSizePresetId,
+    preferences.typography,
     resolvedColorThemeId,
     resolvedTheme
   ])
@@ -117,10 +111,11 @@ export function useThemeSettings() {
     colorThemeId: resolvedColorThemeId,
     radiusPresetId: preferences.radiusPresetId,
     densityPresetId: preferences.densityPresetId,
-    fontSizePresetId: preferences.fontSizePresetId,
+    typography: preferences.typography,
     setColorThemeId: (id: ColorThemeId) => patchPreferences({ colorThemeId: id }),
     setRadiusPresetId: (id: RadiusPresetId) => patchPreferences({ radiusPresetId: id }),
     setDensityPresetId: (id: DensityPresetId) => patchPreferences({ densityPresetId: id }),
-    setFontSizePresetId: (id: FontSizePresetId) => patchPreferences({ fontSizePresetId: id })
+    patchTypography: (patch: Partial<TypographySettings>) =>
+      patchPreferences({ typography: patch })
   }
 }

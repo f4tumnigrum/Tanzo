@@ -16,7 +16,10 @@ export const preferencesApi = {
   removeCustomTheme: invoke<(id: ColorThemeId) => Promise<UserPreferences>>(
     PREFERENCES_CHANNELS.removeCustomTheme
   ),
-  setWallpaper: invoke<() => Promise<UserPreferences>>(PREFERENCES_CHANNELS.setWallpaper),
+  addWallpaper: invoke<() => Promise<UserPreferences>>(PREFERENCES_CHANNELS.addWallpaper),
+  removeWallpaper: invoke<(id: string) => Promise<UserPreferences>>(
+    PREFERENCES_CHANNELS.removeWallpaper
+  ),
   clearWallpaper: invoke<() => Promise<UserPreferences>>(PREFERENCES_CHANNELS.clearWallpaper),
   onChanged: (callback: (preferences: UserPreferences) => void) =>
     subscribe<UserPreferences>(PREFERENCES_CHANNELS.changed, callback)

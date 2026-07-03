@@ -160,18 +160,3 @@ export function ColorThemePreview({ theme }: { theme: ColorThemeDefinition }) {
   )
 }
 
-export function FontSizePreview({ size }: { size: string }) {
-  return (
-    <div className="flex h-full w-full items-baseline justify-center gap-px">
-      <span className="font-semibold leading-none text-foreground" style={{ fontSize: size }}>
-        A
-      </span>
-      <span
-        className="font-medium leading-none text-foreground/45"
-        style={{ fontSize: `calc(${size} * 0.78)` }}
-      >
-        a
-      </span>
-    </div>
-  )
-}

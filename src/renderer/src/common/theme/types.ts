@@ -5,7 +5,7 @@ export type {
   ThemeOverrides,
   RadiusPresetId,
   DensityPresetId,
-  FontSizePresetId
+  TypographySettings
 } from '@shared/preferences'
 
 export interface RadiusPreset {
@@ -20,11 +20,4 @@ export interface DensityPreset {
   name: string
   description: string
   spacing: string
-}
-
-export interface FontSizePreset {
-  id: import('@shared/preferences').FontSizePresetId
-  name: string
-  description: string
-  value: string
 }

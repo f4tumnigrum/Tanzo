@@ -90,8 +90,12 @@ export function removeCustomTheme(id: ColorThemeId): Promise<void> {
   return applyResult(api()?.removeCustomTheme(id))
 }
 
-export function pickWallpaper(): Promise<void> {
-  return applyResult(api()?.setWallpaper())
+export function addWallpaper(): Promise<void> {
+  return applyResult(api()?.addWallpaper())
+}
+
+export function removeWallpaper(id: string): Promise<void> {
+  return applyResult(api()?.removeWallpaper(id))
 }
 
 export function clearWallpaper(): Promise<void> {

@@ -1,29 +1,12 @@
 import { join, normalize, sep } from 'path'
 import { release } from 'node:os'
 import { fileURLToPath } from 'url'
-import { BrowserWindow, screen, shell, type BrowserWindowConstructorOptions } from 'electron'
+import { BrowserWindow, shell, type BrowserWindowConstructorOptions } from 'electron'
 import { is } from '@electron-toolkit/utils'
 import { detectNativeWindowEffect } from '@shared/system'
 import { installEmbeddedBrowserHardening } from './embedded-browser'
+import { getInitialWindowState, manageWindowState } from './window-state'
 import icon from '../../resources/Tanzo.png?asset'
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max)
-}
-
-function initialBounds() {
-  const { width, height } = screen.getPrimaryDisplay().workAreaSize
-  const maxWidth = Math.min(1480, width > 1072 ? width - 48 : width)
-  const maxHeight = Math.min(980, height > 728 ? height - 48 : height)
-  const minWidth = Math.min(1024, maxWidth)
-  const minHeight = Math.min(680, maxHeight)
-  return {
-    width: Math.round(clamp(width * 0.82, minWidth, maxWidth)),
-    height: Math.round(clamp(height * 0.86, minHeight, maxHeight)),
-    minWidth,
-    minHeight
-  }
-}
 
 function isAllowedNavigation(url: string): boolean {
   const rendererUrl = process.env['ELECTRON_RENDERER_URL']
@@ -64,8 +47,15 @@ export function createWindow(): BrowserWindow {
       : { backgroundColor: '#101214' })
   }
 
+  const initialState = getInitialWindowState()
+
   const window = new BrowserWindow({
-    ...initialBounds(),
+    x: initialState.x,
+    y: initialState.y,
+    width: initialState.width,
+    height: initialState.height,
+    minWidth: initialState.minWidth,
+    minHeight: initialState.minHeight,
     show: false,
     autoHideMenuBar: true,
     title: 'Tanzo',
@@ -83,12 +73,14 @@ export function createWindow(): BrowserWindow {
   })
 
   installEmbeddedBrowserHardening(window)
+  manageWindowState(window)
 
   if (isMac) {
     window.setWindowButtonVisibility(false)
   }
 
   window.once('ready-to-show', () => {
+    if (initialState.isMaximized) window.maximize()
     window.show()
     if (is.dev) window.webContents.openDevTools({ mode: 'detach' })
   })

@@ -1,5 +1,5 @@
 import { useCallback } from 'react'
-import { Brain, Globe, Palette, Sun, Trash2, Type } from 'lucide-react'
+import { Brain, Globe, Palette, Sun, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -8,13 +8,13 @@ import { SUPPORTED_LANGUAGES } from '@/i18n'
 import { cn } from '@/lib/utils'
 import { patchPreferences, usePreferences } from '@/common/preferences'
 import { useCustomThemes } from '@/common/theme/custom-themes'
-import { colorThemes, fontSizePresets } from '@/common/theme/presets'
+import { colorThemes } from '@/common/theme/presets'
 import { useThemeSettings } from '@/common/theme/store'
 import type { ThemeMode } from '@shared/preferences'
 import { SectionCard } from '../shared/settings-primitives'
 import { ThemeImportRow } from './theme-import-row'
 import { ThemeOptionRow } from './theme-option-row'
-import { ColorThemePreview, FontSizePreview, ModePreview } from './theme-previews'
+import { ColorThemePreview, ModePreview } from './theme-previews'
 
 function languageOptionKey(value: string): string {
   return value === 'zh-CN' ? 'zhCN' : value
@@ -189,32 +189,3 @@ export function ColorThemeSection() {
   )
 }
 
-export function FontSizeSection() {
-  const { t } = useTranslation()
-  const { fontSizePresetId, setFontSizePresetId } = useThemeSettings()
-
-  return (
-    <SectionCard
-      icon={<Type className="size-3" />}
-      title={t('settings.theme.fontSize.title', { defaultValue: 'Font Size' })}
-      description={t('settings.theme.fontSize.description', {
-        defaultValue: 'Adjust the base text size.'
-      })}
-    >
-      {fontSizePresets.map((preset) => (
-        <ThemeOptionRow
-          key={preset.id}
-          label={t(`settings.theme.fontSize.options.${preset.id}.label`, {
-            defaultValue: preset.name
-          })}
-          description={t(`settings.theme.fontSize.options.${preset.id}.description`, {
-            defaultValue: preset.description
-          })}
-          selected={fontSizePresetId === preset.id}
-          onClick={() => void setFontSizePresetId(preset.id)}
-          preview={<FontSizePreview size={preset.value} />}
-        />
-      ))}
-    </SectionCard>
-  )
-}

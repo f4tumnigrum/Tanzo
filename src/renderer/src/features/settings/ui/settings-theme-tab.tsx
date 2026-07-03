@@ -1,10 +1,10 @@
 import {
   AppearanceModeSection,
   ColorThemeSection,
-  FontSizeSection,
   LanguageSettingsSection,
   ReasoningSection
 } from './theme/settings-theme-sections'
+import { TypographySection } from './theme/settings-typography-section'
 import { WallpaperSection } from './theme/settings-wallpaper-section'
 
 export function SettingsThemeTab() {
@@ -15,7 +15,7 @@ export function SettingsThemeTab() {
       <ReasoningSection />
       <ColorThemeSection />
       <WallpaperSection />
-      <FontSizeSection />
+      <TypographySection />
     </div>
   )
 }

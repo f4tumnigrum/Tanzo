@@ -122,7 +122,7 @@ export const UserMessage = memo(function UserMessage({
                   cancelEditing()
                 }
               }}
-              className="min-h-[3rem] text-[0.8125rem] leading-[1.7] text-primary-foreground"
+              className="min-h-[3rem] text-[0.8125rem] leading-[var(--content-line-height)] text-primary-foreground"
               rows={Math.min(12, Math.max(2, draft.split('\n').length))}
             />
           </MessageContent>
@@ -158,7 +158,7 @@ export const UserMessage = memo(function UserMessage({
                         return (
                           <p
                             key={`text-${index}`}
-                            className="whitespace-pre-wrap break-words text-[0.8125rem] leading-[1.7]"
+                            className="whitespace-pre-wrap break-words text-[0.8125rem] leading-[var(--content-line-height)]"
                           >
                             {part.text}
                           </p>

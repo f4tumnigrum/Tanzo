@@ -24,7 +24,7 @@ function applyTheme(): void {
     colorThemeId: getColorThemeById(prefs.colorThemeId).id,
     radiusPresetId: prefs.radiusPresetId,
     densityPresetId: prefs.densityPresetId,
-    fontSizePresetId: prefs.fontSizePresetId,
+    typography: prefs.typography,
     mode: resolveThemeMode(prefs.themeMode, currentColorScheme)
   })
 }

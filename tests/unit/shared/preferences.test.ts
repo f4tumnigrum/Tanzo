@@ -8,7 +8,13 @@ describe('shared/preferences', () => {
       colorThemeId: 'tanzo',
       radiusPresetId: 'balanced',
       densityPresetId: 'comfortable',
-      fontSizePresetId: 'default',
+      typography: {
+        fontSize: 16,
+        codeFontSize: 11,
+        lineHeight: 1.72,
+        sansFont: null,
+        monoFont: null
+      },
       language: null,
       customThemes: [],
       reasoningExpandedByDefault: true

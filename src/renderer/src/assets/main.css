@@ -1,5 +1,9 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
+@import '@fontsource-variable/geist';
+@import '@fontsource-variable/geist-mono';
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/jetbrains-mono';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -110,6 +114,8 @@
   --chart-4: oklch(0.72 0.19 75);
   --chart-5: oklch(0.67 0.19 20);
   --font-size-base: 16px;
+  --code-font-size: 11px;
+  --content-line-height: 1.72;
   --spacing: 0.25rem;
   --tracking-normal: -0.01em;
   --letter-spacing: -0.01em;
@@ -186,8 +192,23 @@
 }
 
 :root.platform-darwin {
-  --font-sans-ui: 'Geist Sans', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-mono-ui: 'Geist Mono Variable', 'Noto Sans SC', 'SF Mono', Menlo, Monaco, monospace;
+  --font-sans-ui: var(
+    --font-sans,
+    'Geist Variable',
+    'Noto Sans SC',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif
+  );
+  --font-mono-ui: var(
+    --font-mono,
+    'Geist Mono Variable',
+    'Noto Sans SC',
+    'SF Mono',
+    Menlo,
+    Monaco,
+    monospace
+  );
 }
 
 .dark {
@@ -293,8 +314,22 @@
 }
 
 :root.platform-win32 {
-  --font-sans-ui: 'Open Sans Variable', 'Noto Sans SC', 'Segoe UI Variable', 'Segoe UI', sans-serif;
-  --font-mono-ui: 'Source Code Pro Variable', 'Noto Sans SC', 'Cascadia Code', Consolas, monospace;
+  --font-sans-ui: var(
+    --font-sans,
+    'Geist Variable',
+    'Noto Sans SC',
+    'Segoe UI Variable',
+    'Segoe UI',
+    sans-serif
+  );
+  --font-mono-ui: var(
+    --font-mono,
+    'Geist Mono Variable',
+    'Noto Sans SC',
+    'Cascadia Code',
+    Consolas,
+    monospace
+  );
 }
 
 :root:not([data-window-effect]) {

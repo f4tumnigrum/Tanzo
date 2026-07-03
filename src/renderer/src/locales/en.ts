@@ -1438,12 +1438,26 @@ export const en = {
         },
         wallpaper: {
           title: 'Wallpaper',
-          description: 'Set a background image behind the interface.',
-          choose: 'Choose image',
-          replace: 'Replace',
-          clear: 'Remove',
+          description: 'Build a library of background images and switch between them.',
+          empty: 'No wallpapers yet.',
+          add: 'Add',
+          activate: 'Use this wallpaper',
+          setDark: 'Use in dark mode',
+          remove: 'Remove',
+          clearAll: 'Clear all',
+          hint: 'Click a thumbnail to use it. Sun badge = light mode, moon badge = dark mode. Hover to assign a dark-mode image or remove.',
           opacity: 'Opacity',
           blur: 'Blur',
+          surfaceOpacity: 'Panel opacity',
+          fit: {
+            title: 'Fit',
+            options: {
+              cover: 'Cover',
+              contain: 'Contain',
+              fill: 'Fill',
+              tile: 'Tile'
+            }
+          },
           overlay: {
             title: 'Overlay',
             strength: 'Tint',
@@ -1454,23 +1468,21 @@ export const en = {
             }
           }
         },
-        fontSize: {
-          title: 'Font Size',
-          description: 'Choose the base text size.',
-          options: {
-            small: {
-              label: 'Small',
-              description: 'Smaller text for denser layouts.'
-            },
-            default: {
-              label: 'Default',
-              description: 'A balanced size for most screens.'
-            },
-            large: {
-              label: 'Large',
-              description: 'Larger text for easier reading.'
-            }
-          }
+        typography: {
+          title: 'Typography',
+          description: 'Fonts, sizes, and line height.',
+          sansFont: 'Interface font',
+          monoFont: 'Code font',
+          fontSize: 'Font size',
+          codeFontSize: 'Code size',
+          lineHeight: 'Line height',
+          themeDefault: 'Theme default',
+          bundled: 'Bundled',
+          system: 'System',
+          sample: 'The quick brown fox jumps over the lazy dog — 0123456789',
+          search: 'Search fonts…',
+          noResults: 'No fonts found.',
+          reset: 'Reset'
         }
       }
     },

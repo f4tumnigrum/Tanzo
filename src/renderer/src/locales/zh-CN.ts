@@ -1421,12 +1421,26 @@ export const zhCN = {
         },
         wallpaper: {
           title: '背景壁纸',
-          description: '在界面背后设置一张背景图。',
-          choose: '选择图片',
-          replace: '更换',
-          clear: '移除',
+          description: '建立壁纸库，随时切换背景图片。',
+          empty: '尚未添加壁纸。',
+          add: '添加',
+          activate: '使用此壁纸',
+          setDark: '用于深色模式',
+          remove: '移除',
+          clearAll: '全部清除',
+          hint: '点击缩略图以启用。太阳徽章 = 浅色模式，月亮徽章 = 深色模式。悬停可指定深色壁纸或移除。',
           opacity: '不透明度',
           blur: '模糊',
+          surfaceOpacity: '面板透明度',
+          fit: {
+            title: '填充方式',
+            options: {
+              cover: '填满',
+              contain: '适应',
+              fill: '拉伸',
+              tile: '平铺'
+            }
+          },
           overlay: {
             title: '遮罩',
             strength: '浓度',
@@ -1437,23 +1451,21 @@ export const zhCN = {
             }
           }
         },
-        fontSize: {
-          title: '字体大小',
-          description: '设置界面的基础字号。',
-          options: {
-            small: {
-              label: '小',
-              description: '适合信息更密集的布局。'
-            },
-            default: {
-              label: '默认',
-              description: '适合大多数屏幕的平衡字号。'
-            },
-            large: {
-              label: '大',
-              description: '更便于阅读。'
-            }
-          }
+        typography: {
+          title: '排版',
+          description: '字体、字号与行高。',
+          sansFont: '界面字体',
+          monoFont: '代码字体',
+          fontSize: '字号',
+          codeFontSize: '代码字号',
+          lineHeight: '行高',
+          themeDefault: '跟随主题',
+          bundled: '内置',
+          system: '系统',
+          sample: '落霞与孤鹜齐飞，秋水共长天一色 — 0123456789',
+          search: '搜索字体…',
+          noResults: '未找到字体。',
+          reset: '重置'
         }
       }
     },

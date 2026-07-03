@@ -82,7 +82,7 @@ export function CodeBlock({
             customStyle={{
               margin: 0,
               padding: '0.625rem',
-              fontSize: '0.6875rem',
+              fontSize: 'var(--code-font-size)',
               background: 'transparent',
               color: 'color-mix(in oklab, var(--foreground) 85%, transparent)',
               maxWidth: '100%',
@@ -93,7 +93,7 @@ export function CodeBlock({
               color: 'color-mix(in oklab, var(--muted-foreground) 40%, transparent)',
               paddingRight: '0.5rem',
               minWidth: '1.25rem',
-              fontSize: '0.625rem'
+              fontSize: 'calc(var(--code-font-size) * 0.91)'
             }}
             showLineNumbers={showLineNumbers}
             style={style}

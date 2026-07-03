@@ -97,6 +97,68 @@ describe('main/preferences', () => {
     expect(getPreferences().browserAutomation).toBe(true)
   })
 
+  it('migrates a legacy fontSizePresetId into typography.fontSize', async () => {
+    await writeFile(
+      join(userDataPath, 'preferences.json'),
+      JSON.stringify({ fontSizePresetId: 'large' })
+    )
+    const { getPreferences, initPreferences } = await import('@main/preferences')
+
+    initPreferences()
+
+    expect(getPreferences().typography).toEqual({
+      fontSize: 18,
+      codeFontSize: 11,
+      lineHeight: 1.72,
+      sansFont: null,
+      monoFont: null
+    })
+  })
+
+  it('clamps typography values and rejects unsafe font stacks', async () => {
+    await writeFile(
+      join(userDataPath, 'preferences.json'),
+      JSON.stringify({
+        typography: {
+          fontSize: 99,
+          codeFontSize: 1,
+          lineHeight: 10,
+          sansFont: "'Fira Sans', sans-serif",
+          monoFont: 'monospace; background: url(evil)'
+        }
+      })
+    )
+    const { getPreferences, initPreferences } = await import('@main/preferences')
+
+    initPreferences()
+
+    expect(getPreferences().typography).toEqual({
+      fontSize: 20,
+      codeFontSize: 9,
+      lineHeight: 2,
+      sansFont: "'Fira Sans', sans-serif",
+      monoFont: null
+    })
+  })
+
+  it('merges partial typography patches through IPC', async () => {
+    const { handlers, target } = ipcTarget()
+    const { registerPreferencesIpc } = await import('@main/preferences')
+
+    registerPreferencesIpc(target as never)
+    const patched = (await handlers.get(PREFERENCES_CHANNELS.patch)?.(null, {
+      typography: { fontSize: 14 }
+    })) as UserPreferences
+
+    expect(patched.typography).toEqual({
+      fontSize: 14,
+      codeFontSize: 11,
+      lineHeight: 1.72,
+      sansFont: null,
+      monoFont: null
+    })
+  })
+
   it('keeps MCP tool ids in disabledTools and drops locked or unknown ids', async () => {
     await writeFile(
       join(userDataPath, 'preferences.json'),
@@ -225,5 +287,66 @@ describe('main/preferences', () => {
       'custom'
     )) as UserPreferences
     expect(removed.customThemes).toEqual([])
+  })
+
+  it('migrates a legacy assetPath wallpaper to the asset library', async () => {
+    await writeFile(
+      join(userDataPath, 'preferences.json'),
+      JSON.stringify({ wallpaper: { assetPath: '/home/user/bg.jpg', opacity: 0.5 } })
+    )
+    const { getPreferences, initPreferences } = await import('@main/preferences')
+    initPreferences()
+
+    const { wallpaper } = getPreferences()
+    expect(wallpaper.assets).toHaveLength(1)
+    expect(wallpaper.assets[0]?.path).toBe('/home/user/bg.jpg')
+    expect(wallpaper.activeId).toBe('legacy')
+    expect(wallpaper.opacity).toBe(0.5)
+  })
+
+  it('addWallpaperAsset appends the asset and sets it as active', async () => {
+    const { addWallpaperAsset, getPreferences, initPreferences } = await import('@main/preferences')
+    initPreferences()
+
+    const asset = {
+      id: 'test-1',
+      path: 'tanzo-asset://wallpaper/bg.jpg',
+      addedAt: new Date().toISOString()
+    }
+    addWallpaperAsset(asset)
+
+    const { wallpaper } = getPreferences()
+    expect(wallpaper.assets).toHaveLength(1)
+    expect(wallpaper.activeId).toBe('test-1')
+  })
+
+  it('removeWallpaperAsset deactivates the asset and promotes the next one', async () => {
+    const { addWallpaperAsset, removeWallpaperAsset, getPreferences, initPreferences } =
+      await import('@main/preferences')
+    initPreferences()
+
+    const now = new Date().toISOString()
+    addWallpaperAsset({ id: 'a', path: 'tanzo-asset://wallpaper/a.jpg', addedAt: now })
+    addWallpaperAsset({ id: 'b', path: 'tanzo-asset://wallpaper/b.jpg', addedAt: now })
+    removeWallpaperAsset('b')
+
+    const { wallpaper } = getPreferences()
+    expect(wallpaper.assets).toHaveLength(1)
+    expect(wallpaper.activeId).toBe('a')
+  })
+
+  it('clearAllWallpapers resets assets and active ids', async () => {
+    const { addWallpaperAsset, clearAllWallpapers, getPreferences, initPreferences } =
+      await import('@main/preferences')
+    initPreferences()
+
+    const now = new Date().toISOString()
+    addWallpaperAsset({ id: 'x', path: 'tanzo-asset://wallpaper/x.jpg', addedAt: now })
+    clearAllWallpapers()
+
+    const { wallpaper } = getPreferences()
+    expect(wallpaper.assets).toHaveLength(0)
+    expect(wallpaper.activeId).toBeNull()
+    expect(wallpaper.darkAssetId).toBeNull()
   })
 })

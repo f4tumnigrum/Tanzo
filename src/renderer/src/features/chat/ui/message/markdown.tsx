@@ -75,7 +75,7 @@ function normalizeMathDelimiters(content: string): string {
 
 const MARKDOWN_COMPONENTS: Components = {
   p: ({ children }) => (
-    <p className="my-3 text-[0.8125rem] leading-[1.72] text-foreground/88 first:mt-0 last:mb-0 [text-wrap:pretty]">
+    <p className="my-3 text-[0.8125rem] leading-[var(--content-line-height)] text-foreground/88 first:mt-0 last:mb-0 [text-wrap:pretty]">
       {children}
     </p>
   ),
@@ -138,7 +138,7 @@ const MARKDOWN_COMPONENTS: Components = {
     </ol>
   ),
   li: ({ children, className }) => (
-    <li className={cn('text-[0.8125rem] leading-[1.72] text-foreground/88', className)}>
+    <li className={cn('text-[0.8125rem] leading-[var(--content-line-height)] text-foreground/88', className)}>
       {children}
     </li>
   ),
@@ -255,7 +255,7 @@ const MARKDOWN_COMPONENTS: Components = {
   ),
 
   blockquote: ({ children }) => (
-    <blockquote className="relative my-4 overflow-hidden rounded-[var(--radius-lg)] border border-border/55 bg-card/[0.38] px-4 py-3 text-[0.8125rem] leading-[1.74] text-foreground/82 shadow-[inset_0_1px_0_color-mix(in_oklab,var(--background)_72%,transparent)] first:mt-0 last:mb-0 before:absolute before:top-0 before:right-4 before:left-4 before:h-px before:bg-gradient-to-r before:from-transparent before:via-primary/55 before:to-transparent before:content-[''] [&_p+*]:!mt-2 [&_p]:!my-0 [&_p]:!text-foreground/82 [&_p]:leading-[1.74]">
+    <blockquote className="relative my-4 overflow-hidden rounded-[var(--radius-lg)] border border-border/55 bg-card/[0.38] px-4 py-3 text-[0.8125rem] leading-[var(--content-line-height)] text-foreground/82 shadow-[inset_0_1px_0_color-mix(in_oklab,var(--background)_72%,transparent)] first:mt-0 last:mb-0 before:absolute before:top-0 before:right-4 before:left-4 before:h-px before:bg-gradient-to-r before:from-transparent before:via-primary/55 before:to-transparent before:content-[''] [&_p+*]:!mt-2 [&_p]:!my-0 [&_p]:!text-foreground/82 [&_p]:leading-[var(--content-line-height)]">
       {children}
     </blockquote>
   ),

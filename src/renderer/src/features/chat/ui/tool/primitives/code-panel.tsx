@@ -183,7 +183,10 @@ export const HighlightedCodeView = memo(function HighlightedCodeView({
       >
         {path && <StickyPathHeader path={path} />}
         <table
-          className={cn('w-full border-collapse font-mono text-[0.6875rem]', wrap && 'table-fixed')}
+          className={cn(
+            'w-full border-collapse font-mono text-[length:var(--code-font-size)]',
+            wrap && 'table-fixed'
+          )}
         >
           <tbody>
             <SyntaxHighlighter
