@@ -39,13 +39,7 @@ export interface GitTargetRef {
 export type GitRepositoryKind = 'none' | 'repository' | 'error'
 
 export type GitFileChangeStatus =
-  | 'added'
-  | 'modified'
-  | 'deleted'
-  | 'renamed'
-  | 'copied'
-  | 'untracked'
-  | 'binary'
+  'added' | 'modified' | 'deleted' | 'renamed' | 'copied' | 'untracked' | 'binary'
 
 export interface GitHeadInfo {
   readonly ref: string | null
@@ -253,12 +247,7 @@ export interface GitChangedEvent {
 }
 
 export type GitErrorCode =
-  | 'not-a-repo'
-  | 'no-remote'
-  | 'no-upstream'
-  | 'nothing-to-commit'
-  | 'conflict'
-  | 'git-failed'
+  'not-a-repo' | 'no-remote' | 'no-upstream' | 'nothing-to-commit' | 'conflict' | 'git-failed'
 
 export type GitResult<T> =
   | { readonly ok: true; readonly data: T }

@@ -99,6 +99,12 @@ export interface UserPreferences {
   wallpaper: WallpaperSettings
   /** Built-in tool ids the user has disabled; filtered out of the agent's tool set. */
   disabledTools: string[]
+  /**
+   * Master switch for the browser-automation capability. Gates the browserOpen
+   * tool, the built-in chrome-devtools MCP server, the built-in browser skill,
+   * and (on next launch) the Chromium remote-debugging port.
+   */
+  browserAutomation: boolean
 }
 
 export const PET_SCALE_MIN = 0.5
@@ -132,7 +138,8 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
   petPosition: null,
   petScale: PET_SCALE_DEFAULT,
   wallpaper: DEFAULT_WALLPAPER,
-  disabledTools: []
+  disabledTools: [],
+  browserAutomation: true
 }
 
 export const PREFERENCES_CHANNELS = {
@@ -164,6 +171,7 @@ export type PreferencesPatch = Partial<
     | 'petPosition'
     | 'petScale'
     | 'disabledTools'
+    | 'browserAutomation'
   >
 > & {
   wallpaper?: WallpaperAppearancePatch

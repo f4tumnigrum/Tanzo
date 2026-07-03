@@ -392,17 +392,15 @@ export function createActivityRepo(db: SqlDatabase): ActivityRepo {
     getSummary(range) {
       const models = (
         selectModelBreakdown.all(bindRange(range)) as Array<Record<string, unknown>>
-      ).map(
-        (row): ActivityModelBreakdownRow => ({
-          provider: String(row.provider),
-          modelRef: String(row.model_ref),
-          runCount: num(row.run_count),
-          failedCount: num(row.failed_count),
-          inputTokens: num(row.input_tokens),
-          outputTokens: num(row.output_tokens),
-          totalTokens: num(row.total_tokens)
-        })
-      )
+      ).map((row): ActivityModelBreakdownRow => ({
+        provider: String(row.provider),
+        modelRef: String(row.model_ref),
+        runCount: num(row.run_count),
+        failedCount: num(row.failed_count),
+        inputTokens: num(row.input_tokens),
+        outputTokens: num(row.output_tokens),
+        totalTokens: num(row.total_tokens)
+      }))
       return { kpis: kpis(range), models, tools: toolProfile(range) }
     },
     getTrend(range) {

@@ -2,8 +2,7 @@ import type { AskQuestionAnswer, AskQuestionInput, AskQuestionOutput } from '@sh
 import type { PendingQuestion } from '@shared/chat'
 
 export type QuestionReply =
-  | { kind: 'answers'; answers: AskQuestionAnswer[] }
-  | { kind: 'declined'; note?: string }
+  { kind: 'answers'; answers: AskQuestionAnswer[] } | { kind: 'declined'; note?: string }
 
 /**
  * Default timeout before an unanswered question self-resolves as declined.

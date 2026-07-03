@@ -28,20 +28,16 @@ function buildDiff(oldText: string, newText: string, startLine?: number): DiffSt
   const removed = oldText ? oldText.split('\n') : []
   const added = newText ? newText.split('\n') : []
   const lines: CodeViewLine[] = [
-    ...removed.map(
-      (text, index): CodeViewLine => ({
-        ...(startLine ? { lineNumber: startLine + index } : {}),
-        text: `-${text}`,
-        tone: 'remove'
-      })
-    ),
-    ...added.map(
-      (text, index): CodeViewLine => ({
-        ...(startLine ? { lineNumber: startLine + index } : {}),
-        text: `+${text}`,
-        tone: 'add'
-      })
-    )
+    ...removed.map((text, index): CodeViewLine => ({
+      ...(startLine ? { lineNumber: startLine + index } : {}),
+      text: `-${text}`,
+      tone: 'remove'
+    })),
+    ...added.map((text, index): CodeViewLine => ({
+      ...(startLine ? { lineNumber: startLine + index } : {}),
+      text: `+${text}`,
+      tone: 'add'
+    }))
   ]
   return { additions: added.length, deletions: removed.length, lines }
 }

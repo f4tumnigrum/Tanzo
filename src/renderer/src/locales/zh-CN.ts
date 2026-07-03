@@ -1223,6 +1223,7 @@ export const zhCN = {
         enabledCount: '{{count}}/{{total}}',
         toggleCategory: '开关此类别的所有工具',
         readOnly: '只读',
+        locked: '必需',
         categories: {
           files: {
             title: '文件',
@@ -1234,12 +1235,31 @@ export const zhCN = {
           },
           shell: {
             title: 'Shell',
-            description: '执行 shell 命令。'
+            description: '执行 shell 命令，支持前台与后台会话。'
           },
-          browser: {
-            title: '浏览器',
-            description: '操控内置浏览器：导航、读取、填表、点击、截图。'
+          agent: {
+            title: 'Agent',
+            description: '技能、任务清单、提问与目标更新。'
+          },
+          subagents: {
+            title: '子代理',
+            description: '派生和管理并发的子代理任务。'
+          },
+          core: {
+            title: '核心',
+            description: '循环关键工具，始终开启。列出仅为透明可见。'
           }
+        },
+        browserAutomation: {
+          title: '浏览器自动化',
+          description: '允许 agent 操控内置浏览器：打开页面、读取、填表、点击、截图。',
+          restartNote: 'Agent 访问已关闭。重启 Tanzo 后，浏览器调试端口将完全关闭。',
+          connecting: 'chrome-devtools 服务器连接后，浏览器驱动工具会显示在这里。'
+        },
+        mcp: {
+          intro:
+            '来自已连接 MCP 服务器的工具。关闭某个工具会对 agent 隐藏它；整个服务器请在 MCP 设置中管理。',
+          serverDescription: 'MCP 服务器工具'
         },
         descriptions: {
           fileRead: '按行读取文件的一段内容。',
@@ -1249,7 +1269,22 @@ export const zhCN = {
           glob: '按 glob 模式查找文件。',
           grep: '用 ripgrep 搜索文件内容。',
           shell: '执行 shell 命令。',
-          browserOpen: '在内置浏览器打开网址。'
+          shellStart: '在后台启动长时间运行的 shell 命令。',
+          shellPoll: '读取后台 shell 会话的新输出。',
+          shellWrite: '向后台 shell 会话发送输入。',
+          shellStop: '停止后台 shell 会话。',
+          shellList: '列出后台 shell 会话。',
+          skill: '加载可用技能的完整说明。',
+          todo: '为多步骤工作维护任务清单。',
+          askQuestion: '用可点选项向用户提出阻塞式问题。',
+          updateGoal: '将长期目标标记为完成或受阻。',
+          spawn: '派生并发的子代理任务。',
+          await: '等待子代理任务完成。',
+          tasks: '查看子代理任务状态。',
+          steer: '调整正在运行的子代理任务。',
+          cancel: '取消子代理任务。',
+          report: '子代理通过它汇报进度和结果。',
+          exitPlanMode: '提交计划供批准并退出规划模式。'
         }
       },
       permissions: {
@@ -1467,8 +1502,11 @@ export const zhCN = {
           description: {
             command: '通过 {{command}} 启动',
             url: '连接到 {{url}}',
-            generic: '已配置 MCP 服务器'
-          }
+            generic: '已配置 MCP 服务器',
+            builtinBrowser:
+              '内置浏览器自动化。由 Tanzo 管理；与「设置 → 工具」中的浏览器自动化开关联动。'
+          },
+          builtinBadge: '内置'
         },
         metrics: {
           toolsCount: '{{count}} 个工具'

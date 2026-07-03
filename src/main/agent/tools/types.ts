@@ -56,4 +56,6 @@ export interface ToolDeps {
   browser: BrowserOpener
   /** Built-in tool ids the user disabled in settings; filtered out at build time. */
   disabledTools: () => readonly string[]
+  /** Master switch for browser automation; gates browserOpen at build time. */
+  browserAutomationEnabled: () => boolean
 }

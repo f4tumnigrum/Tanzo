@@ -13,13 +13,7 @@ export const PET_CHANNELS = {
 export type PetChannel = (typeof PET_CHANNELS)[keyof typeof PET_CHANNELS]
 
 export type PetPresenceState =
-  | 'idle'
-  | 'thinking'
-  | 'running-tool'
-  | 'waiting-approval'
-  | 'review'
-  | 'done'
-  | 'error'
+  'idle' | 'thinking' | 'running-tool' | 'waiting-approval' | 'review' | 'done' | 'error'
 
 export const PET_PRESENCE_STATES: readonly PetPresenceState[] = [
   'idle',

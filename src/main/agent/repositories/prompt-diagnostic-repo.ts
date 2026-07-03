@@ -156,8 +156,7 @@ export function createPromptDiagnosticRepo(db: SqlDatabase): PromptDiagnosticRep
   return {
     getLatest(chatId) {
       const row = selectLatestPromptDiagnostic.get([chatId]) as
-        | { id: string; segments_json: string }
-        | undefined
+        { id: string; segments_json: string } | undefined
       return row ? { id: row.id, segmentsJson: row.segments_json } : undefined
     },
     record(record) {

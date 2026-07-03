@@ -221,7 +221,8 @@ function bootstrap(): void {
   mcpModule = createMcpModule({
     db: databaseModule.db,
     getWindows: () => BrowserWindow.getAllWindows(),
-    remoteDebuggingPort
+    remoteDebuggingPort,
+    browserAutomationEnabled: () => getPreferences().browserAutomation
   })
   mcpModule.registerIpc(ipcMain)
   markStartup('mcp.module')
@@ -239,7 +240,8 @@ function bootstrap(): void {
     workspaceRoot: defaultWorkspaceRoot(),
     getWindows: () => BrowserWindow.getAllWindows(),
     getChatWindows: () => (mainWindow && !mainWindow.isDestroyed() ? [mainWindow] : []),
-    disabledTools: () => getPreferences().disabledTools
+    disabledTools: () => getPreferences().disabledTools,
+    browserAutomationEnabled: () => getPreferences().browserAutomation
   })
   agentModule.registerIpc(ipcMain)
   markStartup('agent.module')
@@ -291,6 +293,17 @@ function bootstrap(): void {
   markStartup('syncPetWindow')
   onPreferencesChanged(() => syncPetWindow())
 
+  // Re-sync MCP connections when the browser-automation switch flips so the
+  // built-in chrome-devtools server connects/disconnects without a restart.
+  let lastBrowserAutomation = getPreferences().browserAutomation
+  onPreferencesChanged((preferences) => {
+    if (preferences.browserAutomation === lastBrowserAutomation) return
+    lastBrowserAutomation = preferences.browserAutomation
+    void mcpModule?.service.syncFromStore().catch((error) => {
+      log.error('Failed to apply browser automation preference to MCP', error)
+    })
+  })
+
   void mcpModule
     .initialize()
     .then(() => markStartup('mcp.initialize'))
@@ -303,8 +316,12 @@ function bootstrap(): void {
   })
 }
 
+// The remote-debugging switch must be appended before app ready, so the
+// browser-automation preference is read synchronously up front. Disabling the
+// preference therefore closes the CDP port on the next launch (the built-in
+// MCP server and browserOpen tool are gated live, without a restart).
 if (singleInstanceLock)
-  reserveLoopbackPort()
+  (getPreferences().browserAutomation ? reserveLoopbackPort() : Promise.resolve(0))
     .then((port) => {
       openRemoteDebuggingPort(port)
       return app.whenReady()

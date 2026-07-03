@@ -116,11 +116,7 @@ export interface SpeechModel {
 }
 
 export type ProviderFamilyModel =
-  | ProviderModel
-  | EmbeddingModel
-  | ImageGenerationModel
-  | TranscriptionModel
-  | SpeechModel
+  ProviderModel | EmbeddingModel | ImageGenerationModel | TranscriptionModel | SpeechModel
 
 export interface StoredProviderModel {
   providerId: ProviderId
@@ -180,12 +176,7 @@ export interface ProviderKeySummary {
 }
 
 export type ProviderOptionControl =
-  | 'boolean'
-  | 'number'
-  | 'string'
-  | 'select'
-  | 'string-list'
-  | 'json'
+  'boolean' | 'number' | 'string' | 'select' | 'string-list' | 'json'
 
 export interface ProviderOptionChoice {
   value: string | number | boolean

@@ -36,8 +36,7 @@ const mocks = vi.hoisted(() => {
     streamTextCalls.push(options)
     const onStepEnd = options.onStepEnd as ((step: unknown) => void | Promise<void>) | undefined
     const prepareStep = options.prepareStep as
-      | ((input: Record<string, unknown>) => unknown | Promise<unknown>)
-      | undefined
+      ((input: Record<string, unknown>) => unknown | Promise<unknown>) | undefined
     const stopWhen = (options.stopWhen as Array<(input: { steps: unknown[] }) => unknown>) ?? []
     const recordedSteps: unknown[] = []
     const responseMessages: unknown[] = []

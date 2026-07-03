@@ -204,8 +204,7 @@ export interface PendingQuestion {
 }
 
 export type QuestionReply =
-  | { declined?: false; answers: AskQuestionAnswer[] }
-  | { declined: true; note?: string }
+  { declined?: false; answers: AskQuestionAnswer[] } | { declined: true; note?: string }
 
 export interface ChatApi {
   submit(chatId: string, message: TanzoUIMessage): Promise<void>

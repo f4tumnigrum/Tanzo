@@ -3,11 +3,11 @@ import { useTranslation } from 'react-i18next'
 import { ChevronDown, ListTodo } from 'lucide-react'
 import type { TanzoDataParts } from '@shared/agent-message'
 import { Button } from '@/components/ui/button'
+import { LiquidGlass } from '@/components/ui/liquid-glass'
 import { cn } from '@/lib/utils'
 import { GoalPanelRow } from './goal-panel-row'
 import { TodoPanelContent } from './todo-panel-content'
 import { TODO_PANEL_CONTENT_MAX_HEIGHT_REM, type TodoPanelTask } from './todo-panel-utils'
-import { composeSurfaceClass } from './surface-style'
 
 export interface ComposerPanelProps {
   goal?: TanzoDataParts['goal']['goal']
@@ -28,11 +28,18 @@ export function ComposerPanel({
   if (!goal && !hasTodos) return null
 
   return (
-    <div
+    <LiquidGlass
+      aberration
+      intensity={1.15}
+      style={
+        {
+          '--glass-surface-blur': '6px',
+          '--glass-surface-bg': 'color-mix(in oklab, var(--card) 56%, transparent)'
+        } as React.CSSProperties
+      }
       className={cn(
-        composeSurfaceClass,
-        'mx-auto w-full min-w-0 gap-0 overflow-hidden rounded-[var(--radius-xl)] rounded-b-none border-b-0 @md/chat:w-[90%]',
-        'bg-[color-mix(in_oklab,var(--card)_95%,transparent)] backdrop-blur-2xl backdrop-saturate-150'
+        'mx-auto flex w-full min-w-0 flex-col gap-0 overflow-hidden @md/chat:w-[90%]',
+        'rounded-[var(--radius-xl)] rounded-b-none shadow-none!'
       )}
     >
       {hasTodos ? (
@@ -93,6 +100,6 @@ export function ComposerPanel({
           onClear={() => void onGoalCommand?.('clear')}
         />
       ) : null}
-    </div>
+    </LiquidGlass>
   )
 }

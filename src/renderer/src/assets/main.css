@@ -158,6 +158,7 @@
   --glass-surface-blur: 3px;
   --glass-surface-saturation: 1.5;
   --glass-highlight: oklch(1 0 0);
+  --glass-edge: rgb(15 23 42 / 0.16);
   --glass-shadow: 0 16px 40px rgb(15 23 42 / 0.25);
   --compose-surface-bg: color-mix(in oklab, var(--card) 78%, transparent);
   --compose-surface-border: color-mix(in oklab, var(--border) 64%, transparent);
@@ -258,6 +259,7 @@
   --glass-surface-blur: 4px;
   --glass-surface-saturation: 1.4;
   --glass-highlight: oklch(0.95 0.004 255);
+  --glass-edge: transparent;
   --glass-shadow: 0 16px 44px rgb(0 0 0 / 0.5);
   --compose-surface-bg: color-mix(
     in oklab,
@@ -636,6 +638,9 @@
     color-mix(in oklab, var(--glass-highlight) 38%, transparent) 70%,
     color-mix(in oklab, var(--glass-highlight) 6%, transparent)
   );
+  /* Light theme: the white specular ring vanishes on pale backdrops, so a
+     theme-scoped dark hairline sits under it (transparent in dark mode). */
+  box-shadow: inset 0 0 0 1px var(--glass-edge);
   -webkit-mask:
     linear-gradient(#000 0 0) content-box,
     linear-gradient(#000 0 0);

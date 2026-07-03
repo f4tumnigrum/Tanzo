@@ -1,14 +1,7 @@
 import type { ProviderDefaultsState, ProviderId } from '@/common/contracts'
 
 export type ReasoningEffort =
-  | 'default'
-  | 'none'
-  | 'minimal'
-  | 'low'
-  | 'medium'
-  | 'high'
-  | 'xhigh'
-  | 'max'
+  'default' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
 const ANTHROPIC_EFFORTS: ReasoningEffort[] = ['default', 'low', 'medium', 'high', 'xhigh', 'max']
 const OPENAI_LIKE_EFFORTS: ReasoningEffort[] = [

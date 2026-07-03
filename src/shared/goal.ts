@@ -1,10 +1,5 @@
 export type ThreadGoalStatus =
-  | 'active'
-  | 'paused'
-  | 'blocked'
-  | 'budget_limited'
-  | 'usage_limited'
-  | 'complete'
+  'active' | 'paused' | 'blocked' | 'budget_limited' | 'usage_limited' | 'complete'
 
 export type GoalUserState = 'active' | 'paused'
 

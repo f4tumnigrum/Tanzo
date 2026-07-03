@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto'
 import type { IpcMain } from 'electron'
 import {
   MCP_CHANNELS,
+  BUILTIN_BROWSER_SERVER_NAME,
   type McpConnectionState,
   type McpElicitResult,
   type McpServerConfig
@@ -40,12 +41,23 @@ export interface CreateMcpModuleOptions {
    * browser tools drive the embedded `<webview>` guests over CDP.
    */
   remoteDebuggingPort?: number
+  /**
+   * Live view of the user's browser-automation preference. Read on every sync
+   * so flipping the preference connects/disconnects the built-in server at
+   * runtime. Defaults to enabled when omitted.
+   */
+  browserAutomationEnabled?: () => boolean
 }
 
-/** Name of the auto-registered browser-automation server. Reserved: a user
- * server with this name would shadow it (mergedServers gives user servers
- * priority), which we treat as an intentional override. */
-export const BUILTIN_BROWSER_SERVER_NAME = 'chrome-devtools'
+/** Re-exported from @shared/mcp: a user server with this name shadows the
+ * built-in (mergedServers gives user servers priority), which we treat as an
+ * intentional override. */
+export { BUILTIN_BROWSER_SERVER_NAME }
+
+/** Synthetic id for the built-in server so the renderer can key/select it.
+ * It never exists in the database, so store-backed mutations (toggle, update,
+ * delete) are no-ops for it by construction. */
+export const BUILTIN_BROWSER_SERVER_ID = 'builtin:chrome-devtools'
 
 /**
  * Build the built-in chrome-devtools-mcp server config that attaches to our own
@@ -57,9 +69,12 @@ export const BUILTIN_BROWSER_SERVER_NAME = 'chrome-devtools'
  *     pet windows (both load via file:// in production), so the agent cannot
  *     navigate or inject into the app's own renderer. Chrome 149's cleaner
  *     `--allowedUrlPattern` allowlist is unavailable on our Chromium (146).
+ * `enabled` mirrors the user's browser-automation preference so flipping the
+ * preference connects/disconnects the server on the next sync.
  */
-function buildBrowserServerConfig(port: number): McpServerConfig {
+function buildBrowserServerConfig(port: number, enabled: boolean): McpServerConfig {
   return {
+    id: BUILTIN_BROWSER_SERVER_ID,
     name: BUILTIN_BROWSER_SERVER_NAME,
     description: 'Built-in browser automation (drives the embedded browser via CDP).',
     transport: 'stdio',
@@ -73,7 +88,8 @@ function buildBrowserServerConfig(port: number): McpServerConfig {
       '--blockedUrlPattern',
       'file://**'
     ],
-    enabled: true
+    enabled,
+    builtin: true
   }
 }
 
@@ -166,8 +182,11 @@ export function createMcpModule(options: CreateMcpModuleOptions): McpModule {
 
   const browserPort = options.remoteDebuggingPort ?? 0
   if (browserPort > 0) {
-    const browserServer = buildBrowserServerConfig(browserPort)
-    service.setBuiltinServers(() => [browserServer])
+    // Lazy provider: re-evaluated on every sync, so the server's enabled state
+    // always reflects the current preference.
+    service.setBuiltinServers(() => [
+      buildBrowserServerConfig(browserPort, options.browserAutomationEnabled?.() ?? true)
+    ])
     log.info('registered built-in browser server', { port: browserPort })
   }
 

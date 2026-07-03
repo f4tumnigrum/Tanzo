@@ -46,9 +46,7 @@ type AwaitOutput = {
 }
 type TasksOutput = { tasks: SubagentTask[] }
 type AckOutput =
-  | { steered: true; mode: 'instructed' | 'redefined' }
-  | { cancelled: true }
-  | { ok: true }
+  { steered: true; mode: 'instructed' | 'redefined' } | { cancelled: true } | { ok: true }
 
 const STATUS_CHIP_TONE: Record<SubagentTask['status'], ToolBadgeTone> = {
   pending: 'neutral',

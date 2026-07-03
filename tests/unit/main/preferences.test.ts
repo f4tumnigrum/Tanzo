@@ -70,6 +70,55 @@ describe('main/preferences', () => {
     expect(electronMock.nativeTheme.on).toHaveBeenCalledWith('updated', expect.any(Function))
   })
 
+  it('migrates a legacy browserOpen disable into browserAutomation=false', async () => {
+    await writeFile(
+      join(userDataPath, 'preferences.json'),
+      JSON.stringify({ disabledTools: ['browserOpen', 'shell'] })
+    )
+    const { getPreferences, initPreferences } = await import('@main/preferences')
+
+    initPreferences()
+
+    expect(getPreferences().browserAutomation).toBe(false)
+    // browserOpen also stays individually disabled, preserving the per-tool
+    // intent if the capability master switch is turned back on later.
+    expect(getPreferences().disabledTools).toEqual(['browserOpen', 'shell'])
+  })
+
+  it('prefers an explicit browserAutomation value over the legacy migration', async () => {
+    await writeFile(
+      join(userDataPath, 'preferences.json'),
+      JSON.stringify({ browserAutomation: true, disabledTools: ['browserOpen'] })
+    )
+    const { getPreferences, initPreferences } = await import('@main/preferences')
+
+    initPreferences()
+
+    expect(getPreferences().browserAutomation).toBe(true)
+  })
+
+  it('keeps MCP tool ids in disabledTools and drops locked or unknown ids', async () => {
+    await writeFile(
+      join(userDataPath, 'preferences.json'),
+      JSON.stringify({
+        disabledTools: [
+          'shell',
+          'mcp__context7__search_docs',
+          // Locked tools cannot be disabled.
+          'report',
+          'exitPlanMode',
+          // Unknown builtin ids are dropped.
+          'nonexistentTool'
+        ]
+      })
+    )
+    const { getPreferences, initPreferences } = await import('@main/preferences')
+
+    initPreferences()
+
+    expect(getPreferences().disabledTools).toEqual(['shell', 'mcp__context7__search_docs'])
+  })
+
   it('registers IPC handlers that patch preferences, persist them, and broadcast changes', async () => {
     const send = vi.fn()
     electronMock.windows.push({

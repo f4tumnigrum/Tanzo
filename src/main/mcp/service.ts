@@ -16,6 +16,11 @@ import type { MCPClient } from '@ai-sdk/mcp'
 export type McpAiSdkToolSet = Awaited<ReturnType<MCPClient['tools']>>
 
 export interface McpService {
+  /**
+   * Servers to surface in settings: user-configured servers plus any built-in
+   * servers not shadowed by a user server of the same name. Built-ins carry
+   * `builtin: true` and are not editable or deletable.
+   */
   listServers(): McpServerConfig[]
   createServer(input: NewMcpServerInput): Promise<McpServerConfig>
   updateServer(id: string, partial: Partial<McpServerConfig>): Promise<McpServerConfig | undefined>
@@ -77,8 +82,19 @@ export function createMcpService(store: McpStore, client: McpClient): McpService
     await client.syncServers(mergedServers())
   }
 
+  /** User servers plus unshadowed built-ins; plugin servers stay out of the
+   * settings list (they are surfaced by the plugins UI instead). */
+  function listableServers(): McpServerConfig[] {
+    const userServers = store.getAll()
+    const claimed = new Set(userServers.map((server) => server.name))
+    const builtins = (builtinServersProvider?.() ?? []).filter(
+      (server) => !claimed.has(server.name)
+    )
+    return [...userServers, ...builtins]
+  }
+
   return {
-    listServers: () => store.getAll(),
+    listServers: () => listableServers(),
     async createServer(input) {
       const created = store.create(input)
       await syncFromStore()

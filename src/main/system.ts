@@ -54,14 +54,11 @@ export function registerSystemIpc(
 ): void {
   for (const channel of HANDLED_CHANNELS) target.removeHandler(channel)
 
-  target.handle(
-    SYSTEM_CHANNELS.getPlatform,
-    (): ElectronPlatformInfo => ({
-      platform: process.platform,
-      arch: process.arch,
-      version: process.versions.node
-    })
-  )
+  target.handle(SYSTEM_CHANNELS.getPlatform, (): ElectronPlatformInfo => ({
+    platform: process.platform,
+    arch: process.arch,
+    version: process.versions.node
+  }))
 
   target.handle(SYSTEM_CHANNELS.getSystemPreferences, () => getSystemPreferences())
 

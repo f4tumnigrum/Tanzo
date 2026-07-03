@@ -162,9 +162,9 @@ describe('database/migrations on real sqlite', () => {
     runMigrations(db, [tanzoMigrations])
 
     expect(
-      db.prepare('SELECT active_key_id FROM provider_connections WHERE provider_id = ?').get([
-        'openai'
-      ])
+      db
+        .prepare('SELECT active_key_id FROM provider_connections WHERE provider_id = ?')
+        .get(['openai'])
     ).toEqual({ active_key_id: 'primary' })
     expect(
       db.prepare('SELECT COUNT(*) AS n FROM provider_keys WHERE provider_id = ?').get(['openai'])
@@ -175,9 +175,9 @@ describe('database/migrations on real sqlite', () => {
         .get(['openai'])
     ).toEqual({ model_id: 'gpt-5' })
     expect(
-      db.prepare('SELECT COUNT(*) AS n FROM provider_defaults WHERE provider_id = ?').get([
-        'openai'
-      ])
+      db
+        .prepare('SELECT COUNT(*) AS n FROM provider_defaults WHERE provider_id = ?')
+        .get(['openai'])
     ).toEqual({ n: 1 })
 
     expect(() =>

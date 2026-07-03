@@ -12,8 +12,7 @@ export interface ApprovalDecision {
 }
 
 export type QuestionDecision = { questionId: string } & (
-  | { declined?: false; answers: AskQuestionAnswer[] }
-  | { declined: true; note?: string }
+  { declined?: false; answers: AskQuestionAnswer[] } | { declined: true; note?: string }
 )
 
 export interface ChatActions {

@@ -37,9 +37,7 @@ export type GoalEvent =
   | { kind: 'usage-limited' }
 
 export type GoalEffect =
-  | { kind: 'persist' }
-  | { kind: 'broadcast' }
-  | { kind: 'decision'; continue: boolean }
+  { kind: 'persist' } | { kind: 'broadcast' } | { kind: 'decision'; continue: boolean }
 
 const PERSIST_BROADCAST: readonly GoalEffect[] = [{ kind: 'persist' }, { kind: 'broadcast' }]
 

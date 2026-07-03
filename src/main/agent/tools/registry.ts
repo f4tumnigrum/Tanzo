@@ -113,8 +113,10 @@ export function createBuildTools(deps: ToolDeps): BuildTools {
     }
     // Drop tools the user disabled in settings. This applies before the agent's
     // allowedTools filter so a disabled tool is unavailable to every agent,
-    // regardless of its allowlist.
-    const disabled = new Set(deps.disabledTools())
+    // regardless of its allowlist. MCP ids are normalized the same way the
+    // registry builds its keys, so raw `mcp__server__tool` ids from settings
+    // match sanitized registry keys.
+    const disabled = new Set(deps.disabledTools().map((id) => normalizeMcpToolPattern(id)))
     if (disabled.size > 0) {
       for (const key of Object.keys(merged)) {
         if (disabled.has(key)) delete merged[key]

@@ -25,9 +25,7 @@ interface RunSession {
 }
 
 export type RunPublishResult =
-  | { status: 'untracked' }
-  | { status: 'accepted'; frame: ChatRunFrame }
-  | { status: 'stale' }
+  { status: 'untracked' } | { status: 'accepted'; frame: ChatRunFrame } | { status: 'stale' }
 
 /**
  * Renderer-facing projection of the run lifecycle. This registry is the single

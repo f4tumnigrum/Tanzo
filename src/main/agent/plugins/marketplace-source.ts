@@ -33,8 +33,7 @@ export interface LocalMarketplaceSource {
 export type MarketplaceSource = GitMarketplaceSource | LocalMarketplaceSource
 
 export type ParseMarketplaceSourceResult =
-  | { ok: true; source: MarketplaceSource }
-  | { ok: false; error: string }
+  { ok: true; source: MarketplaceSource } | { ok: false; error: string }
 
 export interface ParseMarketplaceSourceOptions {
   /** Explicit `--ref`, overriding any ref parsed from the source string. */

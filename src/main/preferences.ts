@@ -29,7 +29,7 @@ import {
   type WallpaperSettings
 } from '@shared/preferences'
 import { createLogger } from './logger'
-import { TOOL_CATALOG_IDS } from '@shared/tool-catalog'
+import { TOGGLEABLE_TOOL_IDS, isMcpToolId } from '@shared/tool-catalog'
 
 const log = createLogger('preferences')
 
@@ -185,17 +185,29 @@ function normalizePetScale(value: unknown): number {
 
 function normalizeDisabledTools(value: unknown): string[] {
   if (!Array.isArray(value)) return []
-  // Keep only known tool ids so stale ids from older versions are dropped.
-  const known = new Set(TOOL_CATALOG_IDS)
+  // Keep known toggleable ids plus dynamic MCP tool ids (mcp__server__tool).
+  // Stale builtin ids from older versions and locked tool ids are dropped.
+  const known = new Set(TOGGLEABLE_TOOL_IDS)
   const seen = new Set<string>()
   const result: string[] = []
   for (const item of value) {
-    if (typeof item === 'string' && known.has(item) && !seen.has(item)) {
-      seen.add(item)
-      result.push(item)
-    }
+    if (typeof item !== 'string' || seen.has(item)) continue
+    if (!known.has(item) && !isMcpToolId(item)) continue
+    seen.add(item)
+    result.push(item)
   }
   return result
+}
+
+/**
+ * The browser capability used to be a per-tool toggle (`disabledTools:
+ * ['browserOpen']`). Carry that intent over: when the new preference is absent
+ * but the old per-tool disable is present, treat browser automation as off.
+ */
+function normalizeBrowserAutomation(value: unknown, disabledTools: unknown): boolean {
+  if (typeof value === 'boolean') return value
+  if (Array.isArray(disabledTools) && disabledTools.includes('browserOpen')) return false
+  return DEFAULT_PREFERENCES.browserAutomation
 }
 
 function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
@@ -263,7 +275,8 @@ function normalizePreferences(value: unknown): UserPreferences {
     petPosition: normalizePetPosition(parsed.petPosition),
     petScale: normalizePetScale(parsed.petScale),
     wallpaper: normalizeWallpaper(parsed.wallpaper),
-    disabledTools: normalizeDisabledTools(parsed.disabledTools)
+    disabledTools: normalizeDisabledTools(parsed.disabledTools),
+    browserAutomation: normalizeBrowserAutomation(parsed.browserAutomation, parsed.disabledTools)
   }
 }
 

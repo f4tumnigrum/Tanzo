@@ -41,6 +41,13 @@ export interface SkillsStoreDeps {
    * with user/workspace skills.
    */
   pluginSkillRoots?: () => PluginSkillRootInput[]
+  /**
+   * Live view of the browser-automation preference. When it returns false the
+   * built-in browser skill is excluded from enabled skills, so it disappears
+   * from the skills index and the `skill` tool refuses to load it — its
+   * allowed tools (browserOpen, chrome-devtools) are unavailable anyway.
+   */
+  browserAutomationEnabled?: () => boolean
 }
 
 export function createSkillsStore(deps: SkillsStoreDeps): SkillsStore {
@@ -57,6 +64,13 @@ export function createSkillsStore(deps: SkillsStoreDeps): SkillsStore {
 
   function isEnabled(name: string): boolean {
     return state?.get(name)?.enabled !== false
+  }
+
+  function isAvailable(skill: ResolvedSkill): boolean {
+    if (skill.scope === 'builtin' && skill.name === 'browser') {
+      return deps.browserAutomationEnabled?.() !== false
+    }
+    return true
   }
 
   function toSummary(skill: ResolvedSkill): SkillSummary {
@@ -85,7 +99,8 @@ export function createSkillsStore(deps: SkillsStoreDeps): SkillsStore {
   return {
     list: () => [...skills.values()],
     get: (name) => skills.get(name),
-    listEnabled: () => [...skills.values()].filter((skill) => isEnabled(skill.name)),
+    listEnabled: () =>
+      [...skills.values()].filter((skill) => isEnabled(skill.name) && isAvailable(skill)),
     snapshot,
     detail(name) {
       const skill = skills.get(name)

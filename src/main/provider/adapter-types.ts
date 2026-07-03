@@ -18,11 +18,7 @@ import type {
 
 export type Credentials = Record<string, string>
 export type RemoteModel =
-  | ProviderModel
-  | EmbeddingModel
-  | ImageGenerationModel
-  | TranscriptionModel
-  | SpeechModel
+  ProviderModel | EmbeddingModel | ImageGenerationModel | TranscriptionModel | SpeechModel
 
 export interface ProviderAdapter {
   providerId: ProviderId

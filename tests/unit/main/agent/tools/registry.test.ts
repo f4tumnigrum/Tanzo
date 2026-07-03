@@ -61,7 +61,8 @@ function deps(): ToolDeps {
     browser: {
       requestOpen: vi.fn(() => true)
     } as never,
-    disabledTools: () => []
+    disabledTools: () => [],
+    browserAutomationEnabled: () => true
   } as unknown as ToolDeps
 }
 
@@ -142,7 +143,8 @@ function planDeps(): ToolDeps {
     browser: {
       requestOpen: vi.fn(() => true)
     } as never,
-    disabledTools: () => []
+    disabledTools: () => [],
+    browserAutomationEnabled: () => true
   } as unknown as ToolDeps
 }
 
@@ -185,7 +187,7 @@ describe('main/agent/tools/registry', () => {
     const baseDeps = deps()
     const withDisabled = {
       ...baseDeps,
-      disabledTools: () => ['shell', 'browserOpen']
+      disabledTools: () => ['shell']
     }
     const tools = await createBuildTools(withDisabled)({
       def: def(),
@@ -196,9 +198,43 @@ describe('main/agent/tools/registry', () => {
 
     const keys = Object.keys(tools)
     expect(keys).not.toContain('shell')
-    expect(keys).not.toContain('browserOpen')
     // Untouched tools remain available.
     expect(keys).toContain('fileRead')
+  })
+
+  it('removes browserOpen when browser automation is disabled', async () => {
+    const withBrowserOff = {
+      ...deps(),
+      browserAutomationEnabled: () => false
+    }
+    const tools = await createBuildTools(withBrowserOff)({
+      def: def(),
+      chatId: 'c1',
+      depth: 0,
+      mode: 'default'
+    })
+
+    const keys = Object.keys(tools)
+    expect(keys).not.toContain('browserOpen')
+    expect(keys).toContain('fileRead')
+  })
+
+  it('removes MCP tools disabled in settings, matching raw mcp ids to sanitized keys', async () => {
+    const withDisabledMcp = {
+      ...deps(),
+      disabledTools: () => ['mcp__server__readThing']
+    }
+    const tools = await createBuildTools(withDisabledMcp)({
+      def: def(),
+      chatId: 'c1',
+      depth: 0,
+      mode: 'default'
+    })
+
+    const keys = Object.keys(tools)
+    expect(keys).not.toContain('mcp__server__readThing')
+    // Sibling tools from the same server stay available.
+    expect(keys).toContain('mcp__server__writeThing')
   })
 
   it('filters allowed tools by exact name, MCP server prefix, and glob patterns', async () => {

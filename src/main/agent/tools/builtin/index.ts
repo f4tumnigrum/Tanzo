@@ -24,6 +24,8 @@ export function builtinTools(_def: AgentDefinition, deps: ToolDeps): ToolSet {
     glob: globTool(deps),
     grep: grepTool(deps),
     shell: shellTool(deps),
-    browserOpen: browserOpenTool(deps)
+    // browserOpen follows the browser-automation capability switch, together
+    // with the chrome-devtools MCP server and the built-in browser skill.
+    ...(deps.browserAutomationEnabled() ? { browserOpen: browserOpenTool(deps) } : {})
   } satisfies BuiltinDefs
 }

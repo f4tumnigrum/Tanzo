@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { CheckCircle2, MoreVertical, Edit, Trash2, AlertCircle } from 'lucide-react'
 import { Spinner } from '@/components/ui/spinner'
 import { useTranslation } from 'react-i18next'
+import { useQueryClient } from '@tanstack/react-query'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import {
@@ -32,11 +33,13 @@ import {
   CardStatusBadge
 } from '@/components/ui/feature-card'
 import type { McpServerConfig, McpServerStatus } from '@/common/contracts'
+import { patchPreferences } from '@/common/preferences'
 import {
   useToggleServerEnabled,
   useDeleteServer,
   useServerConnectionState
 } from '@/features/mcp/model'
+import { serverKeys, mcpClientKeys } from '@/features/mcp/model/query-keys'
 import { ServerEditorDialog } from './server-editor-dialog'
 
 interface ServerCardProps {
@@ -108,23 +111,35 @@ export function ServerCard({ server, onClick }: ServerCardProps) {
   const { t } = useTranslation()
   const toggleEnabled = useToggleServerEnabled()
   const deleteServerMutation = useDeleteServer()
+  const queryClient = useQueryClient()
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const isBuiltin = server.builtin === true
 
   const { state: connectionState } = useServerConnectionState(server.name)
   const status: McpServerStatus = connectionState?.status ?? 'disconnected'
   const toolCount = connectionState?.toolCount ?? 0
   const errorMessage = connectionState?.error
   const isPending = toggleEnabled.isPending || deleteServerMutation.isPending
-  const fallbackDescription =
-    server.description ||
-    (server.transport === 'stdio' && server.command
-      ? t('mcp.server.card.description.command', { command: server.command })
-      : server.url
-        ? t('mcp.server.card.description.url', { url: server.url })
-        : t('mcp.server.card.description.generic'))
+  const fallbackDescription = isBuiltin
+    ? t('mcp.server.card.description.builtinBrowser')
+    : server.description ||
+      (server.transport === 'stdio' && server.command
+        ? t('mcp.server.card.description.command', { command: server.command })
+        : server.url
+          ? t('mcp.server.card.description.url', { url: server.url })
+          : t('mcp.server.card.description.generic'))
 
   function handleToggle(checked: boolean) {
+    if (isBuiltin) {
+      // The built-in server mirrors the browser-automation capability switch;
+      // there is no database row to toggle. Same preference as Settings → Tools.
+      void patchPreferences({ browserAutomation: checked }).then(() => {
+        void queryClient.invalidateQueries({ queryKey: serverKeys.lists() })
+        void queryClient.invalidateQueries({ queryKey: mcpClientKeys.connectionStates() })
+      })
+      return
+    }
     if (!server.id) return
     toggleEnabled.mutate({ id: server.id, enabled: checked })
   }
@@ -158,34 +173,36 @@ export function ServerCard({ server, onClick }: ServerCardProps) {
         disabled={isPending}
         className="scale-75"
       />
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          render={
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 rounded-[var(--radius-4xl)] hover:bg-accent"
-              disabled={isPending}
-            />
-          }
-        >
-          <MoreVertical className="size-3.5" />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-40">
-          <DropdownMenuItem onClick={handleEdit}>
-            <Edit className="mr-2 size-3.5" />
-            {t('common.actions.edit')}
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            onClick={handleDeleteClick}
-            className="text-destructive focus:text-destructive"
+      {!isBuiltin ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 rounded-[var(--radius-4xl)] hover:bg-accent"
+                disabled={isPending}
+              />
+            }
           >
-            <Trash2 className="mr-2 size-3.5" />
-            {t('common.actions.delete')}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+            <MoreVertical className="size-3.5" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-40">
+            <DropdownMenuItem onClick={handleEdit}>
+              <Edit className="mr-2 size-3.5" />
+              {t('common.actions.edit')}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={handleDeleteClick}
+              className="text-destructive focus:text-destructive"
+            >
+              <Trash2 className="mr-2 size-3.5" />
+              {t('common.actions.delete')}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : null}
     </div>
   )
 
@@ -196,10 +213,16 @@ export function ServerCard({ server, onClick }: ServerCardProps) {
           <CardHeader
             title={server.name}
             badge={
-              server.transport === 'sse' && (
+              isBuiltin ? (
                 <Badge variant="secondary" className="h-4 px-1.5 py-0 text-[0.625rem]">
-                  SSE
+                  {t('mcp.server.card.builtinBadge')}
                 </Badge>
+              ) : (
+                server.transport === 'sse' && (
+                  <Badge variant="secondary" className="h-4 px-1.5 py-0 text-[0.625rem]">
+                    SSE
+                  </Badge>
+                )
               )
             }
             actions={actionsMenu}

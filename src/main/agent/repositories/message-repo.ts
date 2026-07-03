@@ -305,7 +305,10 @@ export function createMessageRepo(db: SqlDatabase, logger: Logger): MessageRepo 
     if (uncached.length === 0) return rows.map((_, i) => resolved.get(i) as TanzoUIMessage)
 
     // Validate only the rows whose content changed since the last load.
-    const decoded = uncached.map((i) => ({ row: rows[i], message: decodeMessage(rows[i].message_json) }))
+    const decoded = uncached.map((i) => ({
+      row: rows[i],
+      message: decodeMessage(rows[i].message_json)
+    }))
     const all = await safeValidateUIMessages<TanzoUIMessage>({
       messages: decoded.map((entry) => entry.message),
       dataSchemas: validationDataSchemas,

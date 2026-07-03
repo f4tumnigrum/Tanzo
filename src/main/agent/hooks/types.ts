@@ -23,11 +23,7 @@ export interface HookState {
 }
 
 export type PermissionModeWire =
-  | 'default'
-  | 'acceptEdits'
-  | 'plan'
-  | 'dontAsk'
-  | 'bypassPermissions'
+  'default' | 'acceptEdits' | 'plan' | 'dontAsk' | 'bypassPermissions'
 
 interface CommonTurnInput {
   session_id: string
@@ -83,11 +79,7 @@ export interface StopInput {
 }
 
 export type HookInput =
-  | PreToolUseInput
-  | PostToolUseInput
-  | UserPromptSubmitInput
-  | SessionStartInput
-  | StopInput
+  PreToolUseInput | PostToolUseInput | UserPromptSubmitInput | SessionStartInput | StopInput
 
 export interface HookUniversalOutput {
   continue?: boolean

@@ -72,6 +72,8 @@ export interface AgentModuleOptions {
   getChatWindows?: () => BrowserWindow[]
   /** Built-in tool ids the user disabled in settings; read fresh on each build. */
   disabledTools?: () => readonly string[]
+  /** Master switch for the browser-automation capability; read fresh on each build. */
+  browserAutomationEnabled?: () => boolean
 }
 
 interface WebContentsLike {
@@ -229,7 +231,8 @@ export function createAgentModule(options: AgentModuleOptions): AgentModule {
     logger,
     db: options.db,
     // Active plugins contribute namespaced skills; re-evaluated on every reload.
-    pluginSkillRoots: () => plugins.skillRoots()
+    pluginSkillRoots: () => plugins.skillRoots(),
+    browserAutomationEnabled: () => options.browserAutomationEnabled?.() ?? true
   })
 
   const identity = createAgentIdentity({
@@ -412,7 +415,8 @@ export function createAgentModule(options: AgentModuleOptions): AgentModule {
         markOutcome: (chatId, status) => goalService.markOutcome(chatId, status) !== null
       },
       browser,
-      disabledTools: () => options.disabledTools?.() ?? []
+      disabledTools: () => options.disabledTools?.() ?? [],
+      browserAutomationEnabled: () => options.browserAutomationEnabled?.() ?? true
     }
   }
 

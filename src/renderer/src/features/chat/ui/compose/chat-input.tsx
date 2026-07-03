@@ -308,6 +308,13 @@ export function ChatInput({
       ) : null}
       <LiquidGlass
         aberration
+        intensity={1.15}
+        style={
+          {
+            '--glass-surface-blur': '6px',
+            '--glass-surface-bg': 'color-mix(in oklab, var(--card) 56%, transparent)'
+          } as React.CSSProperties
+        }
         className={cn(
           'flex min-h-[114px] flex-col overflow-hidden',
           'rounded-[var(--radius-xl)] shadow-none!',

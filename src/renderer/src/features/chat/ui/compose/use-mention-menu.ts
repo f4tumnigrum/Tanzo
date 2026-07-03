@@ -17,8 +17,7 @@ export interface PluginMentionOption {
  * (remote, searched) share one trigger and one list, distinguished by `kind`.
  */
 export type MentionItem =
-  | { kind: 'plugin'; name: string; description?: string }
-  | ({ kind: 'file' } & FileMentionEntry)
+  { kind: 'plugin'; name: string; description?: string } | ({ kind: 'file' } & FileMentionEntry)
 
 function mentionItemId(item: MentionItem): string {
   return item.kind === 'plugin' ? `plugin:${item.name}` : `file:${item.path}`

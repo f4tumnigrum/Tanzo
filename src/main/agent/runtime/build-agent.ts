@@ -18,8 +18,7 @@ function toolPolicyMeta(
   toolName: string
 ): { kind?: ToolPolicyKind; fingerprintFields?: string[] } {
   const tool = tools?.[toolName] as
-    | { metadata?: { tanzo?: { kind?: unknown; fingerprintFields?: unknown } } }
-    | undefined
+    { metadata?: { tanzo?: { kind?: unknown; fingerprintFields?: unknown } } } | undefined
   const tanzo = tool?.metadata?.tanzo
   const rawKind = tanzo?.kind
   const kind =

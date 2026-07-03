@@ -114,4 +114,48 @@ describe('mcp/service', () => {
     // The surviving `local` is the user's database-backed row (has an id).
     expect(merged.find((server) => server.name === 'local')).toMatchObject({ id: 'server-1' })
   })
+
+  it('lists built-in servers alongside user servers, hidden when shadowed by name', async () => {
+    const fakeStore = store()
+    const fakeClient = client()
+    const service = createMcpService(fakeStore as never, fakeClient as never)
+
+    service.setBuiltinServers(() => [
+      { name: 'chrome-devtools', transport: 'stdio', enabled: true, builtin: true },
+      // Shadowed by the user's `local` server: hidden from the list.
+      { name: 'local', transport: 'stdio', enabled: true, builtin: true }
+    ])
+
+    const listed = service.listServers()
+    expect(listed.map((server) => server.name)).toEqual(['local', 'chrome-devtools'])
+    expect(listed.find((server) => server.name === 'chrome-devtools')).toMatchObject({
+      builtin: true
+    })
+    // The listed `local` is the user's row, not the built-in.
+    expect(listed.find((server) => server.name === 'local')).toMatchObject({ id: 'server-1' })
+  })
+
+  it('re-evaluates the built-in provider on every sync so preference flips apply', async () => {
+    const fakeStore = store()
+    const fakeClient = client()
+    const service = createMcpService(fakeStore as never, fakeClient as never)
+    let enabled = true
+
+    service.setBuiltinServers(() => [
+      { name: 'chrome-devtools', transport: 'stdio', enabled, builtin: true }
+    ])
+
+    await service.syncFromStore()
+    let synced = fakeClient.syncServers.mock.calls.at(-1)?.[0] as { name: string }[]
+    expect(synced.find((server) => server.name === 'chrome-devtools')).toMatchObject({
+      enabled: true
+    })
+
+    enabled = false
+    await service.syncFromStore()
+    synced = fakeClient.syncServers.mock.calls.at(-1)?.[0] as { name: string }[]
+    expect(synced.find((server) => server.name === 'chrome-devtools')).toMatchObject({
+      enabled: false
+    })
+  })
 })

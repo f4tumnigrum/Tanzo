@@ -1235,6 +1235,7 @@ export const en = {
         enabledCount: '{{count}}/{{total}}',
         toggleCategory: 'Toggle all tools in this category',
         readOnly: 'read-only',
+        locked: 'required',
         categories: {
           files: {
             title: 'Files',
@@ -1246,13 +1247,33 @@ export const en = {
           },
           shell: {
             title: 'Shell',
-            description: 'Run shell commands.'
+            description: 'Run shell commands, foreground and background sessions.'
           },
-          browser: {
-            title: 'Browser',
-            description:
-              'Drive the built-in browser: navigate, read, fill forms, click, screenshot.'
+          agent: {
+            title: 'Agent',
+            description: 'Skills, task lists, questions, and goal updates.'
+          },
+          subagents: {
+            title: 'Sub-agents',
+            description: 'Spawn and manage concurrent sub-agent tasks.'
+          },
+          core: {
+            title: 'Core',
+            description: 'Loop-critical tools, always on. Shown for transparency.'
           }
+        },
+        browserAutomation: {
+          title: 'Browser automation',
+          description:
+            'Let the agent drive the built-in browser: open pages, read, fill forms, click, screenshot.',
+          restartNote:
+            'Agent access is off. The browser debugging port closes fully after restarting Tanzo.',
+          connecting: 'Browser driver tools appear here once the chrome-devtools server connects.'
+        },
+        mcp: {
+          intro:
+            'Tools from connected MCP servers. Disabling a tool hides it from the agent; manage whole servers in MCP settings.',
+          serverDescription: 'MCP server tools'
         },
         descriptions: {
           fileRead: 'Read a line-numbered window from a file.',
@@ -1262,7 +1283,22 @@ export const en = {
           glob: 'Find files by glob pattern.',
           grep: 'Search file contents with ripgrep.',
           shell: 'Run a shell command.',
-          browserOpen: 'Open the built-in browser at a URL.'
+          shellStart: 'Start a long-running shell command in the background.',
+          shellPoll: 'Read new output from a background shell session.',
+          shellWrite: 'Send input to a background shell session.',
+          shellStop: 'Stop a background shell session.',
+          shellList: 'List background shell sessions.',
+          skill: 'Load instructions for an available skill.',
+          todo: 'Maintain a task checklist for multi-step work.',
+          askQuestion: 'Ask the user blocking questions with tappable options.',
+          updateGoal: 'Mark a long-running goal complete or blocked.',
+          spawn: 'Spawn concurrent sub-agent tasks.',
+          await: 'Wait for sub-agent tasks to finish.',
+          tasks: 'Inspect sub-agent task status.',
+          steer: 'Adjust a running sub-agent task.',
+          cancel: 'Cancel a sub-agent task.',
+          report: 'Sub-agents deliver progress and results through this.',
+          exitPlanMode: 'Presents the plan for approval and exits plan mode.'
         }
       },
       permissions: {
@@ -1483,8 +1519,11 @@ export const en = {
           description: {
             command: 'Runs {{command}}',
             url: 'Connects to {{url}}',
-            generic: 'Configured MCP server'
-          }
+            generic: 'Configured MCP server',
+            builtinBrowser:
+              'Built-in browser automation. Managed by Tanzo; follows the Browser automation switch in Settings → Tools.'
+          },
+          builtinBadge: 'built-in'
         },
         metrics: {
           toolsCount: '{{count}} tools'

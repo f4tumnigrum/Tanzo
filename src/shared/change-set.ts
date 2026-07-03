@@ -19,12 +19,7 @@ export interface ChangeEntry {
 }
 
 export type ChangeMaterializationStatus =
-  | 'materialized'
-  | 'pending'
-  | 'partial'
-  | 'failed'
-  | 'skipped'
-  | 'unknown'
+  'materialized' | 'pending' | 'partial' | 'failed' | 'skipped' | 'unknown'
 
 export interface ChangeMaterialization {
   status: ChangeMaterializationStatus

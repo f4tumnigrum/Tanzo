@@ -399,9 +399,7 @@ describe('message-repo (real sqlite engine)', () => {
   it('re-hydrates the mirror after a rolled-back writeActive', async () => {
     const repo = createMessageRepo(db, logger)
     repo.writeActive('c1', [userMessage('m1', 'one')])
-    expect(() =>
-      repo.writeActive('c1', [userMessage('m2', 'a'), userMessage('m2', 'b')])
-    ).toThrow()
+    expect(() => repo.writeActive('c1', [userMessage('m2', 'a'), userMessage('m2', 'b')])).toThrow()
     // The failed m2 insert was rolled back and the mirror discarded, so the next
     // write appends at seq 1 instead of a stale seq left behind by the abort.
     repo.writeActive('c1', [userMessage('m1', 'one'), userMessage('m3', 'three')])

@@ -86,4 +86,24 @@ Workspace body
     expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('missing name or description'))
     expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('does not match directory'))
   })
+
+  it('hides the built-in browser skill when browser automation is disabled', async () => {
+    const workspaceRoot = await tempRoot()
+    const userDir = await tempRoot()
+    const logger = { warn: vi.fn() }
+    let enabled = true
+
+    const store = createSkillsStore({
+      workspaceRoot,
+      userDir,
+      logger: logger as never,
+      browserAutomationEnabled: () => enabled
+    })
+
+    expect(store.listEnabled().map((skill) => skill.name)).toContain('browser')
+    enabled = false
+    expect(store.listEnabled().map((skill) => skill.name)).not.toContain('browser')
+    // The skill still exists (settings can list it); only availability changes.
+    expect(store.get('browser')).toBeDefined()
+  })
 })

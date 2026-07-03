@@ -261,8 +261,7 @@ export function createMcpStore(db: SqlDatabase): McpStore {
     const row = input.id
       ? (selectServer.get([input.id]) as McpServerRow | undefined)
       : (db.prepare('SELECT * FROM mcp_servers WHERE name = ?').get([input.name]) as
-          | McpServerRow
-          | undefined)
+          McpServerRow | undefined)
     if (!row) {
       throw new TanzoValidationError(
         'MCP_SERVER_NOT_CREATED',
