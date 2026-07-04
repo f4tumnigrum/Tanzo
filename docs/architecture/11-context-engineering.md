@@ -1,141 +1,196 @@
 # 11 · Context Engineering
 
-> Scope: the Section × Provider model, the cache frontier, budgeting, compaction and fork, and tool-record
-> normalization. Last verified against `src/main/agent/context/*` and `runtime/compaction-coordinator.ts` at
-> v0.2.4.
+> Scope: the Section × Provider model, the append-only prefix invariant, the token ledger, in-stream
+> compaction with the degradation chain, and tool-record normalization. Last verified against
+> `src/main/agent/context/*` and `runtime/compaction-coordinator.ts` at v0.3.x (compaction v2).
+> Design rationale: [`docs/design/context-compaction-v2.md`](../design/context-compaction-v2.md).
 
 ## 1. Mental model
 
 Context engineering answers one question per step: *given the transcript so far, what exact prompt do we send
-the model?* It is built from two orthogonal axes:
+the model?* Four invariants drive the design:
 
-- **Sections** (the *what*): declarative units that render the system and leading-user prompt (role, plan mode,
-  environment, git status, skills index, goal, …).
-- **Provider strategies** (the *how*): per-provider prompt layout and caching (the "cache frontier") applied on
-  top of the assembled prompt.
-
-The entry point is `createContextEngine(deps)` (`context/index.ts:107-255`), exposing `build`, `observeStep`,
-`snapshot`, `shouldCompact`, `compactionTriggerTokens`, `retainedRecentSteps`, and `clear`.
+- **I1 — Append-only prefix.** Between two compaction events, every step's prompt is a strict prefix
+  extension of the previous step's prompt. Anything that would break this (per-turn volatile content,
+  steering reordering, section drift) is either persisted into the transcript or confined to compaction
+  event points. This is what makes provider KV caching (Anthropic explicit, OpenAI/DeepSeek prefix-hash,
+  Gemini implicit) effective.
+- **I2 — Single conversion point.** UI→Model conversion happens once per run; the run works on
+  `ModelMessage[]`.
+- **I3 — Token ledger.** Budgeting reads provider-reported usage anchors persisted in message metadata;
+  estimation is only used for unmeasured increments.
+- **I4 — Inline compaction.** Automatic compaction happens inside `prepareStep`, in the same stream —
+  never by stopping and restarting a run.
 
 ## 2. The Section model
 
-`ContextSection` (`context/section.ts:22-29`) is
-`{ id, stability: 'stable' | 'volatile', channel: 'system' | 'leading-user', order, prefixCacheScope?,
-render() }`.
+`ContextSection` (`context/section.ts`) is `{ id, stability: 'stable' | 'volatile', channel, order, render() }`
+with three channels:
 
-The fixed section list is in the registry (`context/registry.ts:24-36`): `role`, `plan-mode`, `tanzo`,
-`skills-index`, `plugins-index`, `env`, `datetime`, `git-status`, `goal`, `plugins-mention`. Additional sections
-can be appended via `deps.extraSections` (`index.ts:108`) — this is how the hooks context section is mounted
-(see [14 Hooks](./14-hooks.md)).
+- **`system`** — rendered into system messages. Stable within a run.
+- **`leading-user`** — merged into one user message placed before history (the environment block).
+- **`injection`** — rendered once at turn start and **persisted into the transcript** as a synthetic user
+  message carrying a `data-contextInjection` part (`context/injection.ts`). This is how volatile per-turn
+  content (datetime, git snapshot, goal nudges, plugin focus, hook context) reaches the model without
+  breaking I1. The renderer hides these messages.
 
-- **`stability`** separates content that is stable across steps (cache-friendly) from content that changes
-  every step (`datetime`, `git-status`, injected context).
-- **`channel`** separates system messages from leading-user messages.
-- **`order`** sorts sections within a stability band.
-- **`prefixCacheScope`** marks a volatile leading-user section as `conversation`-scoped so it can be frozen into
-  the cacheable prefix.
+The registry (`context/registry.ts`) wires: `role`, `plan-mode`, `tanzo`, `skills-index`, `plugins-index`
+(system/leading-user) and `datetime`, `git-status`, `goal`, `plugins-mention`, plus the hooks section via
+`deps.extraSections` (all `injection`). The git snapshot renders only on the first turn — it is persisted,
+so re-rendering it would only duplicate stale data.
 
-## 3. Assembly and compilation
+## 3. Assembly
 
-`compileSections(registry, input, history)` (`context/compile.ts`) renders all sections in parallel, drops
-empties, then splits them:
+`compileSections` (`context/compile.ts`) renders the non-injection sections and produces
+`{ system, stableBoundary, leadingUser, history }`. The engine (`context/index.ts`) exposes:
 
-- **System messages** = stable-system ++ volatile-system, each its own `SystemModelMessage`.
-- **Leading-user**: stable-leading is merged into one user message; volatile-leading is split by
-  `prefixCacheScope === 'conversation'` into a `volatilePrefixUser` block versus a `trailingUser` block.
-- `stableBoundary` = the count of stable-system messages, used as the cache anchor.
-- Provenance is recorded per section/message and symbol-attached (`attachContextProvenance` /
-  `getContextProvenance` in `section.ts`).
+- `build(def, chatId, cwd, transcript, stepNumber)` — pure per-step prompt assembly:
+  `leadingUser ++ history`, with provider caching applied. Same transcript ⇒ same prompt (I1).
+- `renderInjection(def, chatId, cwd, { isFirstTurn })` — the persistable injection message; consumes
+  one-shot state (goal injection, plugin mentions). Called by `TurnLoop.run` once per logical turn, and
+  skipped when the transcript ends in an unexecuted tool call (approval resume).
+- `measure` / `shouldCompact` / `snapshot` / `compactionPolicy` — ledger-based accounting (below).
 
-The per-turn prompt (`promptMessages`, `index.ts:65-71`) is:
+Provenance is symbol-attached (`attachContextProvenance`) with shape `{ system, leadingUser, history,
+messages }` and feeds the prompt-cache diagnostics (`diagnostics/prompt-cache.ts`).
 
-```text
-leadingUser ++ history ++ (stepNumber === 0 ? volatilePrefixUser ++ trailingUser : [])
+## 4. The token ledger
+
+`context/ledger.ts` replaces the old anchor+full-estimate budget. Measurement is restart-safe and pure:
+
+- Every assistant message persists its per-step usage (`metadata.steps[].usage.inputTokens`) — the exact
+  prompt size the provider reported.
+- `measureTranscript` uses the **newest reported anchor after the latest compaction summary** (anchors
+  before a summary are stale — the prefix changed), then adds increments for later messages: reported when
+  available, estimated otherwise.
+- Estimation is CJK-aware (`estimateTextTokens`: ~4 chars/token latin, ~1.5 CJK) and skips `data-*` parts
+  and step markers.
+
+## 5. Compaction (v2)
+
+### 5.1 Policy
+
+`context/compact/policy.ts`:
+
+- `compactionTriggerTokens = floor((contextWindow − maxOutputTokens) × 0.8)`
+- `retainBudgetTokens = min(30_000, contextWindow × 0.15)` — the tail kept after a cut, in tokens
+- `hardCeilingTokens = contextWindow − maxOutputTokens` — the emergency red line
+
+### 5.2 The cut
+
+`context/compact/cut.ts` operates on two domains with the same shape:
+
+- **UI domain** (`findCut` / `splitForCompaction`) for persisted transcripts. Persistence stores **one row
+  per model step** (§7.1), so every message boundary is a valid cut point: preferred cuts are round
+  boundaries (user message → next user message); a giant single round degrades to a step-fragment boundary
+  between its rows. Cuts always cover whole rows — there is no mid-message split. The scan never crosses
+  the latest summary, but the summary itself may be archived (rolling summarization).
+- **Model domain** (`splitModelTranscript`) for live in-stream transcripts: assistant + trailing tool
+  messages form closed step groups, so a cut can never orphan a tool call/result pair.
+
+### 5.3 In-stream compaction (I4)
+
+In `stream-runner.ts` `prepareStep`: when the last step's reported `inputTokens` exceeds the trigger,
+`compactModelTranscript` (`context/compact/inline.ts`) cuts the live transcript, summarizes the head, and
+returns `[summary, ...tail]` — which prepareStep returns as `messages`, and the AI SDK **carries forward to
+later steps**. The stream never stops; the UI sees `data-compaction` transient parts. The final state
+carries an `inlineCompaction` record; after the run, `CompactionCoordinator.reconcileInline` re-cuts the
+*persisted* transcript and archives the head under the already-produced summary (no second fork).
+
+### 5.4 Pre-turn compaction
+
+`CompactionCoordinator.prepareMessages` (turn loop and sub-agent driver): when the persisted transcript
+measures over the trigger before a run starts, run the full fork-based compaction first. Manual `/compact`
+uses the same path. Persistence still goes through `finalizeCompaction` (overlay + `expectedActiveIds`
+optimistic concurrency check in `repositories/message-repo.ts`).
+
+### 5.5 The summarize fork
+
+`context/compact/summarize.ts` (`runSummarizeFork`) has two paths:
+
+- **Path A — prefix reuse** (default; no dedicated compaction model, caller passes the main run's tools):
+  the request keeps the *exact* system sections, tools serialization, and leading-user block of the main
+  conversation and appends only the summarization instruction as the last user message. The stable cache
+  breakpoints (system / leading-user / summary) match the main run's, so the head — the most expensive
+  prompt of the whole run — hits the provider KV cache (only the tail past the last stable breakpoint
+  re-tokenizes). Tools are passed with `execute` stripped (wire format unchanged); on Anthropic,
+  `toolChoice` stays `auto` because tool_choice is serialized into the cached prefix.
+- **Path B — standalone summarizer** (dedicated `compactionModelRef`, or head exceeds the fork model's
+  window): plain summarizer system prompt over a text-serialized transcript, chunked map-reduce (rolling
+  summary) when the head does not fit in one call (chunk = fork window × 0.6 × 0.8).
+
+### 5.6 Degradation chain
+
+Compaction can never strand a conversation:
+
+```
+L1/L2  summarize fork (path A / path B chunked)
+L3     fork failed → mechanical: pruneMessages(toolCalls before-last-8) + prune reasoning
+       (inline: context/compact/degrade.ts; persisted: coordinator's mechanicalSummary)
+L4     still over hardCeiling → drop oldest rounds, keep leading summary + recent rounds
 ```
 
-So the volatile prefix/trailing user blocks are injected **only on step 0** of a turn.
+L3/L4 only ever run at a compaction event point (the cache prefix is already invalidated there). The
+summary message records `degraded: 'prune' | 'drop-oldest'` in its `data-compaction` part.
 
-## 4. Budgeting
+### 5.7 Turn loop shape
 
-Token accounting is **usage-anchored, not estimated** (`context/budget.ts`):
-
-- `anchor(chatId, msgCount, inputTokens)` stores the last reported `inputTokens`.
-- `measureUsage` returns `{ inputTokens, source: 'reported' | 'unavailable', exceeds() }` and ignores message
-  content entirely — the number comes from real model usage, fed in by `observeStep` (`index.ts:198-206`) from
-  the stream.
-- `cacheHitRatio` = `cacheReadTokens / inputTokens`.
-
-Model capabilities (`context/capabilities.ts`): `contextWindow`, `maxOutputTokens`, `supportsImages`, with
-defaults 128k / 8192.
-
-## 5. Compaction
-
-### 5.1 Trigger
-
-`context/compaction-policy.ts`: `compactionTriggerTokens = floor((contextWindow − maxOutputTokens) × 0.9)`, and
-`retainedRecentSteps = 6`. `shouldCompact()` is "reported usage `exceeds(trigger)`" (`index.ts:227-230`).
-
-At runtime the stop condition `overCompactionTrigger` halts the stream when the last step's
-`usage.inputTokens > trigger` (`build-agent.ts:65-71`, wired in `stream-runner.ts`). After the turn,
-`stream-runner.ts` computes `exceededCompactionTrigger` / `hitCompactionTrigger` and hands them to `onFinally`,
-which `TurnLoop` uses to decide `compaction-retry` versus `post-compact` (see
-[10 Agent Runtime](./10-agent-runtime.md)).
-
-### 5.2 Coordinator
-
-`runtime/compaction-coordinator.ts` performs the actual compaction: `prepareMessages` (pre-turn, if
-`shouldCompact`), `compactAfterRun` (post-turn, gated by `exceededCompactionTrigger && !hitCompactionTrigger`),
-and a manual `compact`.
-
-### 5.3 Mechanics
-
-`context/compact/`:
-
-- `planCompaction` (`compact/compact.ts`) splits the transcript at a cut and canonicalizes the head into model
-  messages; it aborts if the head is empty or all-summary.
-- `findCut` (`compact/segments.ts`) walks step segments from the end, keeping `retainedRecentSteps`, and stops
-  at a prior summary; `partitionAtCut` produces `{ head, tail, archivedIds }` and re-heads the tail with a
-  `step-start`. Step boundaries come from `step-start` parts; a summary is detected via a `data-compaction`
-  part.
-- The summary is produced by a **fork** (below), then `buildCompactionResult` builds an assistant summary
-  message (a `data-compaction` part carrying before/after/reduced tokens) so the next messages are
-  `[summary, ...tail]`.
-
-### 5.4 The compaction fork
-
-`context/compact/fork-agent.ts`: `runCompactionFork` runs a single-step `streamText` with `toolChoice: 'none'`
-and an **empty tool set** (it skips `buildTools` entirely), because the fork only needs to summarize. It uses a
-dedicated compaction model when configured (`def.compactionModelRef ?? def.modelRef`) and streams the partial
-summary to the UI with throttling. The prompt is `[...head, { role: 'user', content: prompt }]`.
+`turn-loop.machine.ts` has exactly two outcomes: `plan-exit-retry | finalize`. The v1
+`compaction-retry` / `post-compact` paths, the `overCompactionTrigger` stop condition, and the
+`exceededCompactionTrigger` / `hitCompactionTrigger` final-state fields are gone.
 
 ## 6. Provider strategies (the cache frontier)
 
-`context/providers/`: a `ProviderContextStrategy` is
-`{ cacheKind, applyPromptLayout?, applyCaching }` (`providers/strategy.ts`), where `cacheKind` is
-`'ephemeral' | 'auto' | 'unsupported'`. The strategy is selected by the model provider prefix
-(`providers/index.ts:21-38`): anthropic / openai / openai-compatible / google / deepseek / passthrough.
+`context/providers/`: `ProviderContextStrategy = { cacheKind, applyCaching({ plan, summaryIndex }) }`.
 
-In `index.ts` (`:146-160`), the engine applies `applyPromptLayout` first (with `freezeVolatilePrefix`, memoized
-per chat) and then `applyCaching`. The frozen-prefix state is cleared on `clear()`.
+- **Anthropic** (`anthropic.ts`) — four `cacheControl` breakpoints (provider maximum): last stable-system
+  message (1h), last leading-user message (1h), **the latest compaction summary (1h)** — the root of the
+  current prefix family — and the last history message (5m, the moving frontier).
+- **OpenAI / OpenAI-compatible** (`openai.ts`) — `promptCacheKey = tanzo:chat:<chatId>` (per-conversation,
+  not global) + `promptCacheRetention: '24h'`. Fork requests carry the same key on path A.
+- **DeepSeek / Google** — automatic prefix caching; no explicit markers. The prefix-freeze machinery from
+  v1 is deleted — I1 makes it unnecessary.
 
-- **Anthropic — ephemeral cache frontier** (`providers/anthropic.ts`): marks the last stable-system message
-  with `cacheControl ttl: '1h'`, the last stable leading-user message with `1h`, and the last two history
-  messages with `5m`. `cacheKind: 'ephemeral'`.
-- **OpenAI / OpenAI-compatible** (`providers/openai.ts`): injects `promptCacheKey = tanzo:global:<modelRef>`
-  plus `promptCacheRetention: '24h'`. `cacheKind: 'auto'`.
-- **Google / DeepSeek / passthrough**: `cacheKind: 'unsupported'` (no explicit cache markers).
+Tool serialization order is pinned via `toolOrder` (sorted) in `build-agent.ts`, since the Anthropic cache
+prefix includes the tools block.
 
-## 7. Tool-record normalization
+## 7. Per-step persistence (design §4.5)
 
-`context/tool-transcript.ts` (invoked from `context/project.ts`, called at `index.ts:193`):
+### 7.1 Write path
 
-- `ensureToolPairing`: for each assistant tool-call block, keep only calls that have a matching `tool-result`
-  (or, in the final block, an approval-response); drop orphan calls and orphan results; remove emptied
-  messages. This prevents dangling `tool_use` / `tool_result` pairs after compaction or edits.
-- `canonicalizeToolContent`: reorder parts inside `tool` messages to match the assistant call order (results
-  before approval-responses).
+The AI SDK aggregates a whole model pass into one assistant UIMessage (parts delimited by `step-start`,
+usage accumulated in `metadata.steps[]`). `@shared/message-steps` (`splitAssistantSteps`) splits that
+message at the persistence boundary (`stream-runner.ts` `onStepEnd`/`onEnd`) into **one row per step
+group**: the first fragment keeps the original id, later fragments get deterministic ids
+(`{baseId}::step-k`), and each fragment carries exactly its own `metadata.steps[0]` (the ledger anchor
+shape). The aggregate `metadata.usage` rides on the last fragment. The chunk stream to the renderer is
+untouched — splitting happens only in what gets written to the store.
 
-The same canonicalization is applied to the compaction head, so a summarized transcript never re-introduces a
-dangling tool pair.
+Consequences:
+
+- compaction cuts always cover whole rows; overlay `covers_from_seq/covers_to_seq` semantics are exact;
+- mid-run steering persists at the exact step position the model saw it: `recordConsumedSteering` carries
+  the prepareStep `stepNumber`, and the merge inserts the steer before the first fragment whose
+  `steps[0].stepNumber` exceeds it (D6-2 fully closed);
+- the ledger anchor is trivially the newest per-step row's reported `inputTokens` plus its own output.
+
+### 7.2 Display path
+
+The renderer regroups consecutive step fragments (`groupAssistantSteps`, applied in `message-list.tsx`)
+so a multi-step reply renders as one block, identical to the live-stream view. The merged block takes the
+**last** fragment's id so fork (which slices through the target id) captures the whole reply.
+
+### 7.3 Migration
+
+DB migration 22 (`database/per-step-migration.ts`) splits historical multi-step assistant rows using the
+same `splitAssistantSteps`, renumbers each conversation's rows densely, remaps compaction-overlay coverage
+onto the new seqs, and drops stale aggregated revisions (the log projection COALESCEs revisions over base
+rows).
+
+## 8. Tool-record normalization
+
+`context/tool-transcript.ts` (`canonicalizeToolTranscript`) is unchanged: drop orphan calls/results, order
+results before approval-responses by call order. With model-domain cuts producing closed step groups it now
+acts as a safety net rather than a per-step repair pass.
 
 Next → [12 Tools](./12-tools.md)
