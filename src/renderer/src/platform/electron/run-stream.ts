@@ -1,11 +1,13 @@
 import { readUIMessageStream, type UIMessageChunk } from 'ai'
+import { TanzoError } from '@shared/errors'
 import type {
   ChatApi,
   ChatRunError,
   ChatRunFrame,
   ChatRunKind,
   ChatRunSnapshot,
-  ChatRunStateEvent
+  ChatRunStateEvent,
+  ChatRunStatus
 } from '@shared/chat'
 import type { TanzoUIMessage } from '@shared/agent-message'
 
@@ -64,6 +66,11 @@ export function createMessageSink(handlers: {
     try {
       for await (const message of readUIMessageStream<TanzoUIMessage>({
         stream,
+        // The AI SDK reports native `error` chunks only through this callback
+        // (processUIMessageStream calls onError?.() — without it they are
+        // silently dropped). The terminal run-state event is the primary error
+        // channel, so just forward these to the same handler.
+        onError: (error) => handlers.onError?.(error),
         ...(handlers.seedMessage ? { message: handlers.seedMessage } : {})
       })) {
         handlers.onMessage(message)
@@ -105,7 +112,7 @@ export async function connectRun(
   handlers: {
     onRunStart?: (snapshot: ChatRunSnapshot) => void
     onChunk: (chunk: UIMessageChunk) => void
-    onSettled?: () => void | Promise<void>
+    onSettled?: (outcome?: { status: ChatRunStatus | null }) => void | Promise<void>
     onError?: (error: unknown) => void
     persistent?: boolean
     attachExisting?: boolean
@@ -115,6 +122,7 @@ export async function connectRun(
   const liveFrames: ChatRunFrame[] = []
   const terminalRunIds = new Set<string>()
   const terminalRunErrors = new Map<string, ChatRunError>()
+  const terminalRunStatuses = new Map<string, ChatRunStatus>()
   const MAX_LIVE_FRAMES = 2000
   const MAX_TERMINAL_RUN_IDS = 100
   let live = false
@@ -132,13 +140,16 @@ export async function connectRun(
   const settle = (): void => {
     if (!live && !handlers.persistent) return
     const settledRunId = gate.activeRunId()
+    let status: ChatRunStatus | null = null
     if (settledRunId) {
       reportRunError(settledRunId)
       terminalRunIds.delete(settledRunId)
+      status = terminalRunStatuses.get(settledRunId) ?? null
+      terminalRunStatuses.delete(settledRunId)
     }
     live = false
     liveFrames.length = 0
-    void handlers.onSettled?.()
+    void handlers.onSettled?.({ status })
     if (!handlers.persistent) close()
   }
 
@@ -146,7 +157,7 @@ export async function connectRun(
     const error = terminalRunErrors.get(runId)
     if (!error) return
     terminalRunErrors.delete(runId)
-    handlers.onError?.(new Error(error.message))
+    handlers.onError?.(new TanzoError(error.code, error.message))
   }
 
   const settleIfTerminalArrived = (): void => {
@@ -218,6 +229,7 @@ export async function connectRun(
         terminalRunErrors.set(event.runId, event.error)
       }
       if (isTerminalState(event)) {
+        terminalRunStatuses.set(event.runId, event.status)
         if (event.runId === gate.activeRunId()) settle()
         else {
           if (terminalRunIds.size >= MAX_TERMINAL_RUN_IDS) {
@@ -225,6 +237,7 @@ export async function connectRun(
             if (oldest !== undefined) {
               terminalRunIds.delete(oldest)
               terminalRunErrors.delete(oldest)
+              terminalRunStatuses.delete(oldest)
             }
           }
           terminalRunIds.add(event.runId)

@@ -21,7 +21,7 @@ import {
 import { queryClient } from '@/common/query-client'
 import { chatKeys } from '../query-keys'
 import { routeDataPart } from './data-part-router'
-import { reduceRunNotice, type RunNotice } from './use-run-notice'
+import { errorKindFromCode, reduceRunNotice, type RunNotice } from './use-run-notice'
 import { latestCompaction, upsertMessage } from './message-utils'
 
 type Goal = TanzoDataParts['goal']['goal']
@@ -31,6 +31,8 @@ export interface ChatSessionState {
   messages: TanzoUIMessage[]
   isLoadingHistory: boolean
   isStreaming: boolean
+  /** True between the user pressing Stop and the run reaching a terminal state. */
+  isStopping: boolean
   transientStatus: string | null
   contextStatus: TanzoDataParts['context'] | null
   recentCompaction: TanzoDataParts['compaction'] | null
@@ -51,6 +53,7 @@ export interface ChatSession {
   sendMessage(input: { text: string; files?: FileUIPart[] }): void
   editMessage(messageId: string, text: string): void
   respondApprovals(responses: ChatApprovalResponse[]): Promise<void>
+  retryLastTurn(): void
   stop(): void
   steer(text: string): void
   enqueue(text: string): void
@@ -67,6 +70,7 @@ const INITIAL_STATE: ChatSessionState = {
   messages: [],
   isLoadingHistory: true,
   isStreaming: false,
+  isStopping: false,
   transientStatus: null,
   contextStatus: null,
   recentCompaction: null,
@@ -190,15 +194,46 @@ function createChatSession(chatId: string, onDispose: () => void): ChatSession {
     const message = error instanceof Error ? error.message : String(error)
     setState({
       transientStatus: null,
-      ...(runActive ? {} : { isStreaming: false }),
+      ...(runActive ? {} : { isStreaming: false, isStopping: false }),
       runNotice:
         state.runNotice?.kind === 'error'
           ? state.runNotice
           : {
               kind: 'error',
-              error: { kind: 'unknown', message, ...(code ? { name: code } : {}) }
+              // Recover the error category from the ChatRunError code so the
+              // degraded (non-telemetry) path still shows an accurate heading.
+              error: { kind: errorKindFromCode(code), message, ...(code ? { name: code } : {}) }
             }
     })
+  }
+
+  /**
+   * Restore the last failed run's notice from the persisted runs table so a
+   * failure survives session teardown, chat switches, and app restarts. Only
+   * fills the slot when the failed run is the tail of the conversation (no
+   * user activity after it) and no live notice exists.
+   */
+  const restoreLastRunOutcome = async (): Promise<void> => {
+    try {
+      const outcome = await chatClient.lastRunOutcome(chatId)
+      if (disposed || runActive || state.runNotice) return
+      if (!outcome || outcome.status !== 'failed' || !outcome.error) return
+      if (outcome.error.kind === 'aborted') return
+      const detail = outcome.error.detail
+      setState({
+        runNotice: {
+          kind: 'error',
+          stale: true,
+          error: detail ?? {
+            kind: errorKindFromCode(outcome.error.code),
+            message: outcome.error.message ?? i18n.t('chat.runNotice.error.title'),
+            ...(outcome.error.code ? { name: outcome.error.code } : {})
+          }
+        }
+      })
+    } catch {
+      // Best-effort restore; a missing notice is not worth surfacing an error.
+    }
   }
 
   const handleDataPart = (dataPart: { type: string; id?: string; data?: unknown }): void =>
@@ -293,6 +328,7 @@ function createChatSession(chatId: string, onDispose: () => void): ChatSession {
           setState({
             messages: displayBaseMessages,
             isStreaming: true,
+            isStopping: false,
             activeRunKind: 'compaction',
             recentCompaction: latestCompaction(displayBaseMessages)
           })
@@ -304,6 +340,7 @@ function createChatSession(chatId: string, onDispose: () => void): ChatSession {
         setState({
           messages: displayBaseMessages,
           isStreaming: true,
+          isStopping: false,
           activeRunKind: 'chat',
           recentCompaction: latestCompaction(displayBaseMessages)
         })
@@ -312,7 +349,7 @@ function createChatSession(chatId: string, onDispose: () => void): ChatSession {
         if (isDataChunk(chunk)) handleDataPart(chunk)
         if (activeRunKind === 'chat') sink?.enqueue(chunk)
       },
-      onSettled: async () => {
+      onSettled: async (outcome) => {
         runActive = false
         sink?.close()
         sink = null
@@ -321,8 +358,19 @@ function createChatSession(chatId: string, onDispose: () => void): ChatSession {
         if (!disposed && !runActive) {
           setState({
             isStreaming: false,
+            isStopping: false,
             transientStatus: null,
-            activeRunKind: null
+            activeRunKind: null,
+            // Surface an explicit "stopped" marker so a user-cancelled run is
+            // distinguishable from a naturally finished one. Only for chat
+            // runs (internal compaction aborts are not user-facing) and never
+            // overwriting an error notice (an abort racing a failure keeps
+            // the error).
+            ...(outcome?.status === 'aborted' &&
+            activeRunKind === 'chat' &&
+            state.runNotice?.kind !== 'error'
+              ? { runNotice: { kind: 'aborted' as const } }
+              : {})
           })
         }
       },
@@ -391,7 +439,13 @@ function createChatSession(chatId: string, onDispose: () => void): ChatSession {
       if (!disposed) void loadContextSnapshot()
     })
     void loadSidecars()
-    void attachRun().catch(reportError)
+    void attachRun()
+      .catch(reportError)
+      .finally(() => {
+        // After the run attach settles we know whether a run is live; only
+        // then can a persisted failure be restored without racing a stream.
+        if (!disposed && !runActive) void restoreLastRunOutcome()
+      })
   }
 
   const dispose = (): void => {
@@ -479,6 +533,7 @@ function createChatSession(chatId: string, onDispose: () => void): ChatSession {
       setState({
         messages: [...state.messages, message],
         isStreaming: true,
+        isStopping: false,
         runNotice: null
       })
       void chatClient.submit(chatId, message).catch((error) => {
@@ -503,6 +558,7 @@ function createChatSession(chatId: string, onDispose: () => void): ChatSession {
       setState({
         messages: [...state.messages.slice(0, targetIndex), edited],
         isStreaming: true,
+        isStopping: false,
         runNotice: null
       })
       void chatClient.editMessage(chatId, messageId, trimmed).catch((error) => {
@@ -514,7 +570,7 @@ function createChatSession(chatId: string, onDispose: () => void): ChatSession {
       if (responses.length === 0) return
       const previousMessages = state.messages
       const { messages } = applyApprovalResponses(state.messages, responses)
-      setState({ messages, isStreaming: true, runNotice: null })
+      setState({ messages, isStreaming: true, isStopping: false, runNotice: null })
       try {
         const { started } = await chatClient.respondApprovals(chatId, responses)
         // No run was launched — either approvals are still pending in this turn
@@ -528,18 +584,33 @@ function createChatSession(chatId: string, onDispose: () => void): ChatSession {
       }
     },
     stop() {
-      void chatClient.cancel(chatId).catch(() => undefined)
+      // Reflect the in-flight cancel immediately; the terminal run-state event
+      // clears it. If the cancel IPC itself fails, roll back and surface the
+      // failure instead of silently leaving a phantom "stopping" state.
+      if (state.isStreaming && !state.isStopping) setState({ isStopping: true })
+      void chatClient.cancel(chatId).catch((error) => {
+        if (!disposed) setState({ isStopping: false })
+        reportError(error)
+      })
     },
     steer(text) {
       const trimmed = text.trim()
-      if (trimmed) void chatClient.steer(chatId, trimmed).catch(() => undefined)
+      // A failed steer/enqueue silently discards the user's text; surface it.
+      if (trimmed) void chatClient.steer(chatId, trimmed).catch(reportError)
     },
     enqueue(text) {
       const trimmed = text.trim()
-      if (trimmed) void chatClient.enqueue(chatId, trimmed).catch(() => undefined)
+      if (trimmed) void chatClient.enqueue(chatId, trimmed).catch(reportError)
     },
     removeQueued(id) {
       void chatClient.removeQueued(chatId, id).catch(() => undefined)
+    },
+    retryLastTurn() {
+      if (state.isStreaming) return
+      setState({ isStreaming: true, runNotice: null })
+      void chatClient.retryTurn(chatId).catch((error) => {
+        reportError(error)
+      })
     },
     refresh,
     clearRunNotice() {

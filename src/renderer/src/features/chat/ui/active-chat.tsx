@@ -82,7 +82,13 @@ export function ActiveChat({
     state.compactionInProgress || state.runNotice ? (
       <>
         {state.compactionInProgress ? <CompactionMessage {...state.compactionInProgress} /> : null}
-        {state.runNotice ? <RunNotice notice={state.runNotice} /> : null}
+        {state.runNotice ? (
+          <RunNotice
+            notice={state.runNotice}
+            onRetry={state.isStreaming ? undefined : () => session.retryLastTurn()}
+            onDismiss={() => session.clearRunNotice()}
+          />
+        ) : null}
       </>
     ) : null
 

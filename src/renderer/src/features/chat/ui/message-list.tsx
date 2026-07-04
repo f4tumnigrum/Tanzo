@@ -1,6 +1,15 @@
-import { memo, useCallback, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import {
+  memo,
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode
+} from 'react'
 import { cn } from '@/lib/utils'
 import type { TanzoUIMessage } from '@shared/agent-message'
+import { groupAssistantSteps } from '@shared/message-steps'
 import { MessageItem } from './message/message-item'
 import { ScrollToBottomButton } from './scroll-to-bottom-button'
 
@@ -55,6 +64,10 @@ export const MessageList = memo(function MessageList({
   threadId,
   className
 }: MessageListProps): React.JSX.Element {
+  // Persisted transcripts store one row per model step (design §4.5); regroup
+  // consecutive step fragments so a multi-step reply renders as one block,
+  // matching the live-stream view.
+  const displayMessages = useMemo(() => groupAssistantSteps(messages), [messages])
   const scrollerRef = useRef<HTMLDivElement | null>(null)
   const contentRef = useRef<HTMLDivElement | null>(null)
   // Threads open pinned to the bottom, so start true.
@@ -106,7 +119,7 @@ export const MessageList = memo(function MessageList({
         className="scrollbar-subtle h-full overflow-y-auto [overflow-anchor:none]"
       >
         <div ref={contentRef} className="flex min-h-full flex-col justify-end">
-          {messages.map((message) => (
+          {displayMessages.map((message) => (
             <div
               key={message.id}
               className="mx-auto w-full max-w-3xl px-3 @md/chat:px-5 [content-visibility:auto] [contain-intrinsic-size:auto_150px]"

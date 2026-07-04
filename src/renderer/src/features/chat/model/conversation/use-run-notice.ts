@@ -1,11 +1,33 @@
 import type { TanzoDataParts } from '@shared/agent-message'
+import { ERROR_CODES } from '@shared/errors'
+
+export type RunNoticeError = NonNullable<TanzoDataParts['telemetry']['error']>
 
 export type RunNotice =
   | { kind: 'retry'; retryNumber: number; maxRetries?: number }
-  | { kind: 'error'; error: NonNullable<TanzoDataParts['telemetry']['error']> }
+  | { kind: 'error'; error: RunNoticeError; stale?: boolean }
+  | { kind: 'aborted' }
 
 function clearRetry(previous: RunNotice | null): RunNotice | null {
   return previous?.kind === 'retry' ? null : previous
+}
+
+/**
+ * Maps a ChatRunError code (the degraded run-state error channel) back to a
+ * telemetry error kind so the fallback path shows an accurate heading instead
+ * of a generic "Run failed".
+ */
+export function errorKindFromCode(code: string | undefined): RunNoticeError['kind'] {
+  switch (code) {
+    case ERROR_CODES.AISDK_API_CALL_ERROR:
+      return 'api'
+    case ERROR_CODES.AISDK_INVALID_RESPONSE:
+      return 'validation'
+    case ERROR_CODES.AISDK_NO_SUCH_MODEL:
+      return 'model'
+    default:
+      return 'unknown'
+  }
 }
 
 export function reduceRunNotice(
@@ -30,7 +52,10 @@ export function reduceRunNotice(
       }
     case 'retry-exhausted':
     case 'operation-error':
-      return event.error ? { kind: 'error', error: event.error } : clearRetry(previous)
+      if (!event.error) return clearRetry(previous)
+      // A terminal abort classification is a cancellation, not a failure.
+      if (event.error.kind === 'abort') return { kind: 'aborted' }
+      return { kind: 'error', error: event.error }
     default:
       return previous
   }

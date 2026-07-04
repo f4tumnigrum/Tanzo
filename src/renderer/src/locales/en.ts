@@ -235,6 +235,7 @@ export const en = {
           imageTitle: 'image'
         },
         stop: 'Stop',
+        stopping: 'Stopping…',
         send: 'Send',
         sendShortcut: 'Send · Enter',
         permissionModeLabel: 'Permission mode',
@@ -721,8 +722,14 @@ export const en = {
           title: 'Retrying… (retry {{count}})',
           titleWithMax: 'Retrying… (retry {{count}}, up to {{max}} retries)'
         },
+        aborted: {
+          title: 'Stopped by user'
+        },
         error: {
           title: 'Run failed',
+          stale: '(earlier run)',
+          retryAction: 'Retry',
+          dismissAction: 'Dismiss',
           summary: {
             attempts: '{{count}} attempts'
           },

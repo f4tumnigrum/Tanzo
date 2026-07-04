@@ -224,10 +224,17 @@ export function useChatNavigation(): ChatNavigation {
   const handleForkMessage = useCallback(
     async (messageId: string) => {
       if (!activeChatId) return
-      const result = await forkConversation.mutateAsync({
-        sourceChatId: activeChatId,
-        messageId
-      })
+      let result: Awaited<ReturnType<typeof forkConversation.mutateAsync>>
+      try {
+        result = await forkConversation.mutateAsync({
+          sourceChatId: activeChatId,
+          messageId
+        })
+      } catch {
+        // The mutation's onError already surfaced a toast; swallowing here
+        // prevents an unhandled rejection from the fork button.
+        return
+      }
       workspaceActions.setCurrent(result.conversation.workspaceId)
       setActiveChatId(result.conversation.id)
     },

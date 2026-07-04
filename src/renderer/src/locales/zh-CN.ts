@@ -233,6 +233,7 @@ export const zhCN = {
           imageTitle: '图片'
         },
         stop: '停止',
+        stopping: '正在停止…',
         send: '发送',
         sendShortcut: '发送 · Enter',
         permissionModeLabel: '权限模式',
@@ -713,8 +714,14 @@ export const zhCN = {
           title: '正在重试…（第 {{count}} 次重试）',
           titleWithMax: '正在重试…（第 {{count}} 次重试，最多 {{max}} 次）'
         },
+        aborted: {
+          title: '已由用户停止'
+        },
         error: {
           title: '运行失败',
+          stale: '（先前的运行）',
+          retryAction: '重试',
+          dismissAction: '关闭',
           summary: {
             attempts: '{{count}} 次尝试'
           },

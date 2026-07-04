@@ -229,6 +229,7 @@ export function Composer({ chatId }: ComposerProps): React.JSX.Element {
         <ChatInput
           state={{
             isStreaming,
+            isStopping: state.isStopping,
             permissionMode: mode.data ?? 'default',
             contextBadge,
             canSubmitOverride: Boolean(modelRef)

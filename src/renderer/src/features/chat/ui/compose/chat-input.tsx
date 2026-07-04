@@ -44,6 +44,8 @@ const MODE_CHROME: Record<PermissionMode, ModeChrome> = {
 
 export interface ChatInputState {
   isStreaming: boolean
+  /** True after Stop is pressed while the cancel is still in flight. */
+  isStopping?: boolean
   permissionMode?: PermissionMode
 
   contextBadge?: React.ReactNode
@@ -98,6 +100,7 @@ export function ChatInput({
   const { t } = useTranslation()
   const {
     isStreaming,
+    isStopping = false,
     permissionMode = 'default',
     contextBadge,
     canSubmitOverride,
@@ -484,8 +487,14 @@ export function ChatInput({
                       {...triggerProps}
                       type="button"
                       onClick={isStreaming ? onStop : () => void dispatch('queue')}
-                      disabled={isStreaming ? !onStop : !canSubmit}
-                      aria-label={isStreaming ? t('chat.composer.stop') : t('chat.composer.send')}
+                      disabled={isStreaming ? !onStop || isStopping : !canSubmit}
+                      aria-label={
+                        isStreaming
+                          ? isStopping
+                            ? t('chat.composer.stopping')
+                            : t('chat.composer.stop')
+                          : t('chat.composer.send')
+                      }
                       size="icon-xs"
                       className={cn(
                         'size-6 rounded-[var(--radius-4xl)] p-0',
@@ -498,7 +507,10 @@ export function ChatInput({
                       )}
                     >
                       {isStreaming ? (
-                        <CircleStop className="size-3.5" strokeWidth={1.85} />
+                        <CircleStop
+                          className={cn('size-3.5', isStopping && 'animate-pulse')}
+                          strokeWidth={1.85}
+                        />
                       ) : (
                         <ArrowUp className="size-3.5" strokeWidth={2.15} />
                       )}
@@ -506,7 +518,11 @@ export function ChatInput({
                   )}
                 />
                 <TooltipContent side="top">
-                  {isStreaming ? t('chat.composer.stop') : t('chat.composer.sendShortcut')}
+                  {isStreaming
+                    ? isStopping
+                      ? t('chat.composer.stopping')
+                      : t('chat.composer.stop')
+                    : t('chat.composer.sendShortcut')}
                 </TooltipContent>
               </Tooltip>
             </div>

@@ -4,6 +4,7 @@ import type {
   ChatApi,
   ChatApprovalResponse,
   ChatEvent,
+  ChatRunOutcome,
   ChatRunSnapshot,
   CompactionOutcome,
   ConversationSummary,
@@ -46,6 +47,12 @@ export const chatClient = {
     responses: ChatApprovalResponse[]
   ): Promise<{ started: boolean }> {
     return requireChatApi().respondApprovals(chatId, responses)
+  },
+  retryTurn(chatId: string): Promise<void> {
+    return requireChatApi().retryTurn(chatId)
+  },
+  lastRunOutcome(chatId: string): Promise<ChatRunOutcome | null> {
+    return requireChatApi().lastRunOutcome(chatId)
   },
   cancel(chatId: string): Promise<void> {
     return requireChatApi().cancel(chatId)
