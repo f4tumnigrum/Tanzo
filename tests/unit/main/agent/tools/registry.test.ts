@@ -258,9 +258,20 @@ describe('main/agent/tools/registry', () => {
       ).resolves.toHaveProperty('askQuestion')
     }
 
+    // Forks stay main-agent surfaced; only subagent executors lose it.
+    const forkDeps = planDeps()
+    vi.mocked(forkDeps.store.getConversation).mockReturnValue({
+      parentConversationId: 'parent',
+      parentRelation: 'fork'
+    } as never)
+    await expect(
+      createBuildTools(forkDeps)({ def: mainAgent, chatId: 'fork', depth: 0, mode: 'default' })
+    ).resolves.toHaveProperty('askQuestion')
+
     const subagentDeps = planDeps()
     vi.mocked(subagentDeps.store.getConversation).mockReturnValue({
-      parentConversationId: 'parent'
+      parentConversationId: 'parent',
+      parentRelation: 'subagent'
     } as never)
     await expect(
       createBuildTools(subagentDeps)({ def: mainAgent, chatId: 'child', depth: 1, mode: 'default' })

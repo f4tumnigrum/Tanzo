@@ -13,9 +13,9 @@ describe('database/migrations on real sqlite', () => {
           .all(['tanzo']) as Array<{ version: number }>
       ).map((row) => row.version)
 
-    expect(versions()).toEqual([1, 19, 20, 21])
+    expect(versions()).toEqual([1, 19, 20, 21, 22])
     expect(() => runMigrations(db, [tanzoMigrations])).not.toThrow()
-    expect(versions()).toEqual([1, 19, 20, 21])
+    expect(versions()).toEqual([1, 19, 20, 21, 22])
   })
 
   it('applies plugin_states for databases that already used earlier migration versions', () => {

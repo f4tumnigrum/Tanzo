@@ -192,6 +192,30 @@ describe('agent/telemetry', () => {
     })
   })
 
+  it('classifies an abort-reason RetryError as a cancellation, not a retry failure', () => {
+    const abortRetry = new RetryError({
+      message: 'Aborted during retry',
+      reason: 'abort',
+      errors: [new Error('aborted')]
+    })
+    expect(normalizeTelemetryError(abortRetry)).toMatchObject({
+      kind: 'abort',
+      reason: 'abort',
+      attempts: 1
+    })
+  })
+
+  it('classifies @ai-sdk/mcp client errors by their AISDKError marker', () => {
+    const mcpError = Object.assign(new Error('MCP server request failed'), {
+      [Symbol.for('vercel.ai.error.AI_MCPClientError')]: true
+    })
+    const oauthError = Object.assign(new Error('MCP OAuth flow failed'), {
+      [Symbol.for('vercel.ai.error.AI_MCPClientOAuthError')]: true
+    })
+    expect(normalizeTelemetryError(mcpError)).toMatchObject({ kind: 'tool' })
+    expect(normalizeTelemetryError(oauthError)).toMatchObject({ kind: 'tool' })
+  })
+
   it('emits retry-exhausted and operation-error for terminal RetryError', () => {
     const records: AgentTelemetrySinkRecord[] = []
     const telemetry = createAgentTelemetry({

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { TanzoDataParts } from '@shared/agent-message'
 import {
+  errorKindFromCode,
   reduceRunNotice,
   type RunNotice
 } from '@renderer/features/chat/model/conversation/use-run-notice'
@@ -52,5 +53,25 @@ describe('chat/use-run-notice reduceRunNotice', () => {
         telemetry({ event: 'retry-exhausted', retry: { attempt: 4 }, error })
       )
     ).toEqual({ kind: 'error', error })
+  })
+
+  it('maps a terminal abort classification to an aborted notice, not an error', () => {
+    expect(
+      reduceRunNotice(
+        null,
+        telemetry({
+          event: 'operation-error',
+          error: { kind: 'abort', message: 'This operation was aborted' }
+        })
+      )
+    ).toEqual({ kind: 'aborted' })
+  })
+
+  it('recovers an error kind from a ChatRunError code on the degraded path', () => {
+    expect(errorKindFromCode('AISDK_API_CALL_ERROR')).toBe('api')
+    expect(errorKindFromCode('AISDK_INVALID_RESPONSE')).toBe('validation')
+    expect(errorKindFromCode('AISDK_NO_SUCH_MODEL')).toBe('model')
+    expect(errorKindFromCode('CHAT_RUN_FAILED')).toBe('unknown')
+    expect(errorKindFromCode(undefined)).toBe('unknown')
   })
 })

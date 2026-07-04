@@ -27,6 +27,8 @@ const mocks = vi.hoisted(() => {
     onTaskEvent: vi.fn(() => () => undefined),
     submit: vi.fn(async () => undefined),
     respondApprovals: vi.fn(async () => ({ started: true })),
+    retryTurn: vi.fn(async () => undefined),
+    lastRunOutcome: vi.fn(async () => null),
     cancel: vi.fn(async () => undefined),
     steer: vi.fn(async () => undefined),
     enqueue: vi.fn(async () => undefined),
@@ -710,5 +712,119 @@ describe('renderer/chat-session', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('shows an aborted notice when a chat run is stopped by the user', async () => {
+    const history = [userMessage('m1', 'hello')]
+    const { chatId, session } = openSession(history)
+    await flush()
+
+    mocks.chatClient.runSnapshot.mockResolvedValue({
+      chatId,
+      runId: 'run-1',
+      runKind: 'chat',
+      status: 'running',
+      baseMessages: history,
+      notifications: [],
+      frames: []
+    } as never)
+    emitState(chatId, 'run-1', 'running')
+    await flush()
+    expect(session.getState().isStreaming).toBe(true)
+
+    session.stop()
+    expect(session.getState().isStopping).toBe(true)
+    expect(mocks.chatClient.cancel).toHaveBeenCalledWith(chatId)
+
+    emitState(chatId, 'run-1', 'aborted')
+    await flush()
+    await flush()
+
+    const state = session.getState()
+    expect(state.isStreaming).toBe(false)
+    expect(state.isStopping).toBe(false)
+    expect(state.runNotice).toEqual({ kind: 'aborted' })
+  })
+
+  it('clears the stopping flag and reports the failure when the cancel IPC rejects', async () => {
+    const history = [userMessage('m1', 'hello')]
+    const { chatId, session } = openSession(history)
+    await flush()
+
+    mocks.chatClient.runSnapshot.mockResolvedValue({
+      chatId,
+      runId: 'run-1',
+      runKind: 'chat',
+      status: 'running',
+      baseMessages: history,
+      notifications: [],
+      frames: []
+    } as never)
+    emitState(chatId, 'run-1', 'running')
+    await flush()
+
+    mocks.chatClient.cancel.mockRejectedValueOnce(new Error('ipc down'))
+    session.stop()
+    await flush()
+
+    expect(session.getState().isStopping).toBe(false)
+  })
+
+  it('retries the last turn optimistically and surfaces an IPC failure', async () => {
+    mocks.chatClient.retryTurn.mockRejectedValueOnce(new Error('retry failed'))
+    const { chatId, session } = openSession([userMessage('m1', 'hello')])
+    await flush()
+
+    session.retryLastTurn()
+    expect(session.getState().isStreaming).toBe(true)
+    expect(session.getState().runNotice).toBeNull()
+    expect(mocks.chatClient.retryTurn).toHaveBeenCalledWith(chatId)
+
+    await flush()
+    // The catch handler surfaces the failure; runActive is false so streaming clears.
+    expect(session.getState().isStreaming).toBe(false)
+    expect(session.getState().runNotice).toMatchObject({ kind: 'error' })
+
+    // A retry while already streaming is a no-op.
+    session.retryLastTurn()
+    session.retryLastTurn()
+    expect(mocks.chatClient.retryTurn).toHaveBeenCalledTimes(2)
+  })
+
+  it('restores a persisted failure notice when opening an idle chat', async () => {
+    mocks.chatClient.lastRunOutcome.mockResolvedValue({
+      runId: 'run-9',
+      status: 'failed',
+      finishedAt: 123,
+      error: {
+        kind: 'stream-error',
+        message: 'Rate limited',
+        code: 'AISDK_API_CALL_ERROR',
+        detail: { kind: 'api', message: 'Rate limited', statusCode: 429 }
+      }
+    } as never)
+    const { session } = openSession([userMessage('m1', 'hello')])
+    await flush()
+    await flush()
+
+    expect(session.getState().runNotice).toMatchObject({
+      kind: 'error',
+      stale: true,
+      error: { kind: 'api', statusCode: 429 }
+    })
+  })
+
+  it('does not restore a notice for finished or aborted outcomes', async () => {
+    mocks.chatClient.lastRunOutcome.mockResolvedValue({
+      runId: 'run-9',
+      status: 'failed',
+      finishedAt: 123,
+      error: { kind: 'aborted' }
+    } as never)
+    const { session } = openSession([userMessage('m1', 'hello')])
+    await flush()
+    await flush()
+
+    expect(session.getState().runNotice).toBeNull()
   })
 })

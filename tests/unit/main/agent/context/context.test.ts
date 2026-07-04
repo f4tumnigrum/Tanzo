@@ -1,14 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import type { ModelMessage } from 'ai'
+import type { TanzoUIMessage } from '@shared/agent-message'
 import { buildPromptCacheDiagnostic } from '@main/agent/diagnostics/prompt-cache'
-import { createBudget } from '@main/agent/context/budget'
 import { createCapabilities } from '@main/agent/context/capabilities'
 import { compileSections } from '@main/agent/context/compile'
 import { createContextEngine } from '@main/agent/context/index'
+import {
+  estimateTextTokens,
+  estimateUIMessageTokens,
+  measureTranscript
+} from '@main/agent/context/ledger'
 import { projectHistory } from '@main/agent/context/project'
 import type { ContextSection } from '@main/agent/context/section'
 import { strategyFor } from '@main/agent/context/providers'
-import { computeCompactionPolicy } from '@main/agent/context/compaction-policy'
+import { computeCompactionPolicy } from '@main/agent/context/compact/policy'
 import { createTanzoSection } from '@main/agent/context/sections/tanzo'
 
 const CAP = { contextWindow: 200_000, maxOutputTokens: 8_192, supportsImages: true }
@@ -16,26 +21,50 @@ const CAP = { contextWindow: 200_000, maxOutputTokens: 8_192, supportsImages: tr
 function section(
   id: string,
   stability: 'stable' | 'volatile',
-  channel: 'system' | 'leading-user',
+  channel: 'system' | 'leading-user' | 'injection',
   order: number,
-  text: string | null,
-  prefixCacheScope?: 'conversation'
+  text: string | null
 ): ContextSection {
   return {
     id,
     stability,
     channel,
     order,
-    ...(prefixCacheScope ? { prefixCacheScope } : {}),
     render: () => text
   }
 }
 
 const BUILD_INPUT = {
   def: { modelRef: 'anthropic:claude-opus-4-5', systemPrompt: 'role' } as never,
+  chatId: 'chat-1',
   cwd: '/tmp',
   capabilities: CAP
 }
+
+function engineDeps(overrides: Record<string, unknown> = {}) {
+  return {
+    clock: { now: () => new Date('2026-06-01T00:00:00.000Z') },
+    tanzoInstructions: { read: () => null },
+    skillsIndex: { list: () => [] },
+    pluginsIndex: { list: () => [] },
+    pluginMention: { list: () => [], peek: () => [], take: () => {} },
+    gitStatus: { read: () => 'branch: main\n M file.ts' },
+    goal: { takeInjection: () => null, peekInjection: () => null, get: () => null },
+    policyMode: { getMode: () => 'default' as const },
+    resolveModelMetadata: () => ({ contextWindow: 200_000, maxOutput: 8_192 }),
+    ...overrides
+  }
+}
+
+const DEF = {
+  id: 'general',
+  name: 'General',
+  description: '',
+  kind: 'main',
+  modelRef: 'openai:gpt-5.5',
+  systemPrompt: 'ROLE',
+  allowedTools: null
+} as never
 
 describe('main/agent/context tanzo section', () => {
   it('uses tanzo as the project instructions section id', () => {
@@ -63,11 +92,11 @@ describe('main/agent/context compileSections', () => {
   it('orders stable system sections before volatile system sections', async () => {
     const plan = await compileSections(
       [
-        section('datetime', 'volatile', 'leading-user', 0, 'NOW', 'conversation'),
+        section('datetime', 'volatile', 'injection', 0, 'NOW'),
         section('role', 'stable', 'system', 0, 'ROLE'),
         section('tools', 'stable', 'system', 1, 'TOOLS'),
         section('vol-sys', 'volatile', 'system', 0, 'VOL'),
-        section('git', 'volatile', 'leading-user', 1, 'GIT', 'conversation')
+        section('git', 'volatile', 'injection', 1, 'GIT')
       ],
       BUILD_INPUT,
       []
@@ -80,36 +109,25 @@ describe('main/agent/context compileSections', () => {
       { sectionId: 'tools', stability: 'stable', channel: 'system' },
       { sectionId: 'vol-sys', stability: 'volatile', channel: 'system' }
     ])
+    // Injection-channel sections never reach the compiled plan.
     expect(plan.leadingUser).toHaveLength(0)
-    expect(plan.volatilePrefixUser).toEqual([{ role: 'user', content: 'NOW\n\nGIT' }])
-    expect(plan.provenance.volatilePrefixUser).toEqual([
-      {
-        sections: [
-          { sectionId: 'datetime', stability: 'volatile', channel: 'leading-user' },
-          { sectionId: 'git', stability: 'volatile', channel: 'leading-user' }
-        ]
-      }
-    ])
-    expect(plan.trailingUser).toEqual([])
   })
 
-  it('keeps stable leading-user context before history and volatile context after history', async () => {
+  it('merges leading-user sections into one message before history', async () => {
     const history: ModelMessage[] = [{ role: 'user', content: 'real user turn' }]
     const plan = await compileSections(
       [
         section('env', 'stable', 'leading-user', 0, 'ENV'),
-        section('datetime', 'volatile', 'leading-user', 0, 'NOW', 'conversation'),
-        section('git', 'volatile', 'leading-user', 1, 'GIT', 'conversation')
+        section('extra', 'volatile', 'leading-user', 1, 'EXTRA')
       ],
       BUILD_INPUT,
       history
     )
 
-    expect(
-      [...plan.leadingUser, ...plan.history, ...plan.volatilePrefixUser, ...plan.trailingUser].map(
-        (message) => message.content
-      )
-    ).toEqual(['ENV', 'real user turn', 'NOW\n\nGIT'])
+    expect([...plan.leadingUser, ...plan.history].map((message) => message.content)).toEqual([
+      'ENV\n\nEXTRA',
+      'real user turn'
+    ])
   })
 
   it('drops sections that render null or empty text', async () => {
@@ -125,8 +143,6 @@ describe('main/agent/context compileSections', () => {
 
     expect(plan.system).toEqual([{ role: 'system', content: 'ROLE' }])
     expect(plan.leadingUser).toEqual([])
-    expect(plan.volatilePrefixUser).toEqual([])
-    expect(plan.trailingUser).toEqual([])
   })
 })
 
@@ -272,20 +288,24 @@ describe('main/agent/context projectHistory', () => {
 })
 
 describe('main/agent/context provider strategies', () => {
-  it('adds Anthropic cache control to stable system and latest history messages', () => {
+  const basePlan = {
+    system: [
+      { role: 'system' as const, content: 'STABLE' },
+      { role: 'system' as const, content: 'VOL' }
+    ],
+    stableBoundary: 1,
+    leadingUser: [{ role: 'user' as const, content: 'ENV' }],
+    history: [
+      { role: 'user' as const, content: 'older' },
+      { role: 'assistant' as const, content: 'latest' }
+    ],
+    provenance: { system: [], leadingUser: [], history: [] }
+  }
+
+  it('adds Anthropic cache control to stable system, leading-user, and history tail', () => {
     const out = strategyFor('anthropic:claude-opus-4-5', 'chat-1').applyCaching({
-      system: [
-        { role: 'system', content: 'STABLE' },
-        { role: 'system', content: 'VOL' }
-      ],
-      stableBoundary: 1,
-      leadingUser: [{ role: 'user', content: 'ENV' }],
-      volatilePrefixUser: [],
-      trailingUser: [],
-      history: [
-        { role: 'user', content: 'older' },
-        { role: 'assistant', content: 'latest' }
-      ]
+      plan: basePlan,
+      summaryIndex: -1
     })
 
     expect(out.system[0].providerOptions).toEqual({
@@ -295,30 +315,55 @@ describe('main/agent/context provider strategies', () => {
     expect(out.leadingUser[0].providerOptions).toEqual({
       anthropic: { cacheControl: { type: 'ephemeral', ttl: '1h' } }
     })
-    expect(out.history[0].providerOptions).toEqual({
-      anthropic: { cacheControl: { type: 'ephemeral', ttl: '5m' } }
-    })
+    // Only the last history message gets the 5m moving frontier.
+    expect(out.history[0].providerOptions).toBeUndefined()
     expect(out.history[1].providerOptions).toEqual({
       anthropic: { cacheControl: { type: 'ephemeral', ttl: '5m' } }
     })
   })
 
-  it('adds a global OpenAI prompt cache key without message breakpoints', () => {
+  it('marks the compaction summary as a 1h cache anchor', () => {
+    const plan = {
+      ...basePlan,
+      history: [
+        { role: 'assistant' as const, content: 'summary of earlier work' },
+        { role: 'user' as const, content: 'next' },
+        { role: 'assistant' as const, content: 'latest' }
+      ]
+    }
+    const out = strategyFor('anthropic:claude-opus-4-5', 'chat-1').applyCaching({
+      plan,
+      summaryIndex: 0
+    })
+
+    expect(out.history[0].providerOptions).toEqual({
+      anthropic: { cacheControl: { type: 'ephemeral', ttl: '1h' } }
+    })
+    expect(out.history[2].providerOptions).toEqual({
+      anthropic: { cacheControl: { type: 'ephemeral', ttl: '5m' } }
+    })
+  })
+
+  it('routes OpenAI prompt caching per conversation, not globally', () => {
     const plan = {
       system: [],
       stableBoundary: 0,
       leadingUser: [],
-      volatilePrefixUser: [],
-      trailingUser: [],
-      history: []
+      history: [],
+      provenance: { system: [], leadingUser: [], history: [] }
     }
-    const out = strategyFor('openai:gpt-5', 'chat-9').applyCaching(plan)
-    const otherChat = strategyFor('openai:gpt-5', 'chat-10').applyCaching(plan)
+    const out = strategyFor('openai:gpt-5', 'chat-9').applyCaching({ plan, summaryIndex: -1 })
+    const otherChat = strategyFor('openai:gpt-5', 'chat-10').applyCaching({
+      plan,
+      summaryIndex: -1
+    })
 
     expect(out.providerOptions).toEqual({
-      openai: { promptCacheKey: 'tanzo:global:openai:gpt-5', promptCacheRetention: '24h' }
+      openai: { promptCacheKey: 'tanzo:chat:chat-9', promptCacheRetention: '24h' }
     })
-    expect(otherChat.providerOptions).toEqual(out.providerOptions)
+    expect(otherChat.providerOptions).toEqual({
+      openai: { promptCacheKey: 'tanzo:chat:chat-10', promptCacheRetention: '24h' }
+    })
   })
 
   it('adds OpenAI-compatible prompt cache options under the SDK camelCase key', () => {
@@ -326,15 +371,17 @@ describe('main/agent/context provider strategies', () => {
       system: [],
       stableBoundary: 0,
       leadingUser: [],
-      volatilePrefixUser: [],
-      trailingUser: [],
-      history: []
+      history: [],
+      provenance: { system: [], leadingUser: [], history: [] }
     }
-    const out = strategyFor('openai-compatible:mimo-v2.5-pro', 'chat-9').applyCaching(plan)
+    const out = strategyFor('openai-compatible:mimo-v2.5-pro', 'chat-9').applyCaching({
+      plan,
+      summaryIndex: -1
+    })
 
     expect(out.providerOptions).toEqual({
       openaiCompatible: {
-        promptCacheKey: 'tanzo:global:openai-compatible:mimo-v2.5-pro',
+        promptCacheKey: 'tanzo:chat:chat-9',
         promptCacheRetention: '24h'
       }
     })
@@ -345,77 +392,96 @@ describe('main/agent/context provider strategies', () => {
       system: [],
       stableBoundary: 0,
       leadingUser: [],
-      volatilePrefixUser: [],
-      trailingUser: [],
-      history: []
+      history: [],
+      provenance: { system: [], leadingUser: [], history: [] }
     }
-    expect(strategyFor('deepseek:deepseek-chat', 'chat-1').applyCaching(plan)).toEqual(plan)
+    expect(
+      strategyFor('deepseek:deepseek-chat', 'chat-1').applyCaching({ plan, summaryIndex: -1 })
+    ).toEqual(plan)
   })
 })
 
-describe('main/agent/context budget and compaction policy', () => {
-  it('uses reported input tokens without estimating message deltas', () => {
-    const budget = createBudget()
-    const base: ModelMessage[] = [
-      { role: 'user', content: 'a' },
-      { role: 'assistant', content: 'b' }
+describe('main/agent/context ledger', () => {
+  function assistantWithUsage(id: string, inputTokens: number, outputTokens: number) {
+    return {
+      id,
+      role: 'assistant',
+      parts: [{ type: 'text', text: 'reply' }],
+      metadata: {
+        usage: { outputTokens },
+        steps: [{ stepNumber: 1, usage: { inputTokens, outputTokens } }]
+      }
+    } as TanzoUIMessage
+  }
+
+  it('counts CJK text at a denser chars-per-token rate', () => {
+    const latin = estimateTextTokens('a'.repeat(100))
+    const cjk = estimateTextTokens('文'.repeat(100))
+    expect(latin).toBe(25)
+    expect(cjk).toBeGreaterThan(60)
+  })
+
+  it('excludes data parts and step markers from message estimates', () => {
+    const message = {
+      id: 'm1',
+      role: 'assistant',
+      parts: [
+        { type: 'step-start' },
+        { type: 'text', text: 'abcd'.repeat(10) },
+        { type: 'data-compaction', data: { stage: 'complete', summary: 'x'.repeat(4000) } }
+      ]
+    } as TanzoUIMessage
+    expect(estimateUIMessageTokens(message)).toBe(10)
+  })
+
+  it('anchors on the newest reported step usage and estimates only the increment', () => {
+    const messages: TanzoUIMessage[] = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'x'.repeat(40_000) }] },
+      assistantWithUsage('a1', 50_000, 1_000),
+      { id: 'u2', role: 'user', parts: [{ type: 'text', text: 'y'.repeat(400) }] }
     ]
-
-    budget.anchor('c', base.length, 10_000)
-    const grown = [...base, { role: 'user' as const, content: 'x'.repeat(400) }]
-    const usage = budget.measureUsage('c', grown)
-
-    expect(usage).toMatchObject({ source: 'reported', inputTokens: 10_000 })
-    expect(usage.exceeds(9_999)).toBe(true)
+    const measure = measureTranscript(messages)
+    expect(measure.source).toBe('reported')
+    // anchor input (50k) + anchor output (1k) + increment estimate (100)
+    expect(measure.totalTokens).toBe(51_100)
   })
 
-  it('uses char-based estimate when no reported usage anchor is available', () => {
-    const budget = createBudget()
-    // "hello world" = 11 chars → ceil(11/4) = 3 tokens estimated
-    const messages: ModelMessage[] = [{ role: 'user', content: 'hello world' }]
-
-    const usage = budget.measureUsage('c', messages)
-    expect(usage.source).toBe('estimated')
-    expect(usage.inputTokens).toBe(3)
-    // Does not exceed a threshold larger than the estimate.
-    expect(usage.exceeds(3)).toBe(false)
-    expect(usage.exceeds(2)).toBe(true)
+  it('ignores anchors that predate the latest compaction summary', () => {
+    const messages: TanzoUIMessage[] = [
+      assistantWithUsage('a1', 190_000, 1_000),
+      {
+        id: 's1',
+        role: 'assistant',
+        parts: [
+          { type: 'text', text: 'summary' },
+          { type: 'data-compaction', data: { stage: 'complete', summaryId: 's1' } }
+        ]
+      } as TanzoUIMessage,
+      { id: 'u2', role: 'user', parts: [{ type: 'text', text: 'next'.repeat(10) }] }
+    ]
+    const measure = measureTranscript(messages)
+    expect(measure.source).toBe('estimated')
+    expect(measure.totalTokens).toBeLessThan(1_000)
   })
 
-  it('uses reported budget anchors for automatic compaction decisions', () => {
-    const engine = createContextEngine({
-      clock: { now: () => new Date('2026-06-01T00:00:00.000Z') },
-      tanzoInstructions: { read: () => null },
-      skillsIndex: { list: () => [] },
-      pluginsIndex: { list: () => [] },
-      pluginMention: { list: () => [], peek: () => [], take: () => {} },
-      gitStatus: { read: () => '' },
-      goal: { takeInjection: () => null, peekInjection: () => null, get: () => null },
-      policyMode: { getMode: () => 'default' },
-      resolveModelMetadata: () => ({ contextWindow: 200_000, maxOutput: 8_192 })
-    })
-    const def = {
-      id: 'general',
-      name: 'General',
-      description: '',
-      kind: 'main',
-      modelRef: 'openai:gpt-5.5',
-      systemPrompt: 'ROLE',
-      allowedTools: null
-    } as never
-    const messages: ModelMessage[] = [{ role: 'user', content: 'short' }]
-
-    engine.observeStep('chat-anchor', messages.length, { inputTokens: 190_000 } as never)
-
-    expect(engine.snapshot(def, 'chat-anchor', messages).compactionTriggered).toBe(true)
-    expect(engine.shouldCompact(def, 'chat-anchor', messages)).toBe(true)
+  it('falls back to a full estimate when no usage was ever reported', () => {
+    const messages: TanzoUIMessage[] = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hello world' }] }
+    ]
+    const measure = measureTranscript(messages)
+    expect(measure.source).toBe('estimated')
+    expect(measure.totalTokens).toBe(3)
   })
-  it('derives the compaction trigger and retained recent budget', () => {
+})
+
+describe('main/agent/context compaction policy', () => {
+  it('derives trigger, retain budget, and hard ceiling from capabilities', () => {
     const policy = computeCompactionPolicy(CAP)
 
     expect(policy).toEqual({
-      compactionTriggerTokens: 172_627,
-      retainedRecentSteps: 6
+      compactionTriggerTokens: 153_446, // (200_000 - 8_192) * 0.8
+      retainBudgetTokens: 30_000,
+      hardCeilingTokens: 191_808
     })
   })
 
@@ -433,92 +499,76 @@ describe('main/agent/context budget and compaction policy', () => {
   })
 })
 
-describe('main/agent/context engine integration', () => {
-  it('injects volatile context only for the first prepared step', async () => {
-    const engine = createContextEngine({
-      clock: { now: () => new Date('2026-06-01T00:00:00.000Z') },
-      tanzoInstructions: { read: () => null },
-      skillsIndex: { list: () => [] },
-      pluginsIndex: { list: () => [] },
-      pluginMention: { list: () => [], peek: () => [], take: () => {} },
-      gitStatus: { read: () => 'branch: main\n M file.ts' },
-      goal: { takeInjection: () => null, peekInjection: () => null, get: () => null },
-      policyMode: { getMode: () => 'default' },
-      resolveModelMetadata: () => ({ contextWindow: 200_000, maxOutput: 8_192 })
-    })
-    const def = {
-      id: 'general',
-      name: 'General',
-      description: '',
-      kind: 'main' as const,
-      modelRef: 'openai:gpt-5.5',
-      systemPrompt: 'ROLE',
-      allowedTools: null
-    }
-    const transcript = [{ role: 'user' as const, content: 'hi' }]
+describe('main/agent/context engine', () => {
+  it('measures persisted transcripts through the ledger for compaction decisions', () => {
+    const engine = createContextEngine(engineDeps())
+    const messages: TanzoUIMessage[] = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'short' }] },
+      {
+        id: 'a1',
+        role: 'assistant',
+        parts: [{ type: 'text', text: 'reply' }],
+        metadata: { steps: [{ stepNumber: 1, usage: { inputTokens: 190_000 } }] }
+      } as TanzoUIMessage
+    ]
 
-    const first = await engine.build(def, 'chat-9', '/tmp', transcript, 0)
-    expect(first?.messages?.map((message) => message.role)).toEqual(['user', 'user', 'user'])
-    expect(first?.messages?.[0].content).toContain('<environment>')
-    expect(first?.messages?.[1].content).toBe('hi')
-    expect(first?.messages?.[2].content).toContain('<datetime>')
-    expect(first?.messages?.[2].content).toContain('timezone:')
-
-    const second = await engine.build(def, 'chat-9', '/tmp', transcript, 1)
-    expect(second?.messages?.map((message) => message.role)).toEqual(['user', 'user'])
-    expect(JSON.stringify(second?.messages)).not.toContain('<datetime>')
+    expect(engine.snapshot(DEF, 'chat-anchor', messages).compactionTriggered).toBe(true)
+    expect(engine.shouldCompact(DEF, 'chat-anchor', messages)).toBe(true)
+    expect(engine.shouldCompact(DEF, 'chat-anchor', messages.slice(0, 1))).toBe(false)
   })
 
-  it('keeps DeepSeek conversation snapshots frozen before history for prefix cache reuse', async () => {
-    let date = new Date('2026-06-01T00:00:00.000Z')
-    let git = 'branch: main\n M first.ts'
-    const engine = createContextEngine({
-      clock: { now: () => date },
-      tanzoInstructions: { read: () => null },
-      skillsIndex: { list: () => [] },
-      pluginsIndex: { list: () => [] },
-      pluginMention: { list: () => [], peek: () => [], take: () => {} },
-      gitStatus: { read: () => git },
-      goal: { takeInjection: () => null, peekInjection: () => null, get: () => null },
-      policyMode: { getMode: () => 'default' },
-      resolveModelMetadata: () => ({ contextWindow: 200_000, maxOutput: 8_192 })
-    })
-    const def = {
-      id: 'general',
-      name: 'General',
-      description: '',
-      kind: 'main' as const,
-      modelRef: 'deepseek:deepseek-chat',
-      systemPrompt: 'ROLE',
-      allowedTools: null
-    }
-    const first = await engine.build(
-      def,
-      'chat-deepseek',
-      '/tmp',
-      [{ role: 'user' as const, content: 'hi' }],
-      0
+  it('builds an identical prompt for every step of a run (append-only prefix)', async () => {
+    const engine = createContextEngine(engineDeps())
+    const transcript = [{ role: 'user' as const, content: 'hi' }]
+
+    const first = await engine.build(DEF, 'chat-9', '/tmp', transcript, 0)
+    const second = await engine.build(DEF, 'chat-9', '/tmp', transcript, 1)
+
+    expect(second.messages).toEqual(first.messages)
+    expect(second.instructions).toEqual(first.instructions)
+    // No per-step volatile content in the prompt itself.
+    expect(JSON.stringify(first.messages)).not.toContain('<datetime>')
+  })
+
+  it('renders the volatile injection as a persistable synthetic user message', async () => {
+    const engine = createContextEngine(engineDeps())
+
+    const injection = await engine.renderInjection(DEF, 'chat-9', '/tmp', { isFirstTurn: true })
+    expect(injection).not.toBeNull()
+    expect(injection?.role).toBe('user')
+    const text = injection?.parts.find((part) => part.type === 'text')
+    expect((text as { text: string }).text).toContain('<datetime>')
+    expect((text as { text: string }).text).toContain('<git-status>')
+    const marker = injection?.parts.find((part) => part.type === 'data-contextInjection')
+    expect(marker).toMatchObject({ data: { sections: ['datetime', 'git-status'] } })
+  })
+
+  it('omits the git snapshot from later-turn injections', async () => {
+    const engine = createContextEngine(engineDeps())
+
+    const injection = await engine.renderInjection(DEF, 'chat-9', '/tmp', { isFirstTurn: false })
+    const text = injection?.parts.find((part) => part.type === 'text')
+    expect((text as { text: string }).text).toContain('<datetime>')
+    expect((text as { text: string }).text).not.toContain('<git-status>')
+  })
+
+  it('consumes one-shot goal injections only when the injection renders', async () => {
+    let taken = 0
+    const engine = createContextEngine(
+      engineDeps({
+        goal: {
+          get: () => ({ objective: 'obj' }) as never,
+          peekInjection: () => 'continuation' as never,
+          takeInjection: () => {
+            taken += 1
+            return null
+          }
+        }
+      })
     )
 
-    date = new Date('2026-06-02T00:00:00.000Z')
-    git = 'branch: main\n M second.ts'
-    const second = await engine.build(
-      def,
-      'chat-deepseek',
-      '/tmp',
-      [
-        { role: 'user' as const, content: 'hi' },
-        { role: 'assistant' as const, content: 'working' }
-      ],
-      1
-    )
-
-    expect(first?.messages?.map((message) => message.role)).toEqual(['user', 'user', 'user'])
-    expect(second?.messages?.slice(0, first?.messages?.length)).toEqual(first?.messages)
-    expect(JSON.stringify(second?.messages)).toContain('2026-06-01')
-    expect(JSON.stringify(second?.messages)).toContain('first.ts')
-    expect(JSON.stringify(second?.messages)).not.toContain('2026-06-02')
-    expect(JSON.stringify(second?.messages)).not.toContain('second.ts')
+    await engine.renderInjection(DEF, 'chat-9', '/tmp', { isFirstTurn: true })
+    expect(taken).toBe(1)
   })
 })
 
@@ -544,23 +594,21 @@ describe('main/agent/context prompt cache diagnostics', () => {
       tools: {},
       prepared: {
         providerOptions: {
-          openai: { promptCacheKey: 'tanzo:global:openai:gpt-5.5', promptCacheRetention: '24h' }
+          openai: { promptCacheKey: 'tanzo:chat:chat-1', promptCacheRetention: '24h' }
         },
         system: [{ role: 'system', content: 'stable role' }],
         messages: [{ role: 'user', content: 'secret user text' }],
         provenance: {
           system: [{ sectionId: 'role', stability: 'stable', channel: 'system' }],
           leadingUser: [],
-          volatilePrefixUser: [],
           history: [undefined],
-          trailingUser: [],
           messages: [undefined]
         }
       }
     })
 
     const segments = JSON.parse(record.segmentsJson)
-    expect(record.promptCacheKey).toBe('tanzo:global:openai:gpt-5.5')
+    expect(record.promptCacheKey).toBe('tanzo:chat:chat-1')
     expect(record.promptCacheRetention).toBe('24h')
     expect(record.segmentsJson).not.toContain('secret user text')
     expect(segments).toEqual(

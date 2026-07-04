@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   decideTurnOutcome,
-  MAX_CONTINUATION_PASSES,
   MAX_PLAN_EXIT_PASSES,
   type TurnDecisionContext
 } from '@main/agent/runtime/turn-loop.machine'
@@ -14,8 +13,6 @@ function state(overrides: Partial<AgentStreamFinalState> = {}): AgentStreamFinal
     streamFailed: false,
     aborted: false,
     turnStartedAt: 0,
-    exceededCompactionTrigger: false,
-    hitCompactionTrigger: false,
     isGoalContinuation: false,
     exitPlanModeCalled: false,
     endedWithTextOnly: false,
@@ -25,7 +22,6 @@ function state(overrides: Partial<AgentStreamFinalState> = {}): AgentStreamFinal
 
 function ctx(overrides: Partial<TurnDecisionContext> = {}): TurnDecisionContext {
   return {
-    pass: 0,
     planExitPasses: 0,
     isPlanMode: false,
     isInflight: false,
@@ -59,22 +55,12 @@ describe('agent/runtime/turn-loop.machine', () => {
     expect(decision.kind).toBe('finalize')
   })
 
-  it('retries after a compaction trigger within the pass budget', () => {
-    const decision = decideTurnOutcome(state({ hitCompactionTrigger: true }), ctx({ pass: 3 }))
-    expect(decision).toEqual({ kind: 'compaction-retry' })
-  })
-
-  it('stops compaction retries at the pass budget and finalizes', () => {
+  it('finalizes a turn that carried an in-stream compaction', () => {
     const decision = decideTurnOutcome(
-      state({ hitCompactionTrigger: true, exceededCompactionTrigger: true }),
-      ctx({ pass: MAX_CONTINUATION_PASSES })
+      state({ inlineCompaction: { summaryText: 'condensed', baseMessageIds: [] } }),
+      ctx()
     )
     expect(decision).toEqual({ kind: 'finalize' })
-  })
-
-  it('post-compacts when the trigger was exceeded without a mid-turn cut', () => {
-    const decision = decideTurnOutcome(state({ exceededCompactionTrigger: true }), ctx())
-    expect(decision).toEqual({ kind: 'post-compact' })
   })
 
   it('finalizes a normal turn', () => {
@@ -92,16 +78,16 @@ describe('agent/runtime/turn-loop.machine', () => {
 
   it('finalizes (no retry) when the stream failed', () => {
     const decision = decideTurnOutcome(
-      state({ streamFailed: true, hitCompactionTrigger: true }),
-      ctx()
+      state({ streamFailed: true, endedWithTextOnly: true }),
+      ctx({ isPlanMode: true })
     )
     expect(decision).toEqual({ kind: 'finalize' })
   })
 
   it('does not retry when another run is already inflight', () => {
     const decision = decideTurnOutcome(
-      state({ hitCompactionTrigger: true }),
-      ctx({ isInflight: true })
+      state({ endedWithTextOnly: true }),
+      ctx({ isPlanMode: true, isInflight: true })
     )
     expect(decision.kind).toBe('finalize')
   })

@@ -299,11 +299,22 @@ vi.mock('@ai-sdk/provider', async (importOriginal) => {
 
 vi.mock('@main/agent/context/compact/compact', () => ({
   planCompaction: mocks.planCompaction,
-  buildCompactionResult: mocks.buildCompactionResult
+  buildCompactionResult: mocks.buildCompactionResult,
+  buildSummaryMessage: vi.fn((input: { summaryText: string; summaryId?: string }) => ({
+    id: input.summaryId ?? 'mechanical-summary',
+    role: 'assistant',
+    parts: [
+      { type: 'text', text: input.summaryText },
+      {
+        type: 'data-compaction',
+        data: { stage: 'complete', summary: input.summaryText, summaryId: input.summaryId }
+      }
+    ]
+  }))
 }))
 
-vi.mock('@main/agent/context/compact/fork-agent', () => ({
-  runCompactionFork: mocks.runCompactionFork
+vi.mock('@main/agent/context/compact/summarize', () => ({
+  runSummarizeFork: mocks.runCompactionFork
 }))
 
 vi.mock('@main/agent/diagnostics/prompt-cache', () => ({
@@ -386,6 +397,9 @@ function createDeps() {
       conversations.set('child-1', { id: 'child-1', ...input, agentId: input.agentId ?? 'main' })
       return conversations.get('child-1')
     }),
+    forkConversation: vi.fn(async () => ({
+      conversation: conversations.get('fork-1')
+    })),
     save: vi.fn((chatId: string, messages: TanzoUIMessage[]) => {
       savedMessages.set(chatId, cloneMessages(messages))
     }),
@@ -459,8 +473,18 @@ function createDeps() {
       serverCompaction: false
     })),
     shouldCompact: vi.fn(() => false),
-    compactionTriggerTokens: vi.fn(() => 100000),
-    retainedRecentSteps: vi.fn(() => 6),
+    measure: vi.fn(() => ({ totalTokens: 42, source: 'reported' })),
+    compactionPolicy: vi.fn(() => ({
+      compactionTriggerTokens: 100000,
+      retainBudgetTokens: 30000,
+      hardCeilingTokens: 120000
+    })),
+    capabilitiesFor: vi.fn(() => ({
+      contextWindow: 128000,
+      maxOutputTokens: 8192,
+      supportsImages: false
+    })),
+    renderInjection: vi.fn(async () => null),
     clear: vi.fn()
   }
   const goal = {
@@ -482,6 +506,7 @@ function createDeps() {
     })),
     policy: {
       getMode: vi.fn(() => 'default'),
+      setMode: vi.fn(),
       decide: vi.fn(),
       remember: vi.fn()
     },
@@ -515,6 +540,20 @@ describe('agent/service', () => {
     mocks.streamTextCalls.length = 0
     mocks.stepHasToolCall = true
     mocks.maxTurns = 1
+  })
+
+  it('forks a conversation and pins the source execution root mode on the fork', async () => {
+    const deps = createDeps()
+    deps.policy.getMode.mockReturnValue('plan' as never)
+    const service = createAgentService(deps as never)
+
+    const result = await service.forkConversation({ sourceChatId: 'parent', messageId: 'a1' })
+
+    expect(result.conversation.id).toBe('fork-1')
+    // The mode is read from the source's execution root and pinned per-chat
+    // on the fork, so runtime getMode(rootOf(fork)) === getMode(fork) matches.
+    expect(deps.policy.getMode).toHaveBeenCalledWith('parent')
+    expect(deps.policy.setMode).toHaveBeenCalledWith('plan', 'fork-1')
   })
 
   it('runs PostToolUse hooks for completed tool results', async () => {
@@ -673,7 +712,7 @@ describe('agent/service', () => {
         cacheWriteTokens: 1
       })
     )
-    expect(deps.contextEngine.observeStep).toHaveBeenCalledWith('chat-1', 2, expect.any(Object))
+    expect(deps.contextEngine.observeStep).toHaveBeenCalledWith('chat-1', expect.any(Object))
     await vi.waitFor(() =>
       expect(deps.send).toHaveBeenCalledWith(
         'chat-1',
@@ -708,7 +747,7 @@ describe('agent/service', () => {
 
     const compactOutcome = await service.compact('chat-1')
     expect(compactOutcome).toBe('compacted')
-    expect(mocks.planCompaction).toHaveBeenCalledWith(expect.any(Array), 6)
+    expect(mocks.planCompaction).toHaveBeenCalledWith(expect.any(Array), 30000)
     expect(mocks.runCompactionFork).toHaveBeenCalledWith(
       expect.objectContaining({ contextEngine: deps.contextEngine }),
       expect.objectContaining({
@@ -770,43 +809,40 @@ describe('agent/service', () => {
     )
     expect(deps.contextEngine.clear).toHaveBeenCalledWith('chat-1')
     expect(deps.logger.info).toHaveBeenCalledWith('compacted conversation', {
-      chatId: 'chat-1',
-      beforeTokens: 1000,
-      afterTokens: 100
+      chatId: 'chat-1'
     })
   })
 
-  it('throws automatic compaction failures instead of continuing with original messages', async () => {
+  it('degrades to a mechanical summary when the compaction fork fails (L3)', async () => {
     const deps = createDeps()
     deps.contextEngine.shouldCompact.mockReturnValue(true)
     mocks.planCompaction.mockResolvedValue({
-      head: [{ id: 'old-1', role: 'user', parts: [] }],
+      head: [{ id: 'old-1', role: 'user', parts: [{ type: 'text', text: 'old request' }] }],
       tail: [userMessage],
       archivedIds: ['old-1'],
-      beforeTokens: 1000,
       sourceMessages: [{ role: 'user', content: 'old transcript' }]
     })
     mocks.runCompactionFork.mockRejectedValueOnce(new Error('provider returned html'))
     const service = createAgentService(deps as never)
 
-    await expect(service.run('chat-1', [userMessage])).rejects.toThrow('provider returned html')
+    // The run must survive a broken summarize fork: the coordinator archives
+    // the head under a mechanical summary and the model pass still runs.
+    await service.run('chat-1', [userMessage])
 
     expect(deps.contextEngine.shouldCompact).toHaveBeenCalledWith(def, 'chat-1', expect.any(Array))
-    expect(mocks.planCompaction).toHaveBeenCalledWith(expect.any(Array), 6)
-    expect(deps.send).toHaveBeenCalledWith(
-      'chat-1',
-      expect.objectContaining({
-        type: 'data-compaction',
-        data: expect.objectContaining({
-          stage: 'failed',
-          auto: true,
-          summary: 'provider returned html'
-        }),
-        transient: true
-      }),
-      expect.objectContaining({ runId: expect.any(String) })
+    expect(mocks.planCompaction).toHaveBeenCalledWith(expect.any(Array), 30000)
+    expect(deps.logger.warn).toHaveBeenCalledWith(
+      'compaction fork failed; using mechanical fallback',
+      expect.objectContaining({ chatId: 'chat-1' })
     )
-    expect(mocks.buildAgent).not.toHaveBeenCalled()
+    expect(deps.store.finalizeCompaction).toHaveBeenCalledWith(
+      'chat-1',
+      ['old-1'],
+      expect.any(String),
+      expect.any(Array),
+      expect.any(Array)
+    )
+    expect(mocks.buildAgent).toHaveBeenCalled()
   })
 
   it('drains consumed steering into a later turn transcript and persists it after the run', async () => {
@@ -1099,7 +1135,11 @@ describe('agent/service', () => {
 
   it('does not auto-continue an aborted tool-call turn', async () => {
     const deps = createDeps()
-    deps.contextEngine.compactionTriggerTokens.mockReturnValue(1)
+    deps.contextEngine.compactionPolicy.mockReturnValue({
+      compactionTriggerTokens: 1,
+      retainBudgetTokens: 30000,
+      hardCeilingTokens: 10
+    })
     mocks.stepFinishReason = 'tool-calls'
     mocks.stepInputTokens = 100
     const service = createAgentService(deps as never)
@@ -1116,11 +1156,10 @@ describe('agent/service', () => {
     expect(deps.store.load).not.toHaveBeenCalledWith('chat-1')
   })
 
-  it('auto-compacts after a normal turn exceeds the compaction trigger without starting another model pass', async () => {
+  it('pre-compacts an over-trigger transcript before the model pass starts', async () => {
     const deps = createDeps()
-    deps.contextEngine.compactionTriggerTokens.mockReturnValue(1)
+    deps.contextEngine.shouldCompact.mockReturnValue(true)
     mocks.stepFinishReason = 'stop'
-    mocks.stepInputTokens = 100
     mocks.stepHasToolCall = false
     const summary = {
       id: 'summary',
@@ -1137,7 +1176,6 @@ describe('agent/service', () => {
       head: [{ id: 'old-1', role: 'user', parts: [] }],
       tail: [userMessage],
       archivedIds: ['old-1'],
-      beforeTokens: 1000,
       sourceMessages: [{ role: 'user', content: 'old transcript' }]
     })
     mocks.buildCompactionResult.mockReturnValue({
@@ -1152,7 +1190,7 @@ describe('agent/service', () => {
     await service.run('chat-1', [userMessage])
 
     expect(mocks.buildAgent).toHaveBeenCalledTimes(1)
-    expect(mocks.planCompaction).toHaveBeenCalledWith(expect.any(Array), 6)
+    expect(mocks.planCompaction).toHaveBeenCalledWith(expect.any(Array), 30000)
     expect(mocks.buildCompactionResult).toHaveBeenCalledWith(
       expect.objectContaining({ auto: true, summaryText: '<summary>summary</summary>' })
     )
@@ -1161,7 +1199,7 @@ describe('agent/service', () => {
       ['old-1'],
       'summary',
       [userMessage],
-      ['user-1', 'step-save', 'finish-save']
+      expect.any(Array)
     )
   })
 

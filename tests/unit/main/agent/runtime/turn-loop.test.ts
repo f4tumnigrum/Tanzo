@@ -41,8 +41,6 @@ const textOnlyState = (overrides: Partial<AgentStreamFinalState> = {}): AgentStr
   streamFailed: false,
   aborted: false,
   turnStartedAt: Date.now(),
-  exceededCompactionTrigger: false,
-  hitCompactionTrigger: false,
   isGoalContinuation: false,
   exitPlanModeCalled: false,
   endedWithTextOnly: true,
@@ -50,7 +48,7 @@ const textOnlyState = (overrides: Partial<AgentStreamFinalState> = {}): AgentStr
 })
 
 describe('agent/runtime/turn-loop', () => {
-  it('does not force compaction when retrying a plan-mode text-only answer', async () => {
+  it('re-prepares with a nudge when retrying a plan-mode text-only answer', async () => {
     const messages: TanzoUIMessage[] = [
       { id: 'user-1', role: 'user', parts: [{ type: 'text', text: 'make a plan' }] }
     ]
@@ -95,7 +93,7 @@ describe('agent/runtime/turn-loop', () => {
         } as never,
         compaction: {
           prepareMessages,
-          compactAfterRun: vi.fn(),
+          reconcileInline: vi.fn(),
           compact: vi.fn()
         },
         turnFinalizer: {
@@ -111,8 +109,6 @@ describe('agent/runtime/turn-loop', () => {
     await loop.run('chat-1', messages)
 
     expect(prepareMessages).toHaveBeenCalledTimes(2)
-    expect(prepareMessages.mock.calls[0]?.[4]).toMatchObject({ force: false })
-    expect(prepareMessages.mock.calls[1]?.[4]).toMatchObject({ force: false })
   })
 
   it('defers the change preview while the turn waits for tool approval', async () => {
@@ -173,7 +169,7 @@ describe('agent/runtime/turn-loop', () => {
         } as never,
         compaction: {
           prepareMessages: vi.fn(async (_chatId, _def, incoming) => incoming),
-          compactAfterRun: vi.fn(),
+          reconcileInline: vi.fn(),
           compact: vi.fn()
         },
         turnFinalizer: { reconcile: vi.fn(), dispatch: vi.fn() },
@@ -255,7 +251,7 @@ describe('agent/runtime/turn-loop', () => {
         } as never,
         compaction: {
           prepareMessages: vi.fn(async (_chatId, _def, incoming) => incoming),
-          compactAfterRun: vi.fn(),
+          reconcileInline: vi.fn(),
           compact: vi.fn()
         },
         turnFinalizer: { reconcile: vi.fn(), dispatch: vi.fn() },
@@ -329,7 +325,7 @@ describe('agent/runtime/turn-loop', () => {
         } as never,
         compaction: {
           prepareMessages: vi.fn(async (_chatId, _def, incoming) => incoming),
-          compactAfterRun: vi.fn(),
+          reconcileInline: vi.fn(),
           compact: vi.fn()
         },
         turnFinalizer: { reconcile: vi.fn(), dispatch: vi.fn() },
@@ -353,14 +349,12 @@ describe('agent/runtime/turn-loop', () => {
     const messages: TanzoUIMessage[] = [
       { id: 'user-1', role: 'user', parts: [{ type: 'text', text: 'do work' }] }
     ]
-    // A compaction-triggering turn that cannot retry (empty reload). The loop
-    // reconciles the stream once, then dispatches once — never a doubled call.
+    // The loop reconciles the stream once, then dispatches once — never a
+    // doubled call.
     streamStates.push(
       textOnlyState({
         endedWithTextOnly: false,
-        producedToolCall: true,
-        hitCompactionTrigger: true,
-        exceededCompactionTrigger: true
+        producedToolCall: true
       })
     )
     const reconcile = vi.fn()
@@ -395,7 +389,7 @@ describe('agent/runtime/turn-loop', () => {
         } as never,
         compaction: {
           prepareMessages: vi.fn(async (_c, _d, incoming) => incoming),
-          compactAfterRun: vi.fn(),
+          reconcileInline: vi.fn(),
           compact: vi.fn()
         },
         turnFinalizer: { reconcile, dispatch },
@@ -412,7 +406,7 @@ describe('agent/runtime/turn-loop', () => {
     )
   })
 
-  it('dispatches per-run for a non-deferred (sub-agent) run that did not hit compaction', async () => {
+  it('dispatches per-run for a non-deferred (sub-agent) run', async () => {
     // Sub-agent task runs go through startChatRun without deferTerminal and have
     // no run() loop to drive terminal dispatch, so onFinally must dispatch.
     streamStates.push(textOnlyState({ endedWithTextOnly: false, producedToolCall: true }))
@@ -446,7 +440,7 @@ describe('agent/runtime/turn-loop', () => {
         } as never,
         compaction: {
           prepareMessages: vi.fn(async (_c, _d, incoming) => incoming),
-          compactAfterRun: vi.fn(),
+          reconcileInline: vi.fn(),
           compact: vi.fn()
         },
         turnFinalizer: { reconcile, dispatch },

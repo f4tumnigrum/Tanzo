@@ -199,7 +199,6 @@ describe('main/agent/store', () => {
       parentConversationId: conversation.id,
       parentRelation: 'fork'
     })
-    expect(result.messages).toEqual([user, assistant])
     await expect(store.load(result.conversation.id)).resolves.toEqual([user, assistant])
     expect(store.listConversations().map((item) => item.id)).toContain(result.conversation.id)
     expect(store.listChildren(conversation.id, 'fork')).toEqual([
@@ -230,8 +229,15 @@ describe('main/agent/store', () => {
       parentConversationId: conversation.id,
       parentRelation: 'fork'
     })
-    expect(result.messages).toEqual([user, assistant])
-    await expect(store.load(result.conversation.id)).resolves.toEqual([user, assistant])
+    await expect(store.loadFullHistory(result.conversation.id)).resolves.toEqual([
+      user,
+      assistant
+    ])
+    // The fork also carries the source's compaction overlay: the context
+    // projection is the summary (both archived rows are covered by it).
+    await expect(store.load(result.conversation.id)).resolves.toEqual([
+      expect.objectContaining({ id: 'summary' })
+    ])
   })
 
   it('forks an existing fork as a sibling while copying the source branch history', async () => {
@@ -253,7 +259,10 @@ describe('main/agent/store', () => {
 
     expect(result.conversation.parentConversationId).toBe(parent.id)
     expect(result.conversation.parentRelation).toBe('fork')
-    expect(result.messages).toEqual([branchUser, branchAssistant])
+    await expect(store.load(result.conversation.id)).resolves.toEqual([
+      branchUser,
+      branchAssistant
+    ])
   })
 
   it('rejects invalid fork targets', async () => {
@@ -295,6 +304,100 @@ describe('main/agent/store', () => {
     await expect(
       store.forkConversation({ sourceChatId: conversation.id, messageId: toolAssistant.id })
     ).rejects.toThrow(TanzoValidationError)
+  })
+
+  it('rejects forking from a message with a streaming reasoning part', async () => {
+    const store = createAgentStore(createRealDb(), identity(), logger(), root)
+    const conversation = store.createConversation({})
+    const reasoningAssistant = {
+      id: 'a-reasoning',
+      role: 'assistant',
+      parts: [{ type: 'reasoning', text: 'thinking…', state: 'streaming' }]
+    } as TanzoUIMessage
+    store.save(conversation.id, [textMessage('u1', 'Question'), reasoningAssistant])
+
+    await expect(
+      store.forkConversation({ sourceChatId: conversation.id, messageId: reasoningAssistant.id })
+    ).rejects.toThrow(TanzoValidationError)
+  })
+
+  it('treats forks as execution roots for rootOf/depthOf while subagents chain up', () => {
+    const store = createAgentStore(createRealDb(), identity(), logger(), root)
+    const parent = store.createConversation({ title: 'Parent' })
+    const fork = store.createConversation({
+      parentConversationId: parent.id,
+      parentRelation: 'fork'
+    })
+    const subagentUnderFork = store.createConversation({
+      parentConversationId: fork.id,
+      parentRelation: 'subagent'
+    })
+
+    // Fork is its own execution root at depth 0.
+    expect(store.rootOf(fork.id)).toBe(fork.id)
+    expect(store.depthOf(fork.id)).toBe(0)
+    // Subagents spawned inside the fork resolve to the fork, not the parent.
+    expect(store.rootOf(subagentUnderFork.id)).toBe(fork.id)
+    expect(store.depthOf(subagentUnderFork.id)).toBe(1)
+  })
+
+  it('detaches forks when the parent conversation is deleted', async () => {
+    const db = createRealDb()
+    const store = createAgentStore(db, identity(), logger(), root)
+    const parent = store.createConversation({ title: 'Parent' })
+    const user = textMessage('u1', 'Question')
+    const assistant = assistantMessage('a1', 'Answer')
+    store.save(parent.id, [user, assistant])
+    const fork = (
+      await store.forkConversation({ sourceChatId: parent.id, messageId: assistant.id })
+    ).conversation
+    const subagent = store.createConversation({
+      parentConversationId: parent.id,
+      parentRelation: 'subagent'
+    })
+
+    store.deleteConversation(parent.id)
+
+    // Fork survives, promoted to a root conversation with its history intact.
+    expect(store.getConversation(fork.id)).toMatchObject({
+      parentConversationId: null,
+      parentRelation: null
+    })
+    expect(store.listConversations().map((item) => item.id)).toContain(fork.id)
+    await expect(store.load(fork.id)).resolves.toEqual([user, assistant])
+    // Subagent children still cascade away with the parent.
+    expect(store.getConversation(subagent.id)).toBeUndefined()
+  })
+
+  it('copies compaction overlays into the fork with remapped coverage', async () => {
+    const db = createRealDb()
+    const store = createAgentStore(db, identity(), logger(), root)
+    const conversation = store.createConversation({})
+    const first = textMessage('m1', 'First')
+    const second = textMessage('m2', 'Second')
+    const assistant = assistantMessage('a1', 'Answer')
+    const tail = textMessage('m3', 'Later')
+    const summary = summaryMessage('summary')
+
+    store.save(conversation.id, [first, second, assistant, tail])
+    store.finalizeCompaction(conversation.id, ['m1', 'm2'], 'summary', [
+      summary,
+      assistant,
+      tail
+    ])
+
+    const fork = (
+      await store.forkConversation({ sourceChatId: conversation.id, messageId: assistant.id })
+    ).conversation
+
+    // Fork context projection matches the source: summary + retained tail,
+    // no cold-start recompaction of the full history.
+    await expect(store.load(fork.id)).resolves.toEqual([
+      expect.objectContaining({ id: 'summary' }),
+      assistant
+    ])
+    await expect(store.loadFullHistory(fork.id)).resolves.toEqual([first, second, assistant])
+    await expect(store.loadArchived(fork.id, 'summary')).resolves.toEqual([first, second])
   })
 
   it('finalizes compaction as an overlay and keeps the full log intact', async () => {
@@ -641,6 +744,82 @@ describe('main/agent/store', () => {
     expect(store.sweepInterruptedRuns()).toBe(1)
     expect(runRow('run-2')).toEqual({ status: 'failed', error_json: '{"kind":"interrupted"}' })
     expect(store.sweepInterruptedRuns()).toBe(0)
+  })
+
+  it('reads back the latest run outcome with structured error detail', () => {
+    const db = createRealDb()
+    const store = createAgentStore(db, identity(), logger(), root)
+    const conversation = store.createConversation({})
+    const diagnostic = (
+      id: string,
+      runId: string,
+      createdAt: number
+    ): Parameters<typeof store.recordPromptDiagnostic>[0] => ({
+      id,
+      conversationId: conversation.id,
+      runId,
+      stepNumber: 1,
+      createdAt,
+      modelRef: 'openai:gpt-5',
+      provider: 'openai',
+      systemHash: 's',
+      systemChars: 1,
+      messagesHash: 'm',
+      messagesChars: 2,
+      toolsHash: 't',
+      toolsJson: '[]',
+      providerOptionsHash: 'p',
+      providerOptionsJson: '{}',
+      promptHash: 'h',
+      promptChars: 3,
+      segmentsJson: '[]'
+    })
+
+    expect(store.getLatestRunOutcome(conversation.id)).toBeNull()
+
+    store.recordPromptDiagnostic(diagnostic('diag-1', 'run-1', 1))
+    // Running rows are excluded until a terminal outcome lands.
+    expect(store.getLatestRunOutcome(conversation.id)).toBeNull()
+
+    store.markRunOutcome(
+      conversation.id,
+      'run-1',
+      'failed',
+      JSON.stringify({
+        kind: 'stream-error',
+        message: 'Rate limited',
+        code: 'AISDK_API_CALL_ERROR',
+        detail: { kind: 'api', message: 'Rate limited', statusCode: 429 }
+      })
+    )
+    expect(store.getLatestRunOutcome(conversation.id)).toMatchObject({
+      runId: 'run-1',
+      status: 'failed',
+      error: {
+        kind: 'stream-error',
+        message: 'Rate limited',
+        code: 'AISDK_API_CALL_ERROR',
+        detail: { kind: 'api', statusCode: 429 }
+      }
+    })
+
+    // A newer finished run supersedes the earlier failure.
+    store.recordPromptDiagnostic(diagnostic('diag-2', 'run-2', 2))
+    store.markRunOutcome(conversation.id, 'run-2', 'finished')
+    expect(store.getLatestRunOutcome(conversation.id)).toMatchObject({
+      runId: 'run-2',
+      status: 'finished'
+    })
+
+    // Malformed legacy error_json degrades to no error rather than throwing.
+    db.prepare(
+      "UPDATE runs SET error_json = NULL, status = 'failed' WHERE external_run_id = ?"
+    ).run(['run-2'])
+    expect(store.getLatestRunOutcome(conversation.id)).toMatchObject({
+      runId: 'run-2',
+      status: 'failed'
+    })
+    expect(store.getLatestRunOutcome(conversation.id)?.error).toBeUndefined()
   })
 
   it('does not let a late finishPromptDiagnostic overwrite a failed run outcome', () => {

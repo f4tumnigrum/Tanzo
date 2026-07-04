@@ -51,6 +51,10 @@ function deps() {
     startGoalContinuation: vi.fn(),
     listRunning: vi.fn(() => ['chat-1', 'chat-2']),
     deleteConversation: vi.fn((chatId: string) => ({ deleted: chatId })),
+    forkConversation: vi.fn((input: unknown) => ({
+      conversation: { id: 'fork-1', parentRelation: 'fork' },
+      input
+    })),
     respondTaskApproval: vi.fn(),
     listTaskApprovals: vi.fn(() => [
       { taskId: 'explore-1', approval: { approvalId: 'approval-1' } }
@@ -61,11 +65,6 @@ function deps() {
   }
   const store = {
     createConversation: vi.fn((input: unknown) => ({ id: 'chat-1', ...(input as object) })),
-    forkConversation: vi.fn((input: unknown) => ({
-      conversation: { id: 'fork-1', parentRelation: 'fork' },
-      messages: [],
-      input
-    })),
     listConversations: vi.fn(() => [{ id: 'chat-1' }]),
     load: vi.fn((chatId: string) => [{ id: 'm1', chatId }]),
     loadDisplay: vi.fn((chatId: string) => [{ id: 'm1', chatId }]),

@@ -4,7 +4,7 @@ import type { QueuedMessage } from '@shared/agent-message'
 import { createChatInbox } from '@main/agent/runtime/chat-inbox'
 import { createChatKeyedQueue } from '@main/agent/runtime/chat-keyed-queue'
 
-function setup(options: { inflight: boolean }) {
+function setup(options: { inflight: boolean; history?: unknown[] }) {
   const send = vi.fn()
   const messageQueue = createChatKeyedQueue<QueuedMessage>()
   const steerQueue = createChatKeyedQueue<string>()
@@ -13,7 +13,10 @@ function setup(options: { inflight: boolean }) {
   const instructTask = vi.fn()
   const deps = {
     send,
-    store: { getConversation: vi.fn(() => ({ id: 'chat-1' })) }
+    store: {
+      getConversation: vi.fn(() => ({ id: 'chat-1' })),
+      load: vi.fn(async () => options.history ?? [])
+    }
   } as never
   const inbox = createChatInbox(
     deps,
@@ -25,7 +28,7 @@ function setup(options: { inflight: boolean }) {
       instructTask
     }
   )
-  return { inbox, send, messageQueue, steerQueue, submitUserMessage }
+  return { inbox, send, messageQueue, steerQueue, submitUserMessage, runTurn }
 }
 
 describe('agent/chat-inbox queue + steer', () => {
@@ -98,5 +101,55 @@ describe('agent/chat-inbox queue + steer', () => {
       'chat-1',
       expect.objectContaining({ type: 'data-steering', data: { text: 'redirect' } })
     )
+  })
+})
+
+describe('agent/chat-inbox retryTurn', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  const user = (id: string, text: string) => ({
+    id,
+    role: 'user',
+    parts: [{ type: 'text', text }]
+  })
+  const assistant = (id: string, text: string) => ({
+    id,
+    role: 'assistant',
+    parts: [{ type: 'text', text }]
+  })
+
+  it('replays the transcript up to the last user message, dropping partial output', async () => {
+    const history = [
+      user('u1', 'hi'),
+      assistant('a1', 'hello'),
+      user('u2', 'go'),
+      assistant('a2', 'part')
+    ]
+    const { inbox, runTurn } = setup({ inflight: false, history })
+    await inbox.retryTurn('chat-1')
+    expect(runTurn).toHaveBeenCalledWith('chat-1', [history[0], history[1], history[2]])
+  })
+
+  it('replays a transcript that already ends with the user message', async () => {
+    const history = [user('u1', 'hi'), assistant('a1', 'hello'), user('u2', 'go')]
+    const { inbox, runTurn } = setup({ inflight: false, history })
+    await inbox.retryTurn('chat-1')
+    expect(runTurn).toHaveBeenCalledWith('chat-1', history)
+  })
+
+  it('rejects a retry while a run is in progress', async () => {
+    const { inbox, runTurn } = setup({ inflight: true, history: [user('u1', 'hi')] })
+    await expect(inbox.retryTurn('chat-1')).rejects.toMatchObject({
+      code: 'CHAT_RETRY_RUN_ACTIVE'
+    })
+    expect(runTurn).not.toHaveBeenCalled()
+  })
+
+  it('rejects a retry when there is no user message', async () => {
+    const { inbox, runTurn } = setup({ inflight: false, history: [] })
+    await expect(inbox.retryTurn('chat-1')).rejects.toMatchObject({
+      code: 'CHAT_RETRY_NOTHING_TO_RETRY'
+    })
+    expect(runTurn).not.toHaveBeenCalled()
   })
 })

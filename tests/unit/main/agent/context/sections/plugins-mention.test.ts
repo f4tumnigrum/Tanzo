@@ -22,9 +22,9 @@ describe('agent/context/sections/plugins-mention', () => {
     take: () => {}
   })
 
-  it('is a volatile leading-user section ordered after the goal hint', () => {
+  it('is a volatile injection section ordered after the goal hint', () => {
     expect(section.stability).toBe('volatile')
-    expect(section.channel).toBe('leading-user')
+    expect(section.channel).toBe('injection')
     expect(section.order).toBe(6)
   })
 

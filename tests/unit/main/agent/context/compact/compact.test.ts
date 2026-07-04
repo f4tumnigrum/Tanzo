@@ -51,7 +51,7 @@ describe('main/agent/context/compact', () => {
     })
   })
 
-  it('allows manual compaction to retain no recent steps', () => {
+  it('always retains the final unit even when the budget is zero', () => {
     const messages = [
       userMessage('m1', 'a'.repeat(80)),
       userMessage('m2', 'b'.repeat(80)),
@@ -59,48 +59,61 @@ describe('main/agent/context/compact', () => {
     ]
 
     expect(splitForCompaction(messages, 0)).toEqual({
-      head: messages,
-      tail: [],
-      archivedIds: ['m1', 'm2', 'm3']
+      head: [messages[0], messages[1]],
+      tail: [messages[2]],
+      archivedIds: ['m1', 'm2']
     })
   })
 
-  it('does not re-summarize messages before an existing summary', () => {
+  it('returns null when everything after the latest summary fits the budget', () => {
     const messages = [
-      userMessage('m1', 'old'),
+      userMessage('m1', 'old'.repeat(200)),
       userMessage('s1', 'summary', true),
       userMessage('m2', 'recent')
     ]
 
-    expect(splitForCompaction(messages, 100)).toEqual({
+    expect(splitForCompaction(messages, 100)).toBeNull()
+  })
+
+  it('rolls an existing summary into the head, never cutting before it', () => {
+    const messages = [
+      userMessage('m1', 'old'.repeat(200)),
+      userMessage('s1', 'summary', true),
+      userMessage('m2', 'x'.repeat(400))
+    ]
+
+    expect(splitForCompaction(messages, 1)).toEqual({
       head: [messages[0], messages[1]],
       tail: [messages[2]],
       archivedIds: ['m1', 's1']
     })
   })
 
-  it('cuts inside an assistant tool loop at a step boundary', () => {
-    const loop = {
+  it('cuts between per-step assistant rows inside a single round', () => {
+    // Per-step persistence (design §4.5): a multi-step reply is stored as one
+    // row per step group, so the cut always lands on a whole-row boundary.
+    const stepA = {
       id: 'a1',
       role: 'assistant',
+      parts: [{ type: 'step-start' }, { type: 'text', text: 'x'.repeat(400) }]
+    } as TanzoUIMessage
+    const stepB = {
+      id: 'a1::step-1',
+      role: 'assistant',
       parts: [
-        { type: 'step-start' },
-        { type: 'text', text: 'x'.repeat(400) },
         { type: 'step-start' },
         { type: 'reasoning', text: 'thinking' },
         { type: 'text', text: 'y'.repeat(8) }
       ]
     } as TanzoUIMessage
-    const { head, tail, archivedIds } = splitForCompaction([userMessage('u1', 'go'), loop], 1)
+    const { head, tail, archivedIds } = splitForCompaction(
+      [userMessage('u1', 'go'), stepA, stepB],
+      1
+    )!
 
     expect(archivedIds).toEqual(['u1', 'a1'])
-    expect(head).toHaveLength(2)
-    expect(head[1].parts).toEqual([{ type: 'step-start' }, { type: 'text', text: 'x'.repeat(400) }])
-
-    expect(tail).toHaveLength(1)
-    expect(tail[0].id).not.toBe('a1')
-    expect(tail[0].role).toBe('assistant')
-    expect(tail[0].parts).toEqual([{ type: 'step-start' }, { type: 'text', text: 'y'.repeat(8) }])
+    expect(head).toEqual([userMessage('u1', 'go'), stepA])
+    expect(tail).toEqual([stepB])
   })
 
   it('passes plain-text summaries through unchanged', () => {

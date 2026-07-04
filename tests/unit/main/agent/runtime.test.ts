@@ -47,7 +47,6 @@ describe('agent/runtime', () => {
       providerService: providerService as never,
       tools: tools as never,
       decide,
-      compactionTriggerTokens: 90000,
       telemetry
     })
 
@@ -58,7 +57,7 @@ describe('agent/runtime', () => {
       providerOptions: { openai: { reasoningEffort: 'low' } },
       telemetry
     })
-    expect(call.stopWhen).toHaveLength(2)
+    expect(call.stopWhen).toHaveLength(1)
     for (const condition of call.stopWhen) expect(typeof condition).toBe('function')
     expect(call.callSettings).toMatchObject({
       maxRetries: 3,
@@ -114,7 +113,7 @@ describe('agent/runtime', () => {
     })
 
     expect(call.providerOptions).toBeUndefined()
-    expect(call.stopWhen).toHaveLength(1)
+    expect(call.stopWhen).toHaveLength(0)
     expect(call.callSettings.maxRetries).toBe(5)
     expect(call.callSettings.maxOutputTokens).toBeUndefined()
     expect(call.callSettings.temperature).toBeUndefined()
