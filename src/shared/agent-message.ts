@@ -285,7 +285,12 @@ export type TanzoDataParts = {
     reducedRatio?: number
     omittedMessages?: number
     toolResultPruning?: boolean
+    /** Set when summarization failed and a mechanical fallback produced the result. */
+    degraded?: 'prune' | 'drop-oldest'
   }
+
+  /** Synthetic per-turn context injection (datetime, git snapshot, goal, hooks). */
+  contextInjection: { sections: string[] }
 
   context: {
     usedTokens?: number

@@ -79,7 +79,6 @@ export interface EditMessageInput {
 
 export interface ForkConversationResult {
   conversation: ConversationSummary
-  messages: TanzoUIMessage[]
 }
 
 /**
@@ -94,6 +93,8 @@ export const CHAT_CHANNELS = {
   submit: 'chat:submit',
   editMessage: 'chat:edit-message',
   respondApprovals: 'chat:respond-approvals',
+  retryTurn: 'chat:retry-turn',
+  lastRunOutcome: 'chat:last-run-outcome',
   cancel: 'chat:cancel',
   steer: 'chat:steer',
   enqueue: 'chat:enqueue',
@@ -147,6 +148,22 @@ export type CompactionOutcome = 'compacted' | 'not-needed' | 'aborted' | 'stale'
 export interface ChatRunError {
   code: string
   message: string
+}
+
+/** Persisted outcome of the most recent run, read back from the runs table. */
+export interface ChatRunOutcomeError {
+  /** 'stream-error' | 'aborted' | 'interrupted' (open for forward compat). */
+  kind: string
+  message?: string
+  code?: string
+  detail?: NonNullable<TanzoDataParts['telemetry']['error']>
+}
+
+export interface ChatRunOutcome {
+  runId: string
+  status: 'finished' | 'failed'
+  finishedAt: number | null
+  error?: ChatRunOutcomeError
 }
 
 export interface ChatRunFrame {
@@ -210,6 +227,8 @@ export interface ChatApi {
   submit(chatId: string, message: TanzoUIMessage): Promise<void>
   editMessage(chatId: string, messageId: string, text: string): Promise<void>
   respondApprovals(chatId: string, responses: ChatApprovalResponse[]): Promise<{ started: boolean }>
+  retryTurn(chatId: string): Promise<void>
+  lastRunOutcome(chatId: string): Promise<ChatRunOutcome | null>
   cancel(chatId: string): Promise<void>
   steer(chatId: string, text: string): Promise<void>
   enqueue(chatId: string, text: string): Promise<void>
