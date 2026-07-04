@@ -3,6 +3,7 @@ import {
   BarChart3,
   Blocks,
   Cat,
+  Info,
   Palette,
   Plug,
   Server,
@@ -17,6 +18,7 @@ import PluginsPage from '@/features/plugins/page'
 import ProvidersPage from '@/features/providers/page'
 import SkillsPage from '@/features/skills/page'
 import UsagePage from '@/features/usage/page'
+import { SettingsAboutTab } from '../ui/settings-about-tab'
 import { SettingsHooksTab, SettingsHooksHeaderActions } from '../ui/settings-hooks-tab'
 import { SettingsPermissionsTab } from '../ui/settings-permissions-tab'
 import { SettingsPetTab } from '../ui/settings-pet-tab'
@@ -34,6 +36,7 @@ export type SettingsSectionId =
   | 'hooks'
   | 'pet'
   | 'tools'
+  | 'about'
 
 export interface SettingsSectionDef {
   id: SettingsSectionId
@@ -121,6 +124,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
     defaultLabel: 'Tools',
     icon: Wrench,
     Component: SettingsToolsTab
+  },
+  {
+    id: 'about',
+    labelKey: 'settings.page.tabs.about',
+    defaultLabel: 'About',
+    icon: Info,
+    Component: SettingsAboutTab
   }
 ]
 

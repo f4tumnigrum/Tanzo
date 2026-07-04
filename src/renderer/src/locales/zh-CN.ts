@@ -1220,7 +1220,23 @@ export const zhCN = {
           permissions: '权限',
           hooks: '钩子',
           pet: '桌面宠物',
-          tools: '工具'
+          tools: '工具',
+          about: '关于'
+        }
+      },
+      about: {
+        tagline: 'AI 原生桌面工作台，为规划、编码与自动化而生。',
+        copy: '复制信息',
+        copied: '已复制',
+        license: '基于 Apache-2.0 许可证发布',
+        links: {
+          issues: '反馈问题'
+        },
+        update: {
+          available: '更新到 {{version}}',
+          downloading: '下载中… {{percent}}%',
+          ready: '重启以完成更新',
+          error: '检查更新失败'
         }
       },
       tools: {

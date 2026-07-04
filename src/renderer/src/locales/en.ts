@@ -1231,7 +1231,23 @@ export const en = {
           permissions: 'Permissions',
           hooks: 'Hooks',
           pet: 'Pet',
-          tools: 'Tools'
+          tools: 'Tools',
+          about: 'About'
+        }
+      },
+      about: {
+        tagline: 'AI-native desktop workspace for planning, coding, and automation.',
+        copy: 'Copy info',
+        copied: 'Copied',
+        license: 'Released under the Apache-2.0 license',
+        links: {
+          issues: 'Report an issue'
+        },
+        update: {
+          available: 'Update to {{version}}',
+          downloading: 'Downloading… {{percent}}%',
+          ready: 'Restart to update',
+          error: 'Update check failed'
         }
       },
       tools: {
