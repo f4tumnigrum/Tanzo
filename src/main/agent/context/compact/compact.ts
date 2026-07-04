@@ -2,8 +2,12 @@ import { randomUUID } from 'node:crypto'
 import { convertToModelMessages, type ModelMessage } from 'ai'
 import type { TanzoDataParts, TanzoUIMessage, TanzoUsageMetadata } from '@shared/agent-message'
 import { canonicalizeToolTranscript } from '../tool-transcript'
-import { findCut, isSummaryMessage, partitionAtCut, type Partition } from './segments'
+import { isSummaryUIMessage } from '../ledger'
+import { splitForCompaction, type Partition } from './cut'
 import { stripAnalysis } from './prompt'
+
+export { splitForCompaction }
+export type { Partition }
 
 export interface CompactionPlan {
   head: TanzoUIMessage[]
@@ -20,29 +24,25 @@ export interface CompactionResult {
   next: TanzoUIMessage[]
 }
 
-export function splitForCompaction(
-  messages: TanzoUIMessage[],
-  retainedRecentSteps: number
-): Partition {
-  return partitionAtCut(messages, findCut(messages, retainedRecentSteps))
-}
-
 export async function planCompaction(
   messages: TanzoUIMessage[],
-  retainedRecentSteps: number
+  retainBudgetTokens: number
 ): Promise<CompactionPlan | null> {
-  const { head, tail, archivedIds } = splitForCompaction(messages, retainedRecentSteps)
+  const partition = splitForCompaction(messages, retainBudgetTokens)
+  if (!partition) return null
+  const { head, tail, archivedIds } = partition
   if (head.length === 0) return null
-  if (head.every(isSummaryMessage)) return null
+  if (head.every(isSummaryUIMessage)) return null
 
   const sourceMessages = canonicalizeToolTranscript(
     await convertToModelMessages(head, { ignoreIncompleteToolCalls: true })
   )
+  if (sourceMessages.length === 0) return null
 
   return { head, tail, archivedIds, sourceMessages }
 }
 
-function buildSummary(input: {
+export function buildSummaryMessage(input: {
   summaryText: string
   summaryId?: string
   auto: boolean
@@ -50,6 +50,7 @@ function buildSummary(input: {
   afterTokens?: number
   usage?: TanzoUsageMetadata
   omittedMessages: number
+  degraded?: TanzoDataParts['compaction']['degraded']
 }): TanzoUIMessage {
   const reducedTokens =
     input.beforeTokens !== undefined && input.afterTokens !== undefined
@@ -65,6 +66,7 @@ function buildSummary(input: {
     ...(input.afterTokens !== undefined ? { afterTokens: input.afterTokens } : {}),
     ...(input.usage ? { usage: input.usage } : {}),
     ...(reducedTokens !== undefined ? { reducedTokens } : {}),
+    ...(input.degraded ? { degraded: input.degraded } : {}),
     omittedMessages: input.omittedMessages
   }
   return {
@@ -90,7 +92,7 @@ export function buildCompactionResult(input: {
   const { plan, usage } = input
   const beforeTokens = usage?.inputTokens
   const afterTokens = usage?.outputTokens
-  const summary = buildSummary({
+  const summary = buildSummaryMessage({
     summaryText,
     ...(input.summaryId ? { summaryId: input.summaryId } : {}),
     auto: input.auto,
