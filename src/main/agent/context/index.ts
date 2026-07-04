@@ -1,22 +1,20 @@
 import type { LanguageModelUsage, ModelMessage } from 'ai'
+import type { TanzoUIMessage } from '@shared/agent-message'
 import type { AgentDefinition } from '../agents/types'
-import { createBudget, cacheHitRatio, type Budget } from './budget'
 import {
   createCapabilities,
   type CapabilitiesFor,
+  type ModelCapabilities,
   type ModelMetadataResolver
 } from './capabilities'
 import { compileSections } from './compile'
+import { renderContextInjection } from './injection'
+import { measureTranscript, type TranscriptMeasure } from './ledger'
 import { projectHistory } from './project'
 import { createSectionRegistry, type SectionDeps } from './registry'
-import { computeCompactionPolicy, type CompactionPolicy } from './compaction-policy'
+import { computeCompactionPolicy, type CompactionPolicy } from './compact/policy'
 import { strategyFor, type CacheKind } from './providers'
-import {
-  attachContextProvenance,
-  type CompiledContext,
-  type ContextMessageProvenance,
-  type ContextSection
-} from './section'
+import { attachContextProvenance, type CompiledContext, type ContextSection } from './section'
 
 export interface ContextEngineDeps extends SectionDeps {
   resolveModelMetadata: ModelMetadataResolver
@@ -34,11 +32,6 @@ export interface ContextSnapshot {
   hitRatio?: number
 }
 
-export interface ContextEnginePrepareOptions {
-  consumeGoalInjection?: boolean
-  consumePluginMention?: boolean
-}
-
 export interface BuiltContext {
   instructions: CompiledContext['system']
   messages: ModelMessage[]
@@ -46,177 +39,152 @@ export interface BuiltContext {
 }
 
 export interface ContextEngine {
+  /**
+   * Assemble the per-step prompt: system sections + leading-user block +
+   * canonicalized history. Pure with respect to per-chat state — the same
+   * transcript yields the same prompt (append-only prefix invariant).
+   */
   build(
     def: AgentDefinition,
     chatId: string,
     cwd: string,
     transcript: ModelMessage[],
-    stepNumber: number,
-    options?: ContextEnginePrepareOptions
+    stepNumber: number
   ): Promise<BuiltContext>
-  observeStep(chatId: string, messageCount: number, usage: LanguageModelUsage | undefined): void
-  snapshot(def: AgentDefinition, chatId: string, messages: ModelMessage[]): ContextSnapshot
-  shouldCompact(def: AgentDefinition, chatId: string, messages: ModelMessage[]): boolean
-  compactionTriggerTokens(def: AgentDefinition): number
-  retainedRecentSteps(def: AgentDefinition): number
+  /**
+   * Render the volatile per-turn injection (datetime, git snapshot, goal,
+   * plugin focus, hook context) as a persistable synthetic user message.
+   * Consumes one-shot injection state (goal injection, plugin mentions).
+   */
+  renderInjection(
+    def: AgentDefinition,
+    chatId: string,
+    cwd: string,
+    options: { isFirstTurn: boolean }
+  ): Promise<TanzoUIMessage | null>
+  /** Ledger-based measurement of a persisted transcript. */
+  measure(def: AgentDefinition, chatId: string, messages: TanzoUIMessage[]): TranscriptMeasure
+  shouldCompact(def: AgentDefinition, chatId: string, messages: TanzoUIMessage[]): boolean
+  snapshot(def: AgentDefinition, chatId: string, messages: TanzoUIMessage[]): ContextSnapshot
+  compactionPolicy(def: AgentDefinition): CompactionPolicy
+  capabilitiesFor(modelRef: string): ModelCapabilities
+  /** Record step usage for cache hit-ratio reporting. */
+  observeStep(chatId: string, usage: LanguageModelUsage | undefined): void
   clear(chatId: string): void
 }
 
-function promptMessages(plan: CompiledContext, stepNumber: number): ModelMessage[] {
-  return [
-    ...plan.leadingUser,
-    ...plan.history,
-    ...(stepNumber === 0 ? [...plan.volatilePrefixUser, ...plan.trailingUser] : [])
-  ]
+function cacheHitRatio(usage: LanguageModelUsage | undefined): number | undefined {
+  const input = usage?.inputTokens
+  const cached = usage?.inputTokenDetails?.cacheReadTokens
+  if (input == null || input <= 0 || cached == null) return undefined
+  return cached / input
 }
 
-function promptMessageProvenance(
-  plan: CompiledContext,
-  stepNumber: number
-): (ContextMessageProvenance | undefined)[] {
-  return [
-    ...plan.provenance.leadingUser,
-    ...plan.provenance.history,
-    ...(stepNumber === 0
-      ? [...plan.provenance.volatilePrefixUser, ...plan.provenance.trailingUser]
-      : [])
-  ]
-}
-
-interface FrozenVolatilePrefix {
-  messages: ModelMessage[]
-  provenance: ContextMessageProvenance[]
-}
-
-function withFrozenVolatilePrefix(
-  plan: CompiledContext,
-  frozen: FrozenVolatilePrefix
-): CompiledContext {
-  return {
-    ...plan,
-    leadingUser: [...plan.leadingUser, ...frozen.messages],
-    volatilePrefixUser: [],
-    provenance: {
-      ...plan.provenance,
-      leadingUser: [...plan.provenance.leadingUser, ...frozen.provenance],
-      volatilePrefixUser: []
-    }
-  }
+/**
+ * After compaction the transcript is `[summary, ...tail]`, so a compaction
+ * summary — when present — is always the first history message and the only
+ * assistant message a transcript can start with.
+ */
+function summaryIndexOf(history: ModelMessage[]): number {
+  return history[0]?.role === 'assistant' ? 0 : -1
 }
 
 export function createContextEngine(deps: ContextEngineDeps): ContextEngine {
   const registry: ContextSection[] = [...createSectionRegistry(deps), ...(deps.extraSections ?? [])]
-  const budget: Budget = createBudget()
-  const capabilitiesFor: CapabilitiesFor = createCapabilities(deps.resolveModelMetadata)
+  const capabilities: CapabilitiesFor = createCapabilities(deps.resolveModelMetadata)
   const lastUsage = new Map<string, LanguageModelUsage>()
-  const frozenVolatilePrefixes = new Map<string, FrozenVolatilePrefix>()
-
-  function resolve(def: AgentDefinition, chatId: string) {
-    const capabilities = capabilitiesFor(def.modelRef)
-    const compactionPolicy = computeCompactionPolicy(capabilities)
-    const strategy = strategyFor(def.modelRef, chatId)
-    return { capabilities, compactionPolicy, strategy }
-  }
-
-  async function compilePlan(
-    def: AgentDefinition,
-    chatId: string,
-    cwd: string,
-    history: ModelMessage[],
-    turnIndex: number,
-    options: ContextEnginePrepareOptions
-  ): Promise<CompiledContext> {
-    const { strategy } = resolve(def, chatId)
-    const capabilities = capabilitiesFor(def.modelRef)
-    const goalInjection =
-      turnIndex === 0 && options.consumeGoalInjection !== false
-        ? deps.goal.peekInjection(chatId)
-        : null
-    const pluginMention =
-      turnIndex === 0 && options.consumePluginMention !== false
-        ? deps.pluginMention.peek(chatId)
-        : null
-
-    let plan = await compileSections(
-      registry,
-      { def, chatId, cwd, capabilities, goalInjection, pluginMention },
-      history
-    )
-
-    plan =
-      strategy.applyPromptLayout?.(plan, {
-        freezeVolatilePrefix: (layoutPlan) => {
-          let frozen = frozenVolatilePrefixes.get(chatId)
-          if (!frozen) {
-            frozen = {
-              messages: layoutPlan.volatilePrefixUser,
-              provenance: layoutPlan.provenance.volatilePrefixUser
-            }
-            frozenVolatilePrefixes.set(chatId, frozen)
-          }
-          return withFrozenVolatilePrefix(layoutPlan, frozen)
-        }
-      }) ?? plan
-    plan = strategy.applyCaching(plan)
-    if (goalInjection) deps.goal.takeInjection(chatId)
-    if (pluginMention && pluginMention.length > 0) deps.pluginMention.take(chatId)
-    return plan
-  }
-
-  function planToBuilt(plan: CompiledContext, turnIndex: number): BuiltContext {
-    return attachContextProvenance(
-      {
-        instructions: plan.system,
-        messages: promptMessages(plan, turnIndex),
-        ...(plan.providerOptions ? { providerOptions: plan.providerOptions } : {})
-      },
-      {
-        system: plan.provenance.system,
-        leadingUser: plan.provenance.leadingUser,
-        volatilePrefixUser: plan.provenance.volatilePrefixUser,
-        history: plan.provenance.history,
-        trailingUser: plan.provenance.trailingUser,
-        messages: promptMessageProvenance(plan, turnIndex)
-      }
-    )
-  }
 
   async function build(
     def: AgentDefinition,
     chatId: string,
     cwd: string,
     transcript: ModelMessage[],
-    stepNumber: number,
-    options: ContextEnginePrepareOptions = {}
+    _stepNumber: number
   ): Promise<BuiltContext> {
-    const { capabilities } = resolve(def, chatId)
-    const history = projectHistory(transcript, capabilities)
-    const plan = await compilePlan(def, chatId, cwd, history, stepNumber, options)
-    return planToBuilt(plan, stepNumber)
+    void _stepNumber
+    const cap = capabilities(def.modelRef)
+    const history = projectHistory(transcript, cap)
+    const strategy = strategyFor(def.modelRef, chatId)
+    let plan = await compileSections(registry, { def, chatId, cwd, capabilities: cap }, history)
+    plan = strategy.applyCaching({ plan, summaryIndex: summaryIndexOf(history) })
+    return attachContextProvenance(
+      {
+        instructions: plan.system,
+        messages: [...plan.leadingUser, ...plan.history],
+        ...(plan.providerOptions ? { providerOptions: plan.providerOptions } : {})
+      },
+      {
+        system: plan.provenance.system,
+        leadingUser: plan.provenance.leadingUser,
+        history: plan.provenance.history,
+        messages: [...plan.provenance.leadingUser, ...plan.provenance.history]
+      }
+    )
   }
 
-  function observeStep(
+  async function renderInjection(
+    def: AgentDefinition,
     chatId: string,
-    messageCount: number,
-    usage: LanguageModelUsage | undefined
-  ): void {
-    if (!usage?.inputTokens) return
-    budget.anchor(chatId, messageCount, usage.inputTokens)
-    lastUsage.set(chatId, usage)
+    cwd: string,
+    options: { isFirstTurn: boolean }
+  ): Promise<TanzoUIMessage | null> {
+    const cap = capabilities(def.modelRef)
+    const goalInjection = deps.goal.peekInjection(chatId)
+    const pluginMention = deps.pluginMention.peek(chatId)
+    const message = await renderContextInjection(registry, {
+      def,
+      chatId,
+      cwd,
+      capabilities: cap,
+      goalInjection,
+      pluginMention,
+      isFirstTurn: options.isFirstTurn
+    })
+    if (message) {
+      if (goalInjection) deps.goal.takeInjection(chatId)
+      if (pluginMention && pluginMention.length > 0) deps.pluginMention.take(chatId)
+    }
+    return message
+  }
+
+  function measure(
+    _def: AgentDefinition,
+    _chatId: string,
+    messages: TanzoUIMessage[]
+  ): TranscriptMeasure {
+    void _def
+    void _chatId
+    return measureTranscript(messages)
+  }
+
+  function compactionPolicy(def: AgentDefinition): CompactionPolicy {
+    return computeCompactionPolicy(capabilities(def.modelRef))
+  }
+
+  function shouldCompact(
+    def: AgentDefinition,
+    chatId: string,
+    messages: TanzoUIMessage[]
+  ): boolean {
+    return (
+      measure(def, chatId, messages).totalTokens > compactionPolicy(def).compactionTriggerTokens
+    )
   }
 
   function snapshot(
     def: AgentDefinition,
     chatId: string,
-    messages: ModelMessage[]
+    messages: TanzoUIMessage[]
   ): ContextSnapshot {
-    const { capabilities, compactionPolicy, strategy } = resolve(def, chatId)
-    const usage = budget.measureUsage(chatId, messages)
+    const cap = capabilities(def.modelRef)
+    const policy = compactionPolicy(def)
+    const usage = measure(def, chatId, messages)
+    const strategy = strategyFor(def.modelRef, chatId)
     return {
-      ...(usage.inputTokens !== undefined ? { usedTokens: usage.inputTokens } : {}),
-      windowTokens: capabilities.contextWindow,
-      compactionTriggerTokens: compactionPolicy.compactionTriggerTokens,
-      compactionTriggered: usage.exceeds(compactionPolicy.compactionTriggerTokens),
+      usedTokens: usage.totalTokens,
+      windowTokens: cap.contextWindow,
+      compactionTriggerTokens: policy.compactionTriggerTokens,
+      compactionTriggered: usage.totalTokens > policy.compactionTriggerTokens,
       source: usage.source,
       cacheKind: strategy.cacheKind,
       serverCompaction: false,
@@ -224,32 +192,24 @@ export function createContextEngine(deps: ContextEngineDeps): ContextEngine {
     }
   }
 
-  function shouldCompact(def: AgentDefinition, chatId: string, messages: ModelMessage[]): boolean {
-    const { compactionPolicy } = resolve(def, chatId)
-    return budget.measureUsage(chatId, messages).exceeds(compactionPolicy.compactionTriggerTokens)
-  }
-
-  function compactionTriggerTokens(def: AgentDefinition): number {
-    return resolve(def, '').compactionPolicy.compactionTriggerTokens
-  }
-
-  function retainedRecentSteps(def: AgentDefinition): number {
-    return resolve(def, '').compactionPolicy.retainedRecentSteps
+  function observeStep(chatId: string, usage: LanguageModelUsage | undefined): void {
+    if (!usage?.inputTokens) return
+    lastUsage.set(chatId, usage)
   }
 
   function clear(chatId: string): void {
-    budget.clear(chatId)
     lastUsage.delete(chatId)
-    frozenVolatilePrefixes.delete(chatId)
   }
 
   return {
     build,
-    observeStep,
-    snapshot,
+    renderInjection,
+    measure,
     shouldCompact,
-    compactionTriggerTokens,
-    retainedRecentSteps,
+    snapshot,
+    compactionPolicy,
+    capabilitiesFor: (modelRef) => capabilities(modelRef),
+    observeStep,
     clear
   }
 }

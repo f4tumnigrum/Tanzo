@@ -12,7 +12,7 @@ export function createGoalSection(reader: GoalSectionReader): ContextSection {
   return {
     id: 'goal',
     stability: 'volatile',
-    channel: 'leading-user',
+    channel: 'injection',
     order: 5,
     render: ({ chatId, goalInjection }) => {
       if (!goalInjection) return null

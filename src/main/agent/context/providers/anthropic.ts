@@ -1,6 +1,6 @@
 import type { ModelMessage, SystemModelMessage } from 'ai'
 import type { CompiledContext } from '../section'
-import type { ProviderContextStrategy } from './strategy'
+import type { CachingInput, ProviderContextStrategy } from './strategy'
 
 type Ttl = '5m' | '1h'
 
@@ -25,30 +25,36 @@ function markStableBoundary(system: SystemModelMessage[], boundary: number): Sys
   return system.map((message, i) => (i === index ? withCacheControl(message, '1h') : message))
 }
 
-function markTail(messages: ModelMessage[], count: number, ttl: Ttl): ModelMessage[] {
-  if (messages.length === 0 || count <= 0) return messages
-  const firstMarked = Math.max(messages.length - count, 0)
-  return messages.map((message, i) => (i >= firstMarked ? withCacheControl(message, ttl) : message))
+function markLast(messages: ModelMessage[], ttl: Ttl): ModelMessage[] {
+  if (messages.length === 0) return messages
+  const index = messages.length - 1
+  return messages.map((message, i) => (i === index ? withCacheControl(message, ttl) : message))
 }
 
-function markStableLeadingBoundary(leadingUser: ModelMessage[]): ModelMessage[] {
-  return markTail(leadingUser, 1, '1h')
-}
-
-function markHistoryTail(history: ModelMessage[]): ModelMessage[] {
-  if (history.length === 0) return history
-  return markTail(history, 2, '5m')
-}
-
+/**
+ * Anthropic cache frontier (v2). Four breakpoints (provider maximum):
+ * 1. last stable system message — 1h (role/instructions/skills index)
+ * 2. last leading-user message — 1h (environment block)
+ * 3. latest compaction summary — 1h (root of the current prefix family; the
+ *    head before it never changes again, so a long TTL pays for itself)
+ * 4. last history message — 5m (the moving frontier, refreshed every step)
+ */
 export function createAnthropicStrategy(): ProviderContextStrategy {
   return {
     cacheKind: 'ephemeral',
-    applyCaching(plan): CompiledContext {
+    applyCaching({ plan, summaryIndex }: CachingInput): CompiledContext {
+      let history = plan.history
+      if (summaryIndex >= 0 && summaryIndex < history.length - 1) {
+        history = history.map((message, i) =>
+          i === summaryIndex ? withCacheControl(message, '1h') : message
+        )
+      }
+      history = markLast(history, '5m')
       return {
         ...plan,
         system: markStableBoundary(plan.system, plan.stableBoundary),
-        leadingUser: markStableLeadingBoundary(plan.leadingUser),
-        history: markHistoryTail(plan.history)
+        leadingUser: markLast(plan.leadingUser, '1h'),
+        history
       }
     }
   }

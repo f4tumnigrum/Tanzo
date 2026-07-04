@@ -1,20 +1,25 @@
 import type { CompiledContext } from '../section'
-import type { ProviderContextStrategy } from './strategy'
+import type { CachingInput, ProviderContextStrategy } from './strategy'
 
-function globalPromptCacheKey(modelRef: string): string {
-  return `tanzo:global:${modelRef}`
+/**
+ * OpenAI prompt-cache routing (v2): per-conversation key. A shared global key
+ * would route every conversation to the same cache shard and evict each
+ * other's prefixes; per-chat keys keep each prefix family together.
+ */
+function chatPromptCacheKey(chatId: string): string {
+  return `tanzo:chat:${chatId}`
 }
 
 function withPromptCacheKey(
   plan: CompiledContext,
-  modelRef: string,
+  chatId: string,
   providerKey: 'openai' | 'openaiCompatible'
 ): CompiledContext {
   const prev = plan.providerOptions ?? {}
   const prevOptions = (prev[providerKey] as Record<string, unknown> | undefined) ?? {}
   const options = {
     ...prevOptions,
-    promptCacheKey: globalPromptCacheKey(modelRef),
+    promptCacheKey: chatPromptCacheKey(chatId),
     promptCacheRetention: '24h'
   }
   return {
@@ -26,16 +31,16 @@ function withPromptCacheKey(
   }
 }
 
-export function createOpenAIStrategy(modelRef: string): ProviderContextStrategy {
+export function createOpenAIStrategy(chatId: string): ProviderContextStrategy {
   return {
     cacheKind: 'auto',
-    applyCaching: (plan) => withPromptCacheKey(plan, modelRef, 'openai')
+    applyCaching: ({ plan }: CachingInput) => withPromptCacheKey(plan, chatId, 'openai')
   }
 }
 
-export function createOpenAICompatibleStrategy(modelRef: string): ProviderContextStrategy {
+export function createOpenAICompatibleStrategy(chatId: string): ProviderContextStrategy {
   return {
     cacheKind: 'auto',
-    applyCaching: (plan) => withPromptCacheKey(plan, modelRef, 'openaiCompatible')
+    applyCaching: ({ plan }: CachingInput) => withPromptCacheKey(plan, chatId, 'openaiCompatible')
   }
 }

@@ -2,12 +2,13 @@ import type { CompiledContext } from '../section'
 
 export type CacheKind = 'ephemeral' | 'auto' | 'unsupported'
 
-export interface ProviderContextLayoutHelpers {
-  freezeVolatilePrefix(plan: CompiledContext): CompiledContext
+export interface CachingInput {
+  plan: CompiledContext
+  /** Index into `plan.history` of the latest compaction summary, or -1. */
+  summaryIndex: number
 }
 
 export interface ProviderContextStrategy {
   cacheKind: CacheKind
-  applyPromptLayout?(plan: CompiledContext, helpers: ProviderContextLayoutHelpers): CompiledContext
-  applyCaching(plan: CompiledContext): CompiledContext
+  applyCaching(input: CachingInput): CompiledContext
 }

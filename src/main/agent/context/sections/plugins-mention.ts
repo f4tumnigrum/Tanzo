@@ -30,7 +30,7 @@ export function createPluginsMentionSection(reader: PluginMentionReader): Contex
   return {
     id: 'plugins-mention',
     stability: 'volatile',
-    channel: 'leading-user',
+    channel: 'injection',
     // Just after the goal continuation hint (order 5); both are per-turn
     // leading-user nudges placed close to the user's message.
     order: 6,

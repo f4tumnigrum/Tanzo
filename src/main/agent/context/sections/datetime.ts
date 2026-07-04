@@ -8,8 +8,7 @@ export function createDatetimeSection(deps: ClockDeps): ContextSection {
   return {
     id: 'datetime',
     stability: 'volatile',
-    channel: 'leading-user',
-    prefixCacheScope: 'conversation',
+    channel: 'injection',
     order: 0,
     render: () => {
       const now = deps.now()

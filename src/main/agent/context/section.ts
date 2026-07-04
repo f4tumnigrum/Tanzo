@@ -6,8 +6,19 @@ import type { ModelCapabilities } from './capabilities'
 
 export type Stability = 'stable' | 'volatile'
 
-export type SectionChannel = 'system' | 'leading-user'
-export type PrefixCacheScope = 'conversation'
+/**
+ * Section channels (v2):
+ * - `system`: rendered into system messages. Must be stable across the steps of
+ *   a run (append-only prefix invariant); content changes are only allowed at
+ *   turn boundaries.
+ * - `leading-user`: merged into a single user message placed before history.
+ *   Same stability requirement as `system`.
+ * - `injection`: rendered once at turn start and persisted into the transcript
+ *   as a synthetic user message (`data-context-injection`). This is how
+ *   volatile, per-turn content (datetime, git snapshot, goal nudges, hook
+ *   context) reaches the model without breaking the cacheable prefix.
+ */
+export type SectionChannel = 'system' | 'leading-user' | 'injection'
 
 export interface BuildInput {
   def: AgentDefinition
@@ -17,6 +28,8 @@ export interface BuildInput {
   goalInjection?: GoalInjection | null
   /** Plugin names the user `@mentioned` this turn, for a focused hint. */
   pluginMention?: string[] | null
+  /** True when this is the first turn of the conversation. */
+  isFirstTurn?: boolean
 }
 
 export interface ContextSection {
@@ -24,7 +37,6 @@ export interface ContextSection {
   stability: Stability
   channel: SectionChannel
   order: number
-  prefixCacheScope?: PrefixCacheScope
   render(input: BuildInput): string | null | Promise<string | null>
 }
 
@@ -41,18 +53,15 @@ export interface ContextMessageProvenance {
 export interface ContextPromptProvenance {
   system: ContextSectionProvenance[]
   leadingUser: ContextMessageProvenance[]
-  volatilePrefixUser: ContextMessageProvenance[]
   history: undefined[]
-  trailingUser: ContextMessageProvenance[]
   messages: (ContextMessageProvenance | undefined)[]
 }
 
 export interface CompiledContext {
   system: SystemModelMessage[]
+  /** Count of stable system messages — the provider cache anchor. */
   stableBoundary: number
   leadingUser: ModelMessage[]
-  volatilePrefixUser: ModelMessage[]
-  trailingUser: ModelMessage[]
   history: ModelMessage[]
   providerOptions?: ProviderOptions
   provenance: Omit<ContextPromptProvenance, 'messages'>

@@ -23,7 +23,7 @@ async function renderAll(registry: ContextSection[], input: BuildInput): Promise
   return results.filter((r): r is Rendered => r !== null)
 }
 
-function bySection(rendered: Rendered[], stability: Stability): Rendered[] {
+function byStability(rendered: Rendered[], stability: Stability): Rendered[] {
   return rendered
     .filter((r) => r.section.stability === stability)
     .sort((a, b) => a.section.order - b.section.order)
@@ -38,23 +38,26 @@ function sectionProvenance(rendered: Rendered): ContextSectionProvenance {
 }
 
 function messageProvenance(rendered: Rendered[]): ContextMessageProvenance[] {
-  return rendered.length
-    ? [
-        {
-          sections: rendered.map(sectionProvenance)
-        }
-      ]
-    : []
+  return rendered.length ? [{ sections: rendered.map(sectionProvenance) }] : []
 }
 
+/**
+ * Compile the `system` and `leading-user` channels (v2). `injection` channel
+ * sections are rendered separately (see injection.ts) and persisted into the
+ * transcript, so this output is stable for the duration of a run — the
+ * append-only prefix invariant.
+ */
 export async function compileSections(
   registry: ContextSection[],
   input: BuildInput,
   history: ModelMessage[]
 ): Promise<CompiledContext> {
-  const rendered = await renderAll(registry, input)
-  const stable = bySection(rendered, 'stable')
-  const volatile = bySection(rendered, 'volatile')
+  const rendered = await renderAll(
+    registry.filter((section) => section.channel !== 'injection'),
+    input
+  )
+  const stable = byStability(rendered, 'stable')
+  const volatile = byStability(rendered, 'volatile')
 
   const stableSystem = stable.filter((r) => r.section.channel === 'system')
   const volatileSystem = volatile.filter((r) => r.section.channel === 'system')
@@ -63,37 +66,23 @@ export async function compileSections(
     content: r.text
   }))
 
-  const stableLeading = stable.filter((r) => r.section.channel === 'leading-user')
-  const volatileLeading = volatile.filter((r) => r.section.channel === 'leading-user')
-  const volatilePrefixLeading = volatileLeading.filter(
-    (r) => r.section.prefixCacheScope === 'conversation'
-  )
-  const volatileTrailing = volatileLeading.filter(
-    (r) => r.section.prefixCacheScope !== 'conversation'
-  )
-  const leadingUser: ModelMessage[] = stableLeading.length
-    ? [{ role: 'user', content: stableLeading.map((r) => r.text).join('\n\n') }]
-    : []
-  const volatilePrefixUser: ModelMessage[] = volatilePrefixLeading.length
-    ? [{ role: 'user', content: volatilePrefixLeading.map((r) => r.text).join('\n\n') }]
-    : []
-  const trailingUser: ModelMessage[] = volatileTrailing.length
-    ? [{ role: 'user', content: volatileTrailing.map((r) => r.text).join('\n\n') }]
+  const leading = [
+    ...stable.filter((r) => r.section.channel === 'leading-user'),
+    ...volatile.filter((r) => r.section.channel === 'leading-user')
+  ]
+  const leadingUser: ModelMessage[] = leading.length
+    ? [{ role: 'user', content: leading.map((r) => r.text).join('\n\n') }]
     : []
 
   return {
     system,
     stableBoundary: stableSystem.length,
     leadingUser,
-    volatilePrefixUser,
-    trailingUser,
     history,
     provenance: {
       system: [...stableSystem, ...volatileSystem].map(sectionProvenance),
-      leadingUser: messageProvenance(stableLeading),
-      volatilePrefixUser: messageProvenance(volatilePrefixLeading),
-      history: history.map(() => undefined),
-      trailingUser: messageProvenance(volatileTrailing)
+      leadingUser: messageProvenance(leading),
+      history: history.map(() => undefined)
     }
   }
 }
