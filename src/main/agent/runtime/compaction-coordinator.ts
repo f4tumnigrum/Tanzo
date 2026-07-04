@@ -1,13 +1,18 @@
 import { randomUUID } from 'crypto'
-import { convertToModelMessages } from 'ai'
-import type { TanzoDataParts, TanzoUIMessage } from '@shared/agent-message'
+import type { ToolSet } from 'ai'
+import type { TanzoDataParts, TanzoUIMessage, TanzoUsageMetadata } from '@shared/agent-message'
 import type { CompactionOutcome } from '@shared/chat'
 import { TanzoError } from '@shared/errors'
 import type { AgentDefinition } from '../agents/types'
 import type { ContextEngine } from '../context'
-import { buildCompactionResult, planCompaction } from '../context/compact/compact'
+import {
+  buildCompactionResult,
+  buildSummaryMessage,
+  planCompaction,
+  type CompactionPlan
+} from '../context/compact/compact'
 import { COMPACT_PROMPT } from '../context/compact/prompt'
-import { runCompactionFork } from '../context/compact/fork-agent'
+import { runSummarizeFork } from '../context/compact/summarize'
 import { createAgentTelemetry } from '../telemetry'
 import type { AgentRuntimeDeps, Logger } from './types'
 
@@ -19,26 +24,53 @@ export type CompactionRunLifecycle = <T>(
   parentSignal?: AbortSignal
 ) => Promise<T>
 
+/** Result of an in-stream (model-domain) compaction, to be reconciled post-run. */
+export interface InlineCompactionRecord {
+  summaryText: string
+  /** Ids of the persisted messages the run started from. The summary covers
+   *  (at most) their content, so the post-run reconcile must never archive
+   *  past this prefix. */
+  baseMessageIds: string[]
+  usage?: TanzoUsageMetadata
+  degraded?: 'prune' | 'drop-oldest'
+}
+
 export interface CompactionCoordinator {
+  /**
+   * Pre-turn compaction: when the persisted transcript measures over the
+   * trigger, summarize + archive before the run starts. Returns the messages
+   * the run should start from.
+   */
   prepareMessages(
     chatId: string,
     def: AgentDefinition,
     incoming: TanzoUIMessage[],
     runId: string,
-    options?: { force?: boolean; signal?: AbortSignal }
+    options?: { signal?: AbortSignal }
   ): Promise<TanzoUIMessage[]>
-  compactAfterRun(
+  /**
+   * Post-run persistence reconciliation for an in-stream compaction: cut the
+   * persisted transcript with the same token budget and archive the head under
+   * the already-produced summary — no second summarize fork.
+   */
+  reconcileInline(
     chatId: string,
     def: AgentDefinition,
-    state: { exceededCompactionTrigger: boolean; hitCompactionTrigger: boolean },
+    inline: InlineCompactionRecord,
     options?: { signal?: AbortSignal }
   ): Promise<boolean>
+  /** Manual /compact entry point. */
   compact(chatId: string, options?: { instructions?: string }): Promise<CompactionOutcome>
 }
 
-interface CompactionRunResult {
-  outcome: CompactionOutcome
-  next: TanzoUIMessage[] | null
+export function compactionPrompt(def: AgentDefinition, instructions?: string): string {
+  const parts = [COMPACT_PROMPT]
+  const agentInstructions = def.compactionInstructions?.trim()
+  if (agentInstructions) parts.push(`Agent-specific compaction guidance:\n${agentInstructions}`)
+  const userInstructions = instructions?.trim()
+  if (userInstructions)
+    parts.push(`Additional user instructions for this compaction:\n${userInstructions}`)
+  return parts.join('\n\n')
 }
 
 export function createCompactionCoordinator(
@@ -48,9 +80,8 @@ export function createCompactionCoordinator(
     runLifecycle?: CompactionRunLifecycle
   }
 ): CompactionCoordinator {
-  // Per-chat run queue: ensures at most one compaction runs concurrently per
-  // conversation even when no external runLifecycle is provided. Without this,
-  // concurrent prepareMessages calls on the same chat could race.
+  // Per-chat run queue: at most one compaction per conversation at a time even
+  // when no external runLifecycle is provided.
   const pendingByChat = new Map<string, Promise<unknown>>()
   const lifecycle: CompactionRunLifecycle =
     deps.runLifecycle ??
@@ -71,22 +102,6 @@ export function createCompactionCoordinator(
       return run
     }
 
-  function createCompactionTelemetry(chatId: string, runId: string, broadcast: boolean) {
-    return createAgentTelemetry({
-      runId,
-      chatId,
-      scope: 'compaction',
-      send: deps.send,
-      broadcast,
-      ...(deps.logger ? { logger: deps.logger } : {})
-    })
-  }
-
-  function compactionData(summary: TanzoUIMessage): TanzoDataParts['compaction'] | undefined {
-    const part = summary.parts.find((p) => p.type === 'data-compaction')
-    return part?.type === 'data-compaction' ? part.data : undefined
-  }
-
   function publishCompactionStatus(
     chatId: string,
     runId: string,
@@ -105,26 +120,20 @@ export function createCompactionCoordinator(
     )
   }
 
-  async function publishCompactionEvents(
+  function publishContextSnapshot(
     chatId: string,
     def: AgentDefinition,
     engine: ContextEngine,
-    runId: string,
-    result: { summary: TanzoUIMessage; next: TanzoUIMessage[] },
+    next: TanzoUIMessage[],
     frameRunId?: string
-  ): Promise<void> {
-    const data = compactionData(result.summary)
-    if (data) publishCompactionStatus(chatId, runId, data, frameRunId)
+  ): void {
     try {
-      const modelMessages = await convertToModelMessages(result.next, {
-        ignoreIncompleteToolCalls: true
-      })
       deps.send(
         chatId,
         {
           type: 'data-context',
           id: `context:${chatId}`,
-          data: engine.snapshot(def, chatId, modelMessages),
+          data: engine.snapshot(def, chatId, next),
           transient: true
         },
         frameRunId ? { runId: frameRunId } : undefined
@@ -134,72 +143,139 @@ export function createCompactionCoordinator(
     }
   }
 
-  function compactionPrompt(def: AgentDefinition, instructions: string | undefined): string {
-    const parts = [COMPACT_PROMPT]
-    // Agent-specific guidance: different agent types need different emphasis
-    // (e.g. a verify agent should preserve test names; an explore agent, file paths).
-    const agentInstructions = def.compactionInstructions?.trim()
-    if (agentInstructions) parts.push(`Agent-specific compaction guidance:\n${agentInstructions}`)
-    const userInstructions = instructions?.trim()
-    if (userInstructions)
-      parts.push(`Additional user instructions for this compaction:\n${userInstructions}`)
-    return parts.join('\n\n')
+  interface FinalizeInput {
+    plan: CompactionPlan
+    summary: TanzoUIMessage
+    next: TanzoUIMessage[]
+    expectedActiveIds: string[]
+    auto: boolean
+    summaryId: string
+    runId: string
+    frameRunId?: string
   }
 
+  /** Archive the plan head under the summary; returns the outcome. */
+  async function finalize(
+    chatId: string,
+    def: AgentDefinition,
+    engine: ContextEngine,
+    input: FinalizeInput
+  ): Promise<{ outcome: CompactionOutcome; next: TanzoUIMessage[] | null }> {
+    try {
+      deps.store.finalizeCompaction(
+        chatId,
+        input.plan.archivedIds,
+        input.summary.id,
+        input.next,
+        input.expectedActiveIds
+      )
+    } catch (error) {
+      if (error instanceof TanzoError && error.code === 'CHAT_COMPACTION_STALE') {
+        deps.logger?.warn('compaction skipped: conversation changed while compacting', { chatId })
+        publishCompactionStatus(
+          chatId,
+          input.runId,
+          {
+            stage: 'failed',
+            auto: input.auto,
+            summaryId: input.summaryId,
+            summary: 'Conversation changed during compaction; nothing was archived.'
+          },
+          input.frameRunId
+        )
+        const fresh = await deps.store.load(chatId)
+        return { outcome: 'stale', next: fresh }
+      }
+      deps.logger?.warn('compaction failed', { chatId, error })
+      publishCompactionStatus(
+        chatId,
+        input.runId,
+        {
+          stage: 'failed',
+          auto: input.auto,
+          summaryId: input.summaryId,
+          summary: error instanceof Error ? error.message : String(error)
+        },
+        input.frameRunId
+      )
+      throw error
+    }
+
+    engine.clear(chatId)
+    const summaryData = input.summary.parts.find((part) => part.type === 'data-compaction')
+    if (summaryData?.type === 'data-compaction') {
+      publishCompactionStatus(chatId, input.runId, summaryData.data, input.frameRunId)
+    }
+    publishContextSnapshot(chatId, def, engine, input.next, input.frameRunId)
+    deps.logger?.info('compacted conversation', { chatId })
+    return { outcome: 'compacted', next: input.next }
+  }
+
+  /** Full fork-based compaction against the persisted transcript. */
   async function runCompaction(
     chatId: string,
     def: AgentDefinition,
-    incoming: TanzoUIMessage[],
     auto: boolean,
-    instructions?: string,
-    runId: string = randomUUID(),
-    options?: { retainedRecentSteps?: number; signal?: AbortSignal }
-  ): Promise<CompactionRunResult> {
+    options: { signal?: AbortSignal; runId?: string; tools?: ToolSet; instructions?: string }
+  ): Promise<{ outcome: CompactionOutcome; next: TanzoUIMessage[] | null }> {
     const engine = deps.contextEngine
     if (!engine) return { outcome: 'not-needed', next: null }
-    const summaryId = randomUUID()
-    const compactionRunId = `${runId}:compaction:${summaryId}`
+
+    const incoming = await deps.store.load(chatId)
     const expectedActiveIds = incoming
       .filter((message) => message.parts.length > 0)
       .map((message) => message.id)
-
-    const retainedRecentSteps = options?.retainedRecentSteps ?? engine.retainedRecentSteps(def)
-    const plan = await planCompaction(incoming, retainedRecentSteps)
+    const policy = engine.compactionPolicy(def)
+    const plan = await planCompaction(incoming, policy.retainBudgetTokens)
     if (!plan) return { outcome: 'not-needed', next: null }
 
-    const execute = async (signal: AbortSignal): Promise<CompactionRunResult> => {
-      const telemetry = createCompactionTelemetry(chatId, compactionRunId, true)
+    const summaryId = randomUUID()
+    const runId = options.runId ?? randomUUID()
+    const compactionRunId = `${runId}:compaction:${summaryId}`
+
+    const execute = async (
+      signal: AbortSignal
+    ): Promise<{ outcome: CompactionOutcome; next: TanzoUIMessage[] | null }> => {
+      const telemetry = createAgentTelemetry({
+        runId: compactionRunId,
+        chatId,
+        scope: 'compaction',
+        send: deps.send,
+        broadcast: true,
+        ...(deps.logger ? { logger: deps.logger } : {})
+      })
+      publishCompactionStatus(chatId, runId, { stage: 'start', auto, summaryId }, compactionRunId)
+
+      let summary: TanzoUIMessage
+      let next: TanzoUIMessage[]
       try {
-        publishCompactionStatus(chatId, runId, { stage: 'start', auto, summaryId }, compactionRunId)
-        const forkResult = await runCompactionFork(
-          { ...deps, contextEngine: engine },
+        const forkResult = await runSummarizeFork(
+          {
+            providerService: deps.providerService,
+            contextEngine: engine,
+            ...(deps.logger ? { logger: deps.logger } : {})
+          },
           {
             chatId,
             def,
             cwd: deps.store.getConversation(chatId)?.cwd ?? process.cwd(),
             runId: compactionRunId,
             head: plan.sourceMessages,
-            prompt: compactionPrompt(def, instructions),
+            prompt: compactionPrompt(def, options.instructions),
+            ...(options.tools ? { tools: options.tools } : {}),
             telemetry: telemetry.options,
             abortSignal: signal,
-            onSummary: (summary) => {
+            onSummary: (partial) => {
               publishCompactionStatus(
                 chatId,
                 runId,
-                {
-                  stage: 'start',
-                  auto,
-                  summaryId,
-                  summary
-                },
+                { stage: 'start', auto, summaryId, summary: partial },
                 compactionRunId
               )
             }
           }
         )
-        if (signal.aborted) {
-          return { outcome: 'aborted', next: null }
-        }
+        if (signal.aborted) return { outcome: 'aborted', next: null }
         const result = buildCompactionResult({
           plan,
           summaryText: forkResult.text,
@@ -207,95 +283,131 @@ export function createCompactionCoordinator(
           auto,
           ...(forkResult.usage ? { usage: forkResult.usage } : {})
         })
-        deps.store.finalizeCompaction(
-          chatId,
-          result.archivedIds,
-          result.summary.id,
-          result.next,
-          expectedActiveIds
-        )
-        engine.clear(chatId)
-        await publishCompactionEvents(chatId, def, engine, runId, result, compactionRunId)
-        deps.logger?.info('compacted conversation', {
-          chatId,
-          ...(result.beforeTokens !== undefined ? { beforeTokens: result.beforeTokens } : {}),
-          ...(result.afterTokens !== undefined ? { afterTokens: result.afterTokens } : {})
-        })
-        return { outcome: 'compacted', next: result.next }
+        summary = result.summary
+        next = result.next
       } catch (error) {
-        if (signal.aborted) {
-          return { outcome: 'aborted', next: null }
-        }
-        if (error instanceof TanzoError && error.code === 'CHAT_COMPACTION_STALE') {
-          deps.logger?.warn('compaction skipped: conversation changed while compacting', { chatId })
-          publishCompactionStatus(
-            chatId,
-            runId,
-            {
-              stage: 'failed',
-              auto,
-              summaryId,
-              summary: 'Conversation changed during compaction; nothing was archived.'
-            },
-            compactionRunId
-          )
-          // Reload the current history so callers work with up-to-date messages
-          // instead of the stale snapshot. The snapshot is already over the context
-          // limit; falling back to it would cause the next turn to fail.
-          const fresh = await deps.store.load(chatId)
-          return { outcome: 'stale', next: fresh }
-        }
-        deps.logger?.warn('compaction failed', { chatId, error })
-        publishCompactionStatus(
-          chatId,
-          runId,
-          {
-            stage: 'failed',
-            auto,
-            summaryId,
-            summary: error instanceof Error ? error.message : String(error)
-          },
-          compactionRunId
-        )
-        throw error
+        if (signal.aborted) return { outcome: 'aborted', next: null }
+        // L3: mechanical fallback — the conversation must be able to continue
+        // even when the summarize fork is broken (window mismatch, provider
+        // outage, malformed output).
+        deps.logger?.warn('compaction fork failed; using mechanical fallback', { chatId, error })
+        summary = mechanicalSummary(plan, auto, summaryId)
+        next = [summary, ...plan.tail]
       }
+
+      return finalize(chatId, def, engine, {
+        plan,
+        summary,
+        next,
+        expectedActiveIds,
+        auto,
+        summaryId,
+        runId,
+        frameRunId: compactionRunId
+      })
     }
 
-    return lifecycle(chatId, compactionRunId, incoming, execute, options?.signal)
+    return lifecycle(chatId, compactionRunId, incoming, execute, options.signal)
+  }
+
+  /** Mechanical fallback summary when the summarize fork fails (L3). */
+  function mechanicalSummary(
+    plan: CompactionPlan,
+    auto: boolean,
+    summaryId: string
+  ): TanzoUIMessage {
+    const lines: string[] = [
+      'Summarization was unavailable; older conversation content was archived mechanically.',
+      `Archived ${plan.head.length} message(s). Key user messages from the archived range:`
+    ]
+    for (const message of plan.head) {
+      if (message.role !== 'user') continue
+      const text = message.parts
+        .filter((part): part is { type: 'text'; text: string } => part.type === 'text')
+        .map((part) => part.text)
+        .join('\n')
+        .trim()
+      if (text) lines.push(`- ${text.slice(0, 400)}`)
+    }
+    lines.push('Re-read files and re-run searches to recover any details you still need.')
+    return buildSummaryMessage({
+      summaryText: lines.join('\n'),
+      summaryId,
+      auto,
+      omittedMessages: plan.head.length,
+      degraded: 'prune'
+    })
   }
 
   return {
     async prepareMessages(chatId, def, incoming, runId, options) {
       const engine = deps.contextEngine
       if (!engine) return incoming
-      if (!options?.force) {
-        const model = await convertToModelMessages(incoming, { ignoreIncompleteToolCalls: true })
-        if (!engine.shouldCompact(def, chatId, model)) return incoming
-      }
-      const result = await runCompaction(chatId, def, incoming, true, undefined, runId, {
+      if (!engine.shouldCompact(def, chatId, incoming)) return incoming
+      const result = await runCompaction(chatId, def, true, {
+        runId,
         ...(options?.signal ? { signal: options.signal } : {})
       })
       return result.next ?? incoming
     },
-    async compactAfterRun(chatId, def, state, options) {
-      if (!state.exceededCompactionTrigger || state.hitCompactionTrigger) return false
+
+    async reconcileInline(chatId, def, inline, options) {
+      const engine = deps.contextEngine
+      if (!engine) return false
       if (options?.signal?.aborted) return false
       if (!deps.store.getConversation(chatId)) return false
-      const result = await runCompaction(
-        chatId,
-        def,
-        await deps.store.load(chatId),
-        true,
-        undefined,
-        randomUUID(),
-        { ...(options?.signal ? { signal: options.signal } : {}) }
-      )
-      return result.outcome === 'compacted'
+
+      const runId = randomUUID()
+      const executor = async (signal: AbortSignal): Promise<boolean> => {
+        if (signal.aborted) return false
+        const incoming = await deps.store.load(chatId)
+        const expectedActiveIds = incoming
+          .filter((message) => message.parts.length > 0)
+          .map((message) => message.id)
+        const policy = engine.compactionPolicy(def)
+
+        // Domain coherence: the in-stream cut summarized the transcript as it
+        // was at compaction time. The persisted transcript has since grown
+        // with the run's later output, so cut only over the run's base prefix
+        // — everything the summary is guaranteed to cover — and keep the rest.
+        const baseIds = new Set(inline.baseMessageIds)
+        let baseEnd = 0
+        while (baseEnd < incoming.length && baseIds.has(incoming[baseEnd].id)) baseEnd += 1
+        const basePrefix = incoming.slice(0, baseEnd)
+        const grown = incoming.slice(baseEnd)
+
+        const plan = await planCompaction(basePrefix, policy.retainBudgetTokens)
+        if (!plan) return false
+
+        const summary = buildSummaryMessage({
+          summaryText: inline.summaryText,
+          auto: true,
+          omittedMessages: plan.head.length,
+          ...(inline.usage ? { usage: inline.usage } : {}),
+          ...(inline.usage?.inputTokens !== undefined
+            ? { beforeTokens: inline.usage.inputTokens }
+            : {}),
+          ...(inline.degraded ? { degraded: inline.degraded } : {})
+        })
+        const result = await finalize(chatId, def, engine, {
+          plan: { ...plan, tail: [...plan.tail, ...grown] },
+          summary,
+          next: [summary, ...plan.tail, ...grown],
+          expectedActiveIds,
+          auto: true,
+          summaryId: summary.id,
+          runId
+        })
+        return result.outcome === 'compacted'
+      }
+      return lifecycle(chatId, `${runId}:compaction:inline`, [], executor, options?.signal)
     },
+
     async compact(chatId, options) {
       const def = await deps.store.resolveAgentDefinition(chatId)
-      const incoming = await deps.store.load(chatId)
-      const result = await runCompaction(chatId, def, incoming, false, options?.instructions)
+      const result = await runCompaction(chatId, def, false, {
+        ...(options?.instructions ? { instructions: options.instructions } : {})
+      })
       return result.outcome
     }
   }

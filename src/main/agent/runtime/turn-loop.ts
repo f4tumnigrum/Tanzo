@@ -21,7 +21,6 @@ import {
 import type { TurnFinalizer } from './turn-finalizer'
 import {
   decideTurnOutcome,
-  MAX_CONTINUATION_PASSES,
   MAX_PLAN_EXIT_PASSES,
   type TurnDecisionContext
 } from './turn-loop.machine'
@@ -33,6 +32,23 @@ const PLAN_EXIT_NUDGE =
   'tool. If your plan is ready, call exitPlanMode now with the full plan as markdown. If a ' +
   'genuine decision still blocks the plan, call askQuestion instead. Do not reply with another ' +
   'text-only plan.'
+
+/**
+ * True when the transcript's trailing assistant message carries a tool call
+ * that has not produced output yet (awaiting approval, just approved, or
+ * streaming). Injecting a user message after it would interleave between the
+ * call and its result.
+ */
+function hasUnexecutedToolCall(messages: TanzoUIMessage[]): boolean {
+  const last = messages.at(-1)
+  if (!last || last.role !== 'assistant') return false
+  return last.parts.some((part) => {
+    const type = (part as { type?: string }).type
+    if (!type || (!type.startsWith('tool-') && type !== 'dynamic-tool')) return false
+    const state = (part as { state?: string }).state
+    return state !== 'output-available' && state !== 'output-error' && state !== 'output-denied'
+  })
+}
 
 export interface StartStreamInput {
   chatId: string
@@ -191,10 +207,10 @@ export function createTurnLoop(
           ...opts,
           signal: handle.signal,
           steerQueue,
-          recordConsumedSteering: (messages) =>
-            runPersistence.addConsumedSteering(opts.chatId, opts.runId, messages),
-          persistStepMessages: (messages, usage) =>
-            runPersistence.persistStepMessages(opts.chatId, opts.runId, messages, usage),
+          recordConsumedSteering: (messages, stepNumber) =>
+            runPersistence.addConsumedSteering(opts.chatId, opts.runId, messages, stepNumber),
+          persistStepMessages: (messages) =>
+            runPersistence.persistStepMessages(opts.chatId, opts.runId, messages),
           persistFinalMessages: (messages, state) =>
             runPersistence.persistFinalMessages(opts.chatId, opts.runId, messages, state),
           onTrace: opts.onTrace
@@ -208,13 +224,11 @@ export function createTurnLoop(
             const wasOwner = handle.release()
             // Always reconcile steering on stream end. Terminal dispatch (queued
             // messages / goal continuation) is driven once by the run() loop for
-            // deferred top-level turns, so intermediate compaction passes there
-            // never dispatch. Non-deferred runs (sub-agent tasks) have no such
-            // loop, so they dispatch per-run here — skipping compaction-trigger
-            // passes, which continue rather than terminate.
+            // deferred top-level turns. Non-deferred runs (sub-agent tasks) have
+            // no such loop, so they dispatch per-run here.
             try {
               turnFinalizer.reconcile({ chatId: opts.chatId, wasOwner, state })
-              if (!opts.deferTerminal && wasOwner && !state.hitCompactionTrigger) {
+              if (!opts.deferTerminal && wasOwner) {
                 await turnFinalizer.dispatch({
                   chatId: opts.chatId,
                   broadcast: opts.broadcast,
@@ -240,6 +254,14 @@ export function createTurnLoop(
             safeFinishPersistence(opts.chatId, opts.runId)
             throw error
           }
+          // onFinally already ran, so the terminal state is settled; the throw
+          // bypassed the stream's onError (e.g. iterator teardown). Log it so
+          // it is not silently lost.
+          deps.logger?.warn('chat stream threw after settling', {
+            chatId: opts.chatId,
+            runId: opts.runId,
+            error
+          })
         }
         return finalState
       }
@@ -353,25 +375,51 @@ export function createTurnLoop(
     } | null = null
     let planExitPasses = 0
     let forceExitPlanMode = false
-    let forceCompactionOnPrepare = false
+    let injectedThisTurn = false
     // Set only when the turn ends naturally with an unresolved approval request,
     // i.e. it will resume in a later run(). Any abort/failure/early-return leaves
     // this false so the capture is finalized (or discarded) like before.
     let turnAwaitingApproval = false
     try {
-      for (let pass = 0; ; pass += 1) {
+      for (;;) {
         if (stopIfPreparationCancelled()) return
         const runId = randomUUID()
         const def = await deps.store.resolveAgentDefinition(chatId)
         if (stopIfPreparationCancelled()) return
+
+        // Persist the volatile context injection (datetime, git snapshot, goal
+        // nudge, hook context) as a synthetic user message at turn start — the
+        // model transcript stays append-only within the run and the persisted
+        // history matches what the model actually saw (invariant I1). Only once
+        // per logical turn: plan-exit retry passes reuse the injected message.
+        // Skipped while a tool call awaits approval or execution (the approval
+        // resume path): a user message must not be interleaved between a tool
+        // call and its result. Goal continuations (settled assistant tail) do
+        // inject — that is how the continuation prompt reaches the model.
+        if (
+          !injectedThisTurn &&
+          deps.contextEngine &&
+          messages.length > 0 &&
+          !hasUnexecutedToolCall(messages)
+        ) {
+          injectedThisTurn = true
+          try {
+            const cwd = deps.store.getConversation(chatId)?.cwd ?? process.cwd()
+            const isFirstTurn = !messages.some((message) => message.role === 'assistant')
+            const injection = await deps.contextEngine.renderInjection(def, chatId, cwd, {
+              isFirstTurn
+            })
+            if (injection) messages = [...messages, injection]
+          } catch (error) {
+            deps.logger?.warn('context injection failed', { chatId, error })
+          }
+        }
+
         if (messages.length > 0 && deps.store.getConversation(chatId)) {
           deps.store.save(chatId, messages)
         }
         if (stopIfPreparationCancelled()) return
-        const shouldForceCompaction = forceCompactionOnPrepare
-        forceCompactionOnPrepare = false
         const prepared = await compaction.prepareMessages(chatId, def, messages, runId, {
-          force: shouldForceCompaction,
           signal: preparation.signal
         })
         if (stopIfPreparationCancelled()) return
@@ -390,67 +438,62 @@ export function createTurnLoop(
             ...(forceExitPlanMode ? { forceExitPlanMode: true } : {})
           })
         } catch (error) {
-          pendingTerminal = {
-            runId,
-            status: 'failed',
-            error: {
-              code: ERROR_CODES.CHAT_RUN_FAILED,
-              message: error instanceof Error ? error.message : String(error)
-            }
-          }
+          // An abort can surface as an AbortError throw from preparation or
+          // stream teardown; report it as a cancellation instead of a failure.
+          // (run-engine already finished the stream session with the correct
+          // status on throw, so this only keeps pendingTerminal consistent.)
+          const aborted = error instanceof Error && error.name === 'AbortError'
+          pendingTerminal = aborted
+            ? { runId, status: 'aborted' }
+            : {
+                runId,
+                status: 'failed',
+                error: {
+                  code: ERROR_CODES.CHAT_RUN_FAILED,
+                  message: error instanceof Error ? error.message : String(error)
+                }
+              }
           throw error
         }
         const status = streamStatus(state)
 
-        const decisionContext = (): TurnDecisionContext => ({
-          pass,
+        // Reconcile an in-stream compaction against the persisted transcript:
+        // archive the head under the summary the fork already produced (no
+        // second summarization).
+        if (state.inlineCompaction && !state.aborted) {
+          try {
+            await compaction.reconcileInline(chatId, def, state.inlineCompaction, {
+              signal: preparation.signal
+            })
+          } catch (error) {
+            deps.logger?.warn('inline compaction reconcile failed', { chatId, error })
+          }
+        }
+
+        const decision = decideTurnOutcome(state, {
           planExitPasses,
           isPlanMode: deps.policy.getMode(deps.store.rootOf(chatId)) === 'plan',
           isInflight: isInflight(chatId),
           hasConversation: Boolean(deps.store.getConversation(chatId))
-        })
-        let decision = decideTurnOutcome(state, decisionContext())
+        } satisfies TurnDecisionContext)
 
-        if (decision.kind === 'plan-exit-retry' || decision.kind === 'compaction-retry') {
+        if (decision.kind === 'plan-exit-retry') {
           const nextMessages = await deps.store.load(chatId)
           if (nextMessages.length > 0) {
             safeFinishStream(chatId, runId, status)
-            if (decision.kind === 'plan-exit-retry') {
-              planExitPasses += 1
-              forceExitPlanMode = planExitPasses >= MAX_PLAN_EXIT_PASSES
-              messages = [
-                ...nextMessages,
-                {
-                  id: randomUUID(),
-                  role: 'user',
-                  parts: [{ type: 'text', text: PLAN_EXIT_NUDGE }]
-                }
-              ]
-            } else {
-              messages = nextMessages
-              forceCompactionOnPrepare = true
-            }
+            planExitPasses += 1
+            forceExitPlanMode = planExitPasses >= MAX_PLAN_EXIT_PASSES
+            messages = [
+              ...nextMessages,
+              {
+                id: randomUUID(),
+                role: 'user',
+                parts: [{ type: 'text', text: PLAN_EXIT_NUDGE }]
+              }
+            ]
             engine.setPreparing(chatId, preparation)
             continue
           }
-          // No messages to continue with: recompute the terminal action with
-          // retries exhausted (post-compact or finalize).
-          decision = decideTurnOutcome(state, {
-            ...decisionContext(),
-            pass: MAX_CONTINUATION_PASSES,
-            planExitPasses: MAX_PLAN_EXIT_PASSES
-          })
-        }
-
-        if (decision.kind === 'post-compact') {
-          safeFinishStream(chatId, runId, status)
-          try {
-            await compaction.compactAfterRun(chatId, def, state, { signal: preparation.signal })
-          } catch (error) {
-            deps.logger?.warn('post-run compaction failed', { chatId, error })
-          }
-          await runTerminalDispatch(chatId, state)
-          break
         }
 
         // A turn that stops to wait for tool approval is not actually over — it
@@ -460,8 +503,7 @@ export function createTurnLoop(
           !state.aborted && !state.streamFailed && (await turnPausedForApproval(chatId))
 
         // Terminal turn: dispatch queued work / goal continuation exactly once.
-        // Retry paths (plan-exit, compaction) `continue` above and never reach
-        // here, so dispatch happens only when the turn is truly over.
+        // The plan-exit retry path `continue`s above and never reaches here.
         await runTerminalDispatch(chatId, state)
 
         pendingTerminal = {

@@ -10,6 +10,7 @@ import {
 import { getErrorMessage } from '@ai-sdk/provider'
 import type { ChatRunError, ChatRunStatus } from '@shared/chat'
 import { ERROR_CODES } from '@shared/errors'
+import type { AgentTelemetryError } from '../telemetry/events'
 import type {
   SubagentTraceEntry,
   TanzoMetadata,
@@ -17,11 +18,15 @@ import type {
   TanzoUIMessage,
   TanzoUsageMetadata
 } from '@shared/agent-message'
+import { splitStepMessages } from '@shared/message-steps'
 import type { AgentDefinition } from '../agents/types'
 import type { ContextEngine } from '../context'
 import { getContextProvenance } from '../context/section'
 import { canonicalizeToolTranscript } from '../context/tool-transcript'
+import { compactModelTranscript } from '../context/compact/inline'
 import type { ChatKeyedQueue } from './chat-keyed-queue'
+import type { InlineCompactionRecord } from './compaction-coordinator'
+import { compactionPrompt } from './compaction-coordinator'
 import { createAgentTelemetry } from '../telemetry'
 import { createDbTelemetrySink } from '../telemetry/sinks'
 import type { AgentRuntimeDeps, GoalRuntime, Logger } from './types'
@@ -53,11 +58,13 @@ export interface AgentStreamFinalState {
   producedWorkToolCall: boolean
   streamFailed: boolean
   streamError?: string
+  streamErrorCode?: string
+  streamErrorDetail?: AgentTelemetryError
   aborted: boolean
   turnStartedAt: number
   lastFinishReason?: string
-  exceededCompactionTrigger: boolean
-  hitCompactionTrigger: boolean
+  /** Set when an in-stream compaction replaced the model transcript this run. */
+  inlineCompaction?: InlineCompactionRecord
   isGoalContinuation: boolean
   exitPlanModeCalled: boolean
   endedWithTextOnly: boolean
@@ -72,8 +79,24 @@ export function streamStatus(state: AgentStreamFinalState): Exclude<ChatRunStatu
 export function terminalRunError(state: AgentStreamFinalState): ChatRunError | undefined {
   if (!state.streamFailed) return undefined
   return {
-    code: ERROR_CODES.CHAT_RUN_FAILED,
+    code: state.streamErrorCode ?? ERROR_CODES.CHAT_RUN_FAILED,
     message: state.streamError ?? 'The model stream failed.'
+  }
+}
+
+/** Maps a normalized telemetry error kind to a ChatRunError code so the
+ *  renderer can distinguish AI SDK failures without parsing messages. */
+function chatRunErrorCode(kind: AgentTelemetryError['kind']): string {
+  switch (kind) {
+    case 'api':
+    case 'retry':
+      return ERROR_CODES.AISDK_API_CALL_ERROR
+    case 'validation':
+      return ERROR_CODES.AISDK_INVALID_RESPONSE
+    case 'model':
+      return ERROR_CODES.AISDK_NO_SUCH_MODEL
+    default:
+      return ERROR_CODES.CHAT_RUN_FAILED
   }
 }
 
@@ -86,11 +109,8 @@ interface StartAgentStreamInput {
   runId: string
   signal: AbortSignal
   steerQueue: ChatKeyedQueue<string>
-  recordConsumedSteering?: (messages: TanzoUIMessage[]) => void
-  persistStepMessages?: (
-    messages: TanzoUIMessage[],
-    usage: UsageLike | undefined
-  ) => Promise<boolean> | boolean | void
+  recordConsumedSteering?: (messages: TanzoUIMessage[], stepNumber: number) => void
+  persistStepMessages?: (messages: TanzoUIMessage[]) => Promise<boolean> | boolean | void
   persistFinalMessages?: (
     messages: TanzoUIMessage[],
     state: { streamFailed: boolean }
@@ -219,12 +239,23 @@ export function startAgentStream(
   let turnUsage: UsageLike | undefined
   let streamFailed = false
   let streamError: string | undefined
+  let streamErrorCode: string | undefined
+  let streamErrorDetail: AgentTelemetryError | undefined
+  // Original error object captured from streamText's onError. By the time
+  // createUIMessageStream's onError fires, the AI SDK has flattened the error
+  // into an `error` chunk and reconstructed it as `new Error(errorText)`
+  // (process-ui-message-stream), losing statusCode/provider/isRetryable.
+  // streamText invokes its onError several stream hops upstream, so this is
+  // populated first in practice; otherwise the reconstructed error is the
+  // fallback (same behavior as before).
+  let rawStreamError: unknown
   let producedToolCall = false
   let producedWorkToolCall = false
   let exitPlanModeCalled = false
   let lastStepHadToolCall = false
   let lastFinishReason: string | undefined
   let hookRequestedStop = false
+  let inlineCompaction: InlineCompactionRecord | undefined
   const turnStartedAt = Date.now()
   const telemetry = createAgentTelemetry({
     runId: opts.runId,
@@ -255,7 +286,7 @@ export function startAgentStream(
         mode,
         messages: opts.messages
       })
-      const compactionTriggerTokens = deps.contextEngine?.compactionTriggerTokens(opts.def)
+      const compactionPolicy = deps.contextEngine?.compactionPolicy(opts.def)
       const agentCall = buildAgentCall({
         def: opts.def,
         chatId: opts.chatId,
@@ -264,7 +295,6 @@ export function startAgentStream(
         tools,
         decide: deps.policy.decide,
         shouldStop: () => hookRequestedStop,
-        ...(compactionTriggerTokens !== undefined ? { compactionTriggerTokens } : {}),
         telemetry: telemetry.options,
         ...(opts.forceExitPlanMode
           ? { toolChoice: { type: 'tool' as const, toolName: 'exitPlanMode' } }
@@ -275,9 +305,29 @@ export function startAgentStream(
         await convertToModelMessages(opts.messages, { tools, ignoreIncompleteToolCalls: true })
       )
 
+      // In-stream compaction state (invariant I4): when the compaction fires,
+      // the compacted transcript replaces the base and prepareStep's returned
+      // messages carry forward through the rest of the run.
+      // `responseCountAtCompaction` marks the step boundary — responseMessages
+      // accumulated before it belong to the pre-compaction transcript and must
+      // be dropped from the base.
+      let compactedBase: ModelMessage[] | null = null
+      let responseCountAtCompaction = 0
+      let lastStepInputTokens = 0
+
+      // The trigger reads the *reported* usage of the previous step. This is
+      // self-hysteretic: right after a compaction the next step reports the
+      // compacted (small) prompt size, so an immediate retrigger is impossible
+      // unless the transcript genuinely grows past the trigger again.
+      const shouldCompactInline = (): boolean => {
+        if (!compactionPolicy || !deps.contextEngine) return false
+        return lastStepInputTokens > compactionPolicy.compactionTriggerTokens
+      }
+
       const result = streamText<ToolSet>({
         model: agentCall.model,
         tools: agentCall.tools,
+        toolOrder: agentCall.toolOrder as never,
         runtimeContext: agentCall.runtimeContext,
         toolApproval: agentCall.toolApproval,
         stopWhen: agentCall.stopWhen,
@@ -287,6 +337,10 @@ export function startAgentStream(
         ...(agentCall.toolChoice ? { toolChoice: agentCall.toolChoice } : {}),
         messages: initialMessages,
         abortSignal: opts.signal,
+        onError: ({ error }) => {
+          // Keep the first error: later stream errors are usually cascades.
+          if (rawStreamError === undefined) rawStreamError = error
+        },
         prepareStep: async ({ responseMessages, stepNumber }) => {
           const steers = opts.steerQueue.drain(opts.chatId)
           if (steers.length > 0) {
@@ -295,22 +349,104 @@ export function startAgentStream(
                 id: randomUUID(),
                 role: 'user',
                 parts: [{ type: 'text', text }]
-              }))
+              })),
+              stepNumber
             )
             for (const text of steers) consumedSteering.push({ role: 'user', content: text })
           }
-          const base = canonicalizeToolTranscript([
-            ...initialMessages,
-            ...(responseMessages as ModelMessage[])
-          ])
-          const transcript = consumedSteering.length > 0 ? [...base, ...consumedSteering] : base
+
+          const liveResponses = (responseMessages as ModelMessage[]).slice(
+            compactedBase ? responseCountAtCompaction : 0
+          )
+          const base = compactedBase ?? initialMessages
+          let transcript = canonicalizeToolTranscript([...base, ...liveResponses])
+          if (consumedSteering.length > 0) transcript = [...transcript, ...consumedSteering]
+
+          // --- In-stream compaction (v2) ---
+          if (deps.contextEngine && compactionPolicy && shouldCompactInline()) {
+            try {
+              const compacted = await compactModelTranscript(
+                {
+                  providerService: deps.providerService,
+                  contextEngine: deps.contextEngine,
+                  ...(deps.logger ? { logger: deps.logger } : {})
+                },
+                {
+                  chatId: opts.chatId,
+                  def: opts.def,
+                  cwd,
+                  runId: opts.runId,
+                  transcript,
+                  prompt: compactionPrompt(opts.def),
+                  policy: compactionPolicy,
+                  tools,
+                  abortSignal: opts.signal,
+                  onSummary: (summary) => {
+                    if (!opts.broadcast) return
+                    deps.send(
+                      opts.chatId,
+                      {
+                        type: 'data-compaction',
+                        id: `compaction:inline:${opts.runId}`,
+                        data: { stage: 'start', auto: true, summary },
+                        transient: true
+                      },
+                      { runId: opts.runId }
+                    )
+                  }
+                }
+              )
+              if (compacted) {
+                transcript = compacted.transcript
+                compactedBase = compacted.transcript
+                responseCountAtCompaction = (responseMessages as ModelMessage[]).length
+                // Steering consumed so far is baked into the compacted
+                // transcript (it was part of the input); clear it so later
+                // steps do not append it a second time.
+                consumedSteering.length = 0
+                // Clear the stale trigger reading; the next step's reported
+                // usage reflects the compacted prompt.
+                lastStepInputTokens = 0
+                inlineCompaction = {
+                  summaryText: compacted.summaryText,
+                  baseMessageIds: opts.messages.map((message) => message.id),
+                  ...(compacted.usage ? { usage: compacted.usage } : {}),
+                  ...(compacted.degraded ? { degraded: compacted.degraded } : {})
+                }
+                if (opts.broadcast) {
+                  deps.send(
+                    opts.chatId,
+                    {
+                      type: 'data-compaction',
+                      id: `compaction:inline:${opts.runId}`,
+                      data: {
+                        stage: 'complete',
+                        auto: true,
+                        summary: compacted.summaryText,
+                        afterTokens: compacted.afterTokensEstimate,
+                        ...(compacted.degraded ? { degraded: compacted.degraded } : {})
+                      },
+                      transient: true
+                    },
+                    { runId: opts.runId }
+                  )
+                }
+              }
+            } catch (error) {
+              if (opts.signal.aborted) throw error
+              deps.logger?.warn('in-stream compaction failed; continuing uncompacted', {
+                chatId: opts.chatId,
+                error
+              })
+            }
+          }
+
           const built = await deps.contextEngine?.build(
             opts.def,
             opts.chatId,
             cwd,
             transcript,
-            stepNumber,
-            { consumeGoalInjection: true }
+            stepNumber
           )
           if (!built) return undefined
           const messages = canonicalizeToolTranscript(built.messages as ModelMessage[])
@@ -338,8 +474,10 @@ export function startAgentStream(
         },
         onStepEnd: async (step) => {
           latestUsage = step.usage
+          lastStepInputTokens = step.usage?.inputTokens ?? 0
           lastFinishReason = step.finishReason
           stepCounter += 1
+          deps.contextEngine?.observeStep(opts.chatId, step.usage)
           recordFinishedStepDiagnostic(deps, {
             chatId: opts.chatId,
             runId: opts.runId,
@@ -416,19 +554,27 @@ export function startAgentStream(
         })
       )
     },
+    // Persist per-step rows (design §4.5): the SDK aggregates the whole pass
+    // into one assistant message; storage splits it so compaction cuts always
+    // land on whole rows. The chunk stream to the renderer is untouched.
     onStepEnd: async ({ messages }) => {
-      await opts.persistStepMessages?.(messages, latestUsage)
+      await opts.persistStepMessages?.(splitStepMessages(messages))
     },
     onEnd: async ({ messages }) => {
-      await opts.persistFinalMessages?.(messages, { streamFailed })
+      await opts.persistFinalMessages?.(splitStepMessages(messages), { streamFailed })
     },
     onError: (error) => {
       streamFailed = true
-      const message = getErrorMessage(error)
+      const cause = rawStreamError ?? error
+      const message = getErrorMessage(cause)
       streamError = message
-      const event = telemetry.emitError(error)
+      const event = telemetry.emitError(cause)
+      if (event.error) {
+        streamErrorDetail = event.error
+        streamErrorCode = chatRunErrorCode(event.error.kind)
+      }
       deps.logger?.warn('chat stream failed', { chatId: opts.chatId, error: event.error })
-      if (opts.broadcast && isUsageLimitError(error)) deps.goal?.markUsageLimited(opts.chatId)
+      if (opts.broadcast && isUsageLimitError(cause)) deps.goal?.markUsageLimited(opts.chatId)
       return message
     }
   })
@@ -440,14 +586,7 @@ export function startAgentStream(
         yield chunk
       }
     } finally {
-      const compactionTriggerTokens = deps.contextEngine?.compactionTriggerTokens(opts.def)
       const aborted = opts.signal.aborted
-      const exceededCompactionTrigger =
-        !aborted &&
-        !streamFailed &&
-        compactionTriggerTokens !== undefined &&
-        (latestUsage?.inputTokens ?? 0) > compactionTriggerTokens
-      const hitCompactionTrigger = exceededCompactionTrigger && lastStepHadToolCall
       const finalUsage = turnUsage ?? latestUsage
       await opts.onFinally({
         ...(finalUsage ? { latestUsage: finalUsage } : {}),
@@ -455,11 +594,12 @@ export function startAgentStream(
         producedWorkToolCall,
         streamFailed,
         ...(streamError ? { streamError } : {}),
+        ...(streamErrorCode ? { streamErrorCode } : {}),
+        ...(streamErrorDetail ? { streamErrorDetail } : {}),
         aborted,
         turnStartedAt,
         ...(lastFinishReason ? { lastFinishReason } : {}),
-        exceededCompactionTrigger,
-        hitCompactionTrigger,
+        ...(inlineCompaction ? { inlineCompaction } : {}),
         isGoalContinuation: opts.isGoalContinuation ?? false,
         exitPlanModeCalled,
         endedWithTextOnly: !aborted && !streamFailed && !lastStepHadToolCall

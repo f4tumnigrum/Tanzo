@@ -1,5 +1,10 @@
 import type { InferUIMessageChunk, ModelMessage, ToolSet } from 'ai'
-import type { ChatApprovalResponse, CompactionOutcome } from '@shared/chat'
+import type {
+  ChatApprovalResponse,
+  CompactionOutcome,
+  ForkConversationInput,
+  ForkConversationResult
+} from '@shared/chat'
 import type {
   SubagentTask,
   SubagentTaskApprovalResponse,
@@ -118,9 +123,11 @@ export interface AgentService {
   settleRuns(timeoutMs: number): Promise<boolean>
   deleteWorkspace(workspaceId: string): void
   deleteConversation(chatId: string): void
+  forkConversation(input: ForkConversationInput): Promise<ForkConversationResult>
   submitUserMessage(chatId: string, message: string): Promise<void>
   submitMessage(chatId: string, message: TanzoUIMessage): Promise<void>
   editMessage(chatId: string, messageId: string, text: string): Promise<void>
+  retryTurn(chatId: string): Promise<void>
   respondApprovals(chatId: string, responses: ChatApprovalResponse[]): Promise<{ started: boolean }>
   compact(chatId: string, options?: { instructions?: string }): Promise<CompactionOutcome>
   contextSnapshot(chatId: string): Promise<TanzoDataParts['context'] | null>

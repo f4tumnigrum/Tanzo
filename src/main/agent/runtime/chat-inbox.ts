@@ -11,6 +11,7 @@ import type { AgentRuntimeDeps, Logger } from './types'
 export interface ChatInbox {
   submitMessage(chatId: string, message: TanzoUIMessage): Promise<void>
   editMessage(chatId: string, messageId: string, text: string): Promise<void>
+  retryTurn(chatId: string): Promise<void>
   submitUserMessage(chatId: string, message: string): Promise<void>
   respondApprovals(chatId: string, responses: ChatApprovalResponse[]): Promise<{ started: boolean }>
   enqueue(chatId: string, text: string): void
@@ -175,7 +176,17 @@ export function createChatInbox(
         'Only user messages can be edited.'
       )
     }
-    if (targetIndex !== current.length - 1) {
+    // Synthetic context injections trail the real user message in the
+    // transcript; they don't count as replies for edit eligibility.
+    const isInjection = (message: TanzoUIMessage): boolean =>
+      message.parts.some((part) => part.type === 'data-contextInjection')
+    const lastRealIndex = (() => {
+      for (let i = current.length - 1; i >= 0; i -= 1) {
+        if (!isInjection(current[i])) return i
+      }
+      return -1
+    })()
+    if (targetIndex !== lastRealIndex) {
       throw new TanzoValidationError(
         'CHAT_EDIT_INVALID_TARGET',
         'Only the latest message can be edited when there is no reply below it.'
@@ -189,6 +200,33 @@ export function createChatInbox(
     }
 
     await routeMessages(chatId, [...current.slice(0, targetIndex), edited])
+  }
+
+  /**
+   * Re-run the last turn after a failure. The transcript is replayed as-is:
+   * a failed run leaves the history ending either with the user message (no
+   * assistant output persisted) or with a partial assistant reply. Both replay
+   * fine — convertToModelMessages drops incomplete tool calls, and the model
+   * simply continues from the last user prompt.
+   */
+  async function retryTurn(chatId: string): Promise<void> {
+    if (callbacks.isInflight(chatId)) {
+      throw new TanzoValidationError(
+        'CHAT_RETRY_RUN_ACTIVE',
+        'Cannot retry while a run is in progress.'
+      )
+    }
+    const current = await deps.store.load(chatId)
+    const lastUserIndex = current.findLastIndex((message) => message.role === 'user')
+    if (lastUserIndex === -1) {
+      throw new TanzoValidationError(
+        'CHAT_RETRY_NOTHING_TO_RETRY',
+        'There is no user message to retry.'
+      )
+    }
+    // Drop any partial assistant output from the failed turn so the retry is a
+    // clean re-ask instead of a continuation of a broken reply.
+    await routeMessages(chatId, current.slice(0, lastUserIndex + 1))
   }
 
   async function submitUserMessage(chatId: string, message: string): Promise<void> {
@@ -235,6 +273,7 @@ export function createChatInbox(
   return {
     submitMessage,
     editMessage,
+    retryTurn,
     submitUserMessage,
     respondApprovals,
     enqueue,

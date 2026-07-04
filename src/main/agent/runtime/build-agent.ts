@@ -38,7 +38,6 @@ export interface AgentCallInput {
   providerService: ProviderService
   tools: ToolSet
   decide: PolicyEngine['decide']
-  compactionTriggerTokens?: number
   shouldStop?: () => boolean
   telemetry?: TelemetryOptions
   toolChoice?: ToolChoice<ToolSet>
@@ -47,6 +46,9 @@ export interface AgentCallInput {
 export interface AgentCall {
   model: ReturnType<ProviderService['resolveLanguageModel']>
   tools: ToolSet
+  /** Deterministic tool serialization order — the provider cache prefix
+   *  includes the tools block, so ordering must be stable across steps. */
+  toolOrder: readonly string[]
   runtimeContext: { chatId: string; mode: PermissionMode }
   toolApproval: (opts: {
     tools?: ToolSet
@@ -61,18 +63,11 @@ export interface AgentCall {
   toolChoice?: ToolChoice<ToolSet>
 }
 
-function overCompactionTrigger(trigger: number | undefined): StopCondition<ToolSet> {
-  return ({ steps }) => {
-    if (trigger === undefined) return false
-    const last = steps[steps.length - 1]
-    return (last?.usage?.inputTokens ?? 0) > trigger
-  }
-}
-
 export function buildAgentCall(input: AgentCallInput): AgentCall {
   const modelConfig = resolveLanguageModelConfig(input.providerService, input.def.modelRef)
-  const stopWhen: StopCondition<ToolSet>[] = [overCompactionTrigger(input.compactionTriggerTokens)]
-  if (input.def.maxSteps !== undefined) stopWhen.unshift(isStepCount(input.def.maxSteps))
+  // v2: compaction happens inline in prepareStep; no compaction stop condition.
+  const stopWhen: StopCondition<ToolSet>[] = []
+  if (input.def.maxSteps !== undefined) stopWhen.push(isStepCount(input.def.maxSteps))
   if (input.shouldStop) {
     const shouldStop = input.shouldStop
     stopWhen.push(() => shouldStop())
@@ -80,6 +75,7 @@ export function buildAgentCall(input: AgentCallInput): AgentCall {
   return {
     model: modelConfig.model,
     tools: input.tools,
+    toolOrder: Object.keys(input.tools).sort(),
     runtimeContext: { chatId: input.chatId, mode: input.mode },
     toolApproval: (opts) => {
       const meta = toolPolicyMeta(opts.tools, opts.toolCall.toolName)

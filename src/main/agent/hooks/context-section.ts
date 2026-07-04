@@ -5,7 +5,7 @@ export function createHooksContextSection(pending: PendingHookContext): ContextS
   return {
     id: 'hooks',
     stability: 'volatile',
-    channel: 'system',
+    channel: 'injection',
     order: 25,
     render: ({ chatId }) => {
       const items = pending.drain(chatId)

@@ -1,20 +1,8 @@
-import { convertToModelMessages } from 'ai'
 import type { TanzoUIMessage } from '@shared/agent-message'
 import type { AgentDefinition } from '../agents/types'
 import type { ContextEngine } from '../context'
-import { canonicalizeToolTranscript } from '../context/tool-transcript'
 import type { AgentStore } from '../store-types'
 import type { ChunkSink, Logger } from './types'
-
-export type RunUsageLike = {
-  inputTokens?: number
-  outputTokens?: number
-  totalTokens?: number
-  inputTokenDetails?: { cacheReadTokens?: number; cacheWriteTokens?: number }
-  outputTokenDetails?: { reasoningTokens?: number }
-  reasoningTokens?: number
-  cachedInputTokens?: number
-}
 
 export interface ChatRunPersistenceContext {
   def: AgentDefinition
@@ -23,15 +11,21 @@ export interface ChatRunPersistenceContext {
   canPersistFinal?(): boolean
   store: Pick<AgentStore, 'save' | 'loadUnvalidated'>
   send: ChunkSink
-  contextEngine?: Pick<ContextEngine, 'observeStep' | 'snapshot'>
+  contextEngine?: Pick<ContextEngine, 'snapshot'>
   logger?: Pick<Logger, 'warn'>
+}
+
+interface ConsumedSteer {
+  message: TanzoUIMessage
+  /** 0-based step the steer was drained before (prepareStep's stepNumber). */
+  stepNumber: number
 }
 
 interface RunPersistenceSession {
   chatId: string
   runId: string
   baseMessages: TanzoUIMessage[]
-  consumedSteerMessages: TanzoUIMessage[]
+  consumedSteers: ConsumedSteer[]
   context: ChatRunPersistenceContext
 }
 
@@ -42,13 +36,13 @@ export interface ChatRunPersistenceRegistry {
     baseMessages: TanzoUIMessage[],
     context: ChatRunPersistenceContext
   ): void
-  addConsumedSteering(chatId: string, runId: string, messages: TanzoUIMessage[]): void
-  persistStepMessages(
+  addConsumedSteering(
     chatId: string,
     runId: string,
     messages: TanzoUIMessage[],
-    usage?: RunUsageLike
-  ): Promise<boolean>
+    stepNumber?: number
+  ): void
+  persistStepMessages(chatId: string, runId: string, messages: TanzoUIMessage[]): Promise<boolean>
   persistFinalMessages(
     chatId: string,
     runId: string,
@@ -103,23 +97,55 @@ function persistableMessages(messages: TanzoUIMessage[]): TanzoUIMessage[] {
   return messages.filter((message) => message.parts.length > 0)
 }
 
+/**
+ * Splice consumed steering into the persisted transcript at the exact position
+ * the model saw it (D6-2). Messages are per-step rows: the fragment produced by
+ * run-step `s` carries `metadata.steps[0].stepNumber === s + 1`, so a steer
+ * drained before step `s` inserts before that fragment. Fallbacks: before the
+ * first generated message for pre-run steers (step 0), at the end when the
+ * step never persisted (aborted run).
+ */
 function withConsumedSteering(
   session: RunPersistenceSession,
   messages: TanzoUIMessage[]
 ): TanzoUIMessage[] {
-  if (session.consumedSteerMessages.length === 0) return messages
+  if (session.consumedSteers.length === 0) return messages
   const existingIds = new Set(messages.map((message) => message.id))
-  const missingSteers = session.consumedSteerMessages.filter(
-    (message) => !existingIds.has(message.id)
-  )
+  const missingSteers = session.consumedSteers.filter((steer) => !existingIds.has(steer.message.id))
   if (missingSteers.length === 0) return messages
   const continuationId = continuationMessageId(session)
   const originalIds = new Set(
     session.baseMessages.map((message) => message.id).filter((id) => id !== continuationId)
   )
-  let insertAt = 0
-  while (insertAt < messages.length && originalIds.has(messages[insertAt].id)) insertAt += 1
-  return [...messages.slice(0, insertAt), ...missingSteers, ...messages.slice(insertAt)]
+
+  const result = [...messages]
+  const hasStepMetadata = result.some(
+    (message) =>
+      !originalIds.has(message.id) &&
+      message.role === 'assistant' &&
+      typeof message.metadata?.steps?.[0]?.stepNumber === 'number'
+  )
+  const firstGeneratedBoundary = (): number => {
+    let at = 0
+    while (at < result.length && originalIds.has(result[at].id)) at += 1
+    return at
+  }
+  const insertionIndex = (steer: ConsumedSteer): number => {
+    if (!hasStepMetadata) return firstGeneratedBoundary()
+    for (let i = 0; i < result.length; i += 1) {
+      const message = result[i]
+      if (originalIds.has(message.id) || message.role !== 'assistant') continue
+      const stepNumber = message.metadata?.steps?.[0]?.stepNumber
+      if (typeof stepNumber === 'number' && stepNumber >= steer.stepNumber + 1) return i
+    }
+    // Steer consumed before the run started → before the first generated
+    // message; consumed after the last persisted step → at the end.
+    return steer.stepNumber === 0 ? firstGeneratedBoundary() : result.length
+  }
+  for (const steer of missingSteers) {
+    result.splice(insertionIndex(steer), 0, steer.message)
+  }
+  return result
 }
 
 async function publishContextSnapshot(
@@ -129,15 +155,12 @@ async function publishContextSnapshot(
   const { context } = session
   if (!context.broadcast || !context.contextEngine) return
   try {
-    const modelMessages = canonicalizeToolTranscript(
-      await convertToModelMessages(messages, { ignoreIncompleteToolCalls: true })
-    )
     context.send(
       session.chatId,
       {
         type: 'data-context',
         id: `context:${session.chatId}`,
-        data: context.contextEngine.snapshot(context.def, session.chatId, modelMessages),
+        data: context.contextEngine.snapshot(context.def, session.chatId, messages),
         transient: true
       },
       { runId: session.runId }
@@ -154,9 +177,7 @@ async function persistRunMessages(
     streamFailed?: boolean
     allowAfterFailure?: boolean
     isFinal?: boolean
-    observeUsage?: boolean
     publishContext?: boolean
-    usage?: RunUsageLike
   } = {}
 ): Promise<boolean> {
   const { context } = session
@@ -170,9 +191,6 @@ async function persistRunMessages(
   const current = context.store.loadUnvalidated(session.chatId)
   const persisted = mergeGeneratedMessages(session, current, incoming)
   context.store.save(session.chatId, persisted)
-  if (options.observeUsage && options.usage?.inputTokens) {
-    context.contextEngine?.observeStep(session.chatId, persisted.length, options.usage as never)
-  }
   if (options.publishContext) await publishContextSnapshot(session, persisted)
   return true
 }
@@ -192,24 +210,22 @@ export function createChatRunPersistenceRegistry(): ChatRunPersistenceRegistry {
         chatId,
         runId,
         baseMessages: clone(baseMessages),
-        consumedSteerMessages: [],
+        consumedSteers: [],
         context
       })
     },
 
-    addConsumedSteering(chatId, runId, messages) {
+    addConsumedSteering(chatId, runId, messages, stepNumber = 0) {
       const session = matchingSession(chatId, runId)
       if (!session) return
-      session.consumedSteerMessages.push(...clone(messages))
+      session.consumedSteers.push(...clone(messages).map((message) => ({ message, stepNumber })))
     },
 
-    persistStepMessages(chatId, runId, messages, usage) {
+    persistStepMessages(chatId, runId, messages) {
       const session = matchingSession(chatId, runId)
       if (!session) return Promise.resolve(false)
       return persistRunMessages(session, messages, {
-        observeUsage: true,
-        publishContext: true,
-        ...(usage ? { usage } : {})
+        publishContext: true
       })
     },
 
