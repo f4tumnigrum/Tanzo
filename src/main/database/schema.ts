@@ -1,4 +1,5 @@
 import type { ModuleMigrations } from './types'
+import { migratePerStepMessages } from './per-step-migration'
 
 const INITIAL_SCHEMA = `
 CREATE TABLE workspaces (
@@ -547,6 +548,11 @@ export const tanzoMigrations: ModuleMigrations = {
       version: 21,
       name: 'provider_openai_chat',
       up: (db) => db.exec(PROVIDER_TABLES_V21)
+    },
+    {
+      version: 22,
+      name: 'per_step_message_rows',
+      up: (db) => migratePerStepMessages(db)
     }
   ]
 }
