@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'crypto'
 import { realpathSync, statSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 import type {
+  ChatRunOutcomeError,
   ConversationSummary,
   ForkConversationResult,
   NewConversationInput
@@ -103,7 +104,7 @@ export function createAgentStore(
 
     for (const part of message.parts) {
       const state = 'state' in part ? String(part.state ?? '') : ''
-      if (part.type === 'text' && state === 'streaming') {
+      if ((part.type === 'text' || part.type === 'reasoning') && state === 'streaming') {
         throw new TanzoValidationError(
           'CHAT_FORK_INCOMPLETE_TARGET',
           'Cannot fork from a message that is still streaming.'
@@ -178,6 +179,9 @@ export function createAgentStore(
   function deleteConversation(chatId: string): void {
     requireConversation(chatId, 'CHAT_CONVERSATION_NOT_FOUND')
     db.transaction(() => {
+      // Forks survive their parent: detach them first so the FK cascade only
+      // removes subagent children. Detached forks become root conversations.
+      conversations.detachForks(chatId)
       messages.deleteAll(chatId)
       conversations.delete(chatId)
     })
@@ -267,9 +271,13 @@ export function createAgentStore(
           parentRelation: 'fork'
         })
         writeActiveMessages(forked.id, forkMessages)
+        // Carry the source's compaction state across so the fork starts with
+        // the same context projection (summary + tail) instead of the full
+        // uncompacted history.
+        messages.copyOverlaysForFork(source.id, forked.id)
       })
 
-      return { conversation: forked, messages: forkMessages }
+      return { conversation: forked }
     },
     listConversations: conversations.listVisible,
     listWorkspaces: conversations.listWorkspaces,
@@ -309,6 +317,34 @@ export function createAgentStore(
     },
     markRunOutcome(chatId, runId, status, errorJson) {
       promptDiagnostics.markRunOutcome(chatId, runId, status, errorJson)
+    },
+    getLatestRunOutcome(chatId) {
+      const row = promptDiagnostics.getLatestRunOutcome(chatId)
+      if (!row) return null
+      let error: ChatRunOutcomeError | undefined
+      if (row.errorJson) {
+        try {
+          const parsed = JSON.parse(row.errorJson) as Record<string, unknown>
+          if (typeof parsed.kind === 'string') {
+            error = {
+              kind: parsed.kind,
+              ...(typeof parsed.message === 'string' ? { message: parsed.message } : {}),
+              ...(typeof parsed.code === 'string' ? { code: parsed.code } : {}),
+              ...(parsed.detail && typeof parsed.detail === 'object'
+                ? { detail: parsed.detail as ChatRunOutcomeError['detail'] }
+                : {})
+            }
+          }
+        } catch {
+          // Malformed legacy rows degrade to a missing error, never a crash.
+        }
+      }
+      return {
+        runId: row.externalRunId,
+        status: row.status,
+        finishedAt: row.finishedAt,
+        ...(error ? { error } : {})
+      }
     },
     sweepInterruptedRuns() {
       return promptDiagnostics.sweepInterruptedRuns()

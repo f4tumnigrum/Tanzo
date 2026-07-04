@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
 import type { ContextEngine } from './context'
-import { convertToModelMessages } from 'ai'
 import type { QueuedMessage, TanzoDataParts } from '@shared/agent-message'
+import type { ForkConversationInput, ForkConversationResult } from '@shared/chat'
 import { createCompactionCoordinator } from './runtime/compaction-coordinator'
 import { createRunEngine } from './runtime/run-engine'
 import { createChatInbox } from './runtime/chat-inbox'
@@ -168,6 +168,18 @@ export function createAgentService(deps: AgentServiceDeps): AgentService {
     deps.store.deleteConversation(chatId)
   }
 
+  async function forkConversation(
+    input: ForkConversationInput
+  ): Promise<ForkConversationResult> {
+    // Snapshot the mode that actually governs the source right now (its
+    // execution root), then pin it on the fork so behavior carries over even
+    // though the fork is an independent execution root from here on.
+    const sourceMode = deps.policy.getMode(deps.store.rootOf(input.sourceChatId))
+    const result = await deps.store.forkConversation(input)
+    deps.policy.setMode(sourceMode, result.conversation.id)
+    return result
+  }
+
   function deleteWorkspace(workspaceId: string): void {
     const chatIds = new Set<string>()
     for (const conversation of deps.store.listConversations()) {
@@ -195,10 +207,7 @@ export function createAgentService(deps: AgentServiceDeps): AgentService {
     try {
       const def = await deps.store.resolveAgentDefinition(chatId)
       const messages = await deps.store.load(chatId)
-      const modelMessages = await convertToModelMessages(messages, {
-        ignoreIncompleteToolCalls: true
-      })
-      return engine.snapshot(def, chatId, modelMessages)
+      return engine.snapshot(def, chatId, messages)
     } catch (error) {
       deps.logger?.warn('context snapshot computation failed', { chatId, error })
       return null
@@ -262,11 +271,13 @@ export function createAgentService(deps: AgentServiceDeps): AgentService {
     settleRuns: (timeoutMs) => engine.settle(timeoutMs),
     deleteWorkspace,
     deleteConversation,
+    forkConversation,
     submitUserMessage: submitUserMessageQueued,
     submitMessage: (chatId, message) =>
       mailbox.enqueue(chatId, () => inbox.submitMessage(chatId, message)),
     editMessage: (chatId, messageId, text) =>
       mailbox.enqueue(chatId, () => inbox.editMessage(chatId, messageId, text)),
+    retryTurn: (chatId) => mailbox.enqueue(chatId, () => inbox.retryTurn(chatId)),
     respondApprovals: (chatId, responses) =>
       mailbox.enqueue(chatId, () => inbox.respondApprovals(chatId, responses)),
     compact: (chatId, options) =>

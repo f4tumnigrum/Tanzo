@@ -5,6 +5,13 @@ import type {
   PromptDiagnosticPrevious
 } from '../diagnostics/prompt-cache'
 
+export interface RunOutcomeRow {
+  externalRunId: string
+  status: 'finished' | 'failed'
+  finishedAt: number | null
+  errorJson: string | null
+}
+
 export interface PromptDiagnosticRepo {
   getLatest(chatId: string): PromptDiagnosticPrevious | undefined
   record(record: PromptCacheDiagnosticRecord): void
@@ -15,6 +22,7 @@ export interface PromptDiagnosticRepo {
     status: 'finished' | 'failed',
     errorJson?: string
   ): void
+  getLatestRunOutcome(conversationId: string): RunOutcomeRow | undefined
   sweepInterruptedRuns(): number
   pruneRunsBefore(cutoff: number): void
 }
@@ -140,6 +148,13 @@ export function createPromptDiagnosticRepo(db: SqlDatabase): PromptDiagnosticRep
     WHERE status = 'running'
   `)
   const pruneRuns = db.prepare('DELETE FROM runs WHERE started_at < ?')
+  const selectLatestRunOutcome = db.prepare(`
+    SELECT external_run_id, status, finished_at, error_json
+    FROM runs
+    WHERE conversation_id = ? AND status IN ('finished', 'failed')
+    ORDER BY started_at DESC
+    LIMIT 1
+  `)
 
   function runPk(conversationId: string, runId: string): string {
     return `${conversationId}:${runId}`
@@ -231,6 +246,23 @@ export function createPromptDiagnosticRepo(db: SqlDatabase): PromptDiagnosticRep
         }).changes,
         `Run ${conversationId}:${externalRunId} was not found.`
       )
+    },
+    getLatestRunOutcome(conversationId) {
+      const row = selectLatestRunOutcome.get([conversationId]) as
+        | {
+            external_run_id: string
+            status: 'finished' | 'failed'
+            finished_at: number | null
+            error_json: string | null
+          }
+        | undefined
+      if (!row) return undefined
+      return {
+        externalRunId: row.external_run_id,
+        status: row.status,
+        finishedAt: row.finished_at,
+        errorJson: row.error_json
+      }
     },
     sweepInterruptedRuns() {
       const running = (countRunningRuns.get() as { c: number }).c

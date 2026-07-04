@@ -56,6 +56,13 @@ interface CompactionOverlayRow {
 export interface MessageRepo {
   deleteAll(chatId: string): void
   writeActive(chatId: string, messages: TanzoUIMessage[]): void
+  /**
+   * Copy the source conversation's compaction overlays that are fully covered
+   * by the rows copied into the target (a fork). Coverage seqs are remapped
+   * from source row seqs to target row seqs by message id. Pure inserts — the
+   * compaction pipeline itself is untouched.
+   */
+  copyOverlaysForFork(sourceChatId: string, targetChatId: string): void
   finalizeCompaction(
     chatId: string,
     archivedIds: string[],
@@ -125,6 +132,9 @@ export function createMessageRepo(db: SqlDatabase, logger: Logger): MessageRepo 
   `)
   const selectMaxSeq = db.prepare(
     'SELECT COALESCE(MAX(seq), -1) AS seq FROM messages WHERE conversation_id = ?'
+  )
+  const selectIdSeqs = db.prepare(
+    'SELECT id, seq FROM messages WHERE conversation_id = ? ORDER BY seq'
   )
 
   // ---------------------------------------------------------------------------
@@ -428,6 +438,39 @@ export function createMessageRepo(db: SqlDatabase, logger: Logger): MessageRepo 
     deleteAll(chatId) {
       deleteMessages.run([chatId])
       chatMirror.delete(chatId)
+    },
+    copyOverlaysForFork(sourceChatId, targetChatId) {
+      const overlays = selectOverlays.all([sourceChatId]) as CompactionOverlayRow[]
+      if (overlays.length === 0) return
+      const sourceRows = selectIdSeqs.all([sourceChatId]) as Array<IdRow & SeqRow>
+      const targetSeqById = new Map(
+        (selectIdSeqs.all([targetChatId]) as Array<IdRow & SeqRow>).map((row) => [row.id, row.seq])
+      )
+      // Sort by generation so copied overlays keep their relative order.
+      const byGeneration = [...overlays].sort((a, b) => a.generation - b.generation)
+      let generation = 0
+      for (const overlay of byGeneration) {
+        const covered = sourceRows.filter(
+          (row) => row.seq >= overlay.covers_from_seq && row.seq <= overlay.covers_to_seq
+        )
+        if (covered.length === 0) continue
+        // The fork copies a prefix of the source log. An overlay whose covered
+        // rows are not all present (fork point inside the covered region)
+        // cannot be represented — skip it.
+        const targetSeqs = covered.map((row) => targetSeqById.get(row.id))
+        if (targetSeqs.some((seq) => seq === undefined)) continue
+        generation += 1
+        insertOverlay.run({
+          conversation_id: targetChatId,
+          id: overlay.id,
+          generation,
+          covers_from_seq: Math.min(...(targetSeqs as number[])),
+          covers_to_seq: Math.max(...(targetSeqs as number[])),
+          summary_text: overlay.summary_text,
+          usage_json: overlay.usage_json,
+          created_at: overlay.created_at
+        })
+      }
     },
     writeActive(chatId, messages) {
       // Hydrate the mirror before entering the write transaction so the

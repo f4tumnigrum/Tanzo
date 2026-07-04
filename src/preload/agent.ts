@@ -18,6 +18,8 @@ export const chatApi: ChatApi = {
   submit: invoke<ChatApi['submit']>(CHAT_CHANNELS.submit),
   editMessage: invoke<ChatApi['editMessage']>(CHAT_CHANNELS.editMessage),
   respondApprovals: invoke<ChatApi['respondApprovals']>(CHAT_CHANNELS.respondApprovals),
+  retryTurn: invoke<ChatApi['retryTurn']>(CHAT_CHANNELS.retryTurn),
+  lastRunOutcome: invoke<ChatApi['lastRunOutcome']>(CHAT_CHANNELS.lastRunOutcome),
   cancel: invoke<ChatApi['cancel']>(CHAT_CHANNELS.cancel),
   steer: invoke<ChatApi['steer']>(CHAT_CHANNELS.steer),
   enqueue: invoke<ChatApi['enqueue']>(CHAT_CHANNELS.enqueue),

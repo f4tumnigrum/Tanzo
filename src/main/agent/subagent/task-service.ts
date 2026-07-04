@@ -18,7 +18,6 @@ import type { AgentDefinition } from '../agents/types'
 import type { AgentRuntimeDeps, Logger } from '../runtime/types'
 import type { AgentStreamFinalState } from '../runtime/stream-runner'
 import type { StartStreamInput } from '../runtime/turn-loop'
-import { MAX_CONTINUATION_PASSES } from '../runtime/turn-loop.machine'
 import type { CompactionCoordinator } from '../runtime/compaction-coordinator'
 import type { PolicyEngine } from '../policy/types'
 
@@ -28,8 +27,6 @@ const MAX_CONCURRENT_BACKGROUND = 100
 // Per-root cap, so one conversation cannot occupy every global slot and starve
 // the others. Each root (top-level chat) gets its own pool of this size.
 const MAX_CONCURRENT_PER_ROOT = 20
-// Shared single source of truth with the foreground turn-loop continuation cap.
-const MAX_CONTEXT_CONTINUATION_PASSES = MAX_CONTINUATION_PASSES
 
 /**
  * Thrown to unwind a task driver when its run is no longer current. `reason`
@@ -413,8 +410,6 @@ export function createTaskService(
   ): Promise<void> {
     const def = await deps.store.resolveAgentDefinition(chatId)
     let observedEpoch = callbacks.currentRunEpoch(chatId)
-    let forceCompaction = false
-    let continuationPasses = 0
 
     for (;;) {
       if (signal.aborted) throw new TaskInterrupted(chatId, 'cancelled')
@@ -428,9 +423,8 @@ export function createTaskService(
         def,
         await deps.store.load(chatId),
         runId,
-        { force: forceCompaction, signal }
+        { signal }
       )
-      forceCompaction = false
 
       const release = await acquireRunSlots(rootChatId, chatId, signal)
       const finalState = await runStreamPass({
@@ -456,29 +450,19 @@ export function createTaskService(
         return
       }
 
-      if (
-        finalState?.hitCompactionTrigger &&
-        continuationPasses < MAX_CONTEXT_CONTINUATION_PASSES
-      ) {
-        continuationPasses += 1
-        forceCompaction = true
-        continue
-      }
-
-      if (finalState) {
+      // Reconcile an in-stream compaction against the persisted transcript.
+      if (finalState?.inlineCompaction) {
         try {
-          const compacted = await collaborators.compaction.compactAfterRun(
+          const compacted = await collaborators.compaction.reconcileInline(
             chatId,
             def,
-            finalState,
-            {
-              signal
-            }
+            finalState.inlineCompaction,
+            { signal }
           )
           if (compacted) observedEpoch = callbacks.currentRunEpoch(chatId)
         } catch (error) {
           if (signal.aborted) throw new TaskInterrupted(chatId, 'cancelled')
-          deps.logger?.warn('subagent task post-run compaction failed', { chatId, error })
+          deps.logger?.warn('subagent task inline compaction reconcile failed', { chatId, error })
         }
       }
 

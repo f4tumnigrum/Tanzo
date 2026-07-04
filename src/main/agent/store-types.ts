@@ -2,6 +2,7 @@ import type {
   WorkspaceSummary,
   ConversationParentRelation,
   ConversationSummary,
+  ChatRunOutcome,
   ForkConversationInput,
   ForkConversationResult,
   NewConversationInput
@@ -69,6 +70,7 @@ export interface AgentStore {
     status: 'finished' | 'failed',
     errorJson?: string
   ): void
+  getLatestRunOutcome(chatId: string): ChatRunOutcome | null
   sweepInterruptedRuns(): number
   pruneActivityHistory(olderThanMs: number): void
 

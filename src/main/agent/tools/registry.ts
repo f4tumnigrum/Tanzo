@@ -94,8 +94,11 @@ export function createBuildTools(deps: ToolDeps): BuildTools {
     const hasAvailableTypes = subAgentTypes.some((a) => a.available)
     const canDelegate = depth < maxDepth && hasAvailableTypes
     const conversation = deps.store.getConversation(chatId)
-    const isMainAgent = !conversation?.parentConversationId
+    // A fork behaves as an independent root conversation: it keeps the main
+    // agent surface (askQuestion, goal tools, exitPlanMode). Only executor
+    // conversations spawned for subagent tasks lose it.
     const isSubagent = conversation?.parentRelation === 'subagent'
+    const isMainAgent = !isSubagent
     const shouldIncludeExitPlanMode =
       isMainAgent && (mode === 'plan' || hasExitPlanModeApproval(context.messages))
     const merged: ToolSet = {

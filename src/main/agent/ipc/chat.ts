@@ -116,6 +116,11 @@ export function chatHandlers(deps: AgentIpcDeps): IpcRegistration[] {
           approvalResponsesSchema.parse(responses)
         )
     ],
+    [CHAT_CHANNELS.retryTurn, (chatId) => deps.service.retryTurn(chatIdSchema.parse(chatId))],
+    [
+      CHAT_CHANNELS.lastRunOutcome,
+      (chatId) => deps.store.getLatestRunOutcome(chatIdSchema.parse(chatId))
+    ],
     [CHAT_CHANNELS.cancel, (chatId) => deps.service.cancel(chatIdSchema.parse(chatId))],
     [
       CHAT_CHANNELS.steer,
@@ -141,7 +146,7 @@ export function chatHandlers(deps: AgentIpcDeps): IpcRegistration[] {
     ],
     [
       CHAT_CHANNELS.forkConversation,
-      (input) => deps.store.forkConversation(forkConversationSchema.parse(input))
+      (input) => deps.service.forkConversation(forkConversationSchema.parse(input))
     ],
     [
       CHAT_CHANNELS.getConversation,

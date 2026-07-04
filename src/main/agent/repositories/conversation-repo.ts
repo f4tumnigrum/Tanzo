@@ -38,6 +38,8 @@ export interface ConversationRepo {
   listChildren(parentChatId: string, relation?: ConversationParentRelation): ConversationSummary[]
   deleteWorkspace(workspaceId: string): void
   delete(chatId: string): void
+  /** Detach fork children so deleting a parent never cascades into them. */
+  detachForks(parentChatId: string): void
   touch(chatId: string, updatedAt: number): void
   setTitle(chatId: string, title: string): void
   setModelRef(chatId: string, modelRef: string, updatedAt: number): void
@@ -107,6 +109,11 @@ export function createConversationRepo(db: SqlDatabase, fallbackCwd: string): Co
   `)
   const deleteWorkspaceRow = db.prepare('DELETE FROM workspaces WHERE id = ?')
   const deleteConversationRow = db.prepare('DELETE FROM conversations WHERE id = ?')
+  const detachForkRows = db.prepare(`
+    UPDATE conversations
+    SET parent_conversation_id = NULL, parent_relation = NULL
+    WHERE parent_conversation_id = ? AND parent_relation = 'fork'
+  `)
   const touchConversation = db.prepare('UPDATE conversations SET updated_at = @t WHERE id = @id')
   const setTitleRow = db.prepare('UPDATE conversations SET title = @title WHERE id = @id')
   const setModelRefRow = db.prepare(
@@ -200,6 +207,9 @@ export function createConversationRepo(db: SqlDatabase, fallbackCwd: string): Co
     delete(chatId) {
       deleteConversationRow.run([chatId])
     },
+    detachForks(parentChatId) {
+      detachForkRows.run([parentChatId])
+    },
     touch(chatId, updatedAt) {
       touchConversation.run({ id: chatId, t: updatedAt })
     },
@@ -215,12 +225,18 @@ export function createConversationRepo(db: SqlDatabase, fallbackCwd: string): Co
     setAgentId(chatId, agentId, updatedAt) {
       setAgentIdRow.run({ id: chatId, agent_id: agentId, t: updatedAt })
     },
+    // depthOf/rootOf express *execution* lineage: how deep an agent runs below
+    // the conversation that owns its policy mode, task registry, and delegation
+    // budget. A 'fork' edge is pure UI ancestry — the fork behaves as an
+    // independent root — so the walk stops there and only follows 'subagent'
+    // edges upward.
     depthOf(chatId) {
       let depth = 0
       let current: string | null = chatId
       for (let i = 0; i < WALK_LIMIT && current; i += 1) {
-        const parent = getRow(current)?.parent_conversation_id ?? null
-        if (!parent) break
+        const row = getRow(current)
+        const parent = row?.parent_conversation_id ?? null
+        if (!parent || row?.parent_relation === 'fork') break
         depth += 1
         current = parent
       }
@@ -229,8 +245,9 @@ export function createConversationRepo(db: SqlDatabase, fallbackCwd: string): Co
     rootOf(chatId) {
       let current = chatId
       for (let i = 0; i < WALK_LIMIT; i += 1) {
-        const parent = getRow(current)?.parent_conversation_id ?? null
-        if (!parent) break
+        const row = getRow(current)
+        const parent = row?.parent_conversation_id ?? null
+        if (!parent || row?.parent_relation === 'fork') break
         current = parent
       }
       return current

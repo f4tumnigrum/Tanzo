@@ -198,7 +198,11 @@ export const validationDataSchemas = {
     reducedTokens: z.number().optional(),
     reducedRatio: z.number().optional(),
     omittedMessages: z.number().optional(),
-    toolResultPruning: z.boolean().optional()
+    toolResultPruning: z.boolean().optional(),
+    degraded: z.enum(['prune', 'drop-oldest']).optional()
+  }),
+  contextInjection: z.object({
+    sections: z.array(z.string())
   }),
   context: z.object({
     usedTokens: z.number().optional(),
