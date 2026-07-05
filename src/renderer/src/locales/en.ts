@@ -686,7 +686,6 @@ export const en = {
         steerPlaceholder: 'Add guidance, Enter to send…',
         steerSend: 'Send',
         openTranscript: 'Open transcript',
-        backToChat: 'Back to chat',
         readOnly: 'Read-only',
         emptyTranscript: 'No activity yet.'
       },

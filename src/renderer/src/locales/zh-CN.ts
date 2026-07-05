@@ -683,7 +683,6 @@ export const zhCN = {
         steerPlaceholder: '补充指引，回车发送…',
         steerSend: '发送',
         openTranscript: '查看转录',
-        backToChat: '返回对话',
         readOnly: '只读',
         emptyTranscript: '暂无活动。'
       },

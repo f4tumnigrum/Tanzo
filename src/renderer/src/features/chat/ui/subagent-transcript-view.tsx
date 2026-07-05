@@ -1,4 +1,4 @@
-import { ArrowLeft, ListTree } from 'lucide-react'
+import { ChevronLeft } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { SubagentTask } from '@shared/subagent-task'
 import { Button } from '@/components/ui/button'
@@ -27,8 +27,9 @@ function agentLabel(agentType: string): string {
 
 /**
  * Full-screen, read-only view of a sub-agent's executor conversation. Rendered
- * in place of the main ActiveChat (same footprint), with a back button that
- * returns to the main conversation.
+ * in place of the main ActiveChat (same footprint), with its own header styled
+ * to match the app header (titlebar height, back button, title) and a back
+ * action that returns to the main conversation.
  *
  * Read-only is enforced structurally (no composer, no fork/edit props) and in
  * the main process (ipc/chat.ts rejects message writes into a sub-agent chat).
@@ -47,31 +48,32 @@ export function SubagentTranscriptView({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex h-11 shrink-0 items-center gap-2 border-b border-border/25 px-2.5">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={onBack}
-          className="h-7 gap-1 rounded-md px-1.5 text-[0.75rem] text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="size-3.5 shrink-0" aria-hidden="true" />
-          {t('chat.taskPanel.backToChat')}
-        </Button>
+      <header className="flex h-(--titlebar-height) shrink-0 items-center gap-2 border-b border-border/25 px-5">
+        <div className="flex min-w-0 flex-1 items-center gap-1">
+          <Button
+            onClick={onBack}
+            type="button"
+            variant="toolbar"
+            size="toolbar"
+            className="-ml-1 gap-1 px-2 text-[0.6875rem]"
+            aria-label={t('common.actions.goBack')}
+          >
+            <ChevronLeft className="size-4" aria-hidden="true" />
+            <span>{t('common.actions.back')}</span>
+          </Button>
 
-        <div className="h-4 w-px shrink-0 bg-border/40" aria-hidden="true" />
-
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <span
-            className={cn('size-1.5 shrink-0 rounded-full', STATUS_DOT_TONE[task.status])}
-            aria-hidden="true"
-          />
-          <span className="truncate text-[0.8125rem] font-medium text-foreground/90">
-            {agentLabel(task.agentType)}
-          </span>
-          <span className="shrink-0 rounded bg-foreground/[0.06] px-1.5 py-px font-mono text-[0.625rem] tabular-nums text-muted-foreground/70">
-            {task.id}
-          </span>
+          <div className="ml-1 flex min-w-0 items-center gap-2">
+            <span
+              className={cn('size-1.5 shrink-0 rounded-full', STATUS_DOT_TONE[task.status])}
+              aria-hidden="true"
+            />
+            <h1 className="min-w-0 truncate text-[0.875rem] font-semibold leading-tight tracking-tight">
+              {agentLabel(task.agentType)}
+            </h1>
+            <span className="shrink-0 rounded bg-foreground/[0.06] px-1.5 py-px font-mono text-[0.625rem] tabular-nums text-muted-foreground/70">
+              {task.id}
+            </span>
+          </div>
         </div>
 
         <span className="shrink-0 rounded-full border border-border/40 px-2 py-0.5 text-[0.5625rem] font-medium uppercase tracking-wide text-muted-foreground/60">
@@ -91,7 +93,6 @@ export function SubagentTranscriptView({
           </div>
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
-            <ListTree className="size-5 text-muted-foreground/30" aria-hidden="true" />
             <span className="text-[0.75rem] text-muted-foreground/55">
               {t('chat.taskPanel.emptyTranscript')}
             </span>
