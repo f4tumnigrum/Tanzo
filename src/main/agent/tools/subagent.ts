@@ -1,6 +1,6 @@
 import { tool, zodSchema, type Tool, type ToolSet } from 'ai'
 import type { TanzoTools } from '@shared/agent-message'
-import type { SubagentTaskResult } from '@shared/subagent-task'
+import type { SubagentTask, SubagentTaskResult } from '@shared/subagent-task'
 import type { ToolDeps } from './types'
 import { toolResultToModelOutput } from './model-output'
 import { toolError } from './builtin/shared'
@@ -69,15 +69,28 @@ export function spawnTool(
             )
           }
         }
-        const spawned = tasks.map((spec) => {
-          const task = deps.spawnTask({
-            parentChatId,
-            objective: spec.objective,
-            agentType: spec.agent,
-            ...(spec.dependsOn && spec.dependsOn.length > 0 ? { dependsOn: spec.dependsOn } : {})
-          })
-          return { task: task.id, status: task.status }
-        })
+        const spawned: Array<{ task: string; status: SubagentTask['status'] }> = []
+        for (const [index, spec] of tasks.entries()) {
+          try {
+            const task = deps.spawnTask({
+              parentChatId,
+              objective: spec.objective,
+              agentType: spec.agent,
+              ...(spec.dependsOn && spec.dependsOn.length > 0 ? { dependsOn: spec.dependsOn } : {})
+            })
+            spawned.push({ task: task.id, status: task.status })
+          } catch (error) {
+            // Partial failure must stay visible: earlier specs already started.
+            const startedIds = spawned.map((t) => t.task)
+            const detail = error instanceof Error ? error.message : String(error)
+            return toolError(
+              startedIds.length > 0
+                ? `Spawned [${startedIds.join(', ')}] before failing on spec ${index + 1} ` +
+                    `(${spec.agent}): ${detail} Those tasks are running — await or cancel them.`
+                : `Failed to spawn spec ${index + 1} (${spec.agent}): ${detail}`
+            )
+          }
+        }
         // Inline reminder so the agent has an immediate, concrete follow-up
         // action visible in the tool result — reduces the risk of forgetting await.
         const ids = spawned.map((t) => JSON.stringify(t.task)).join(', ')
@@ -102,14 +115,25 @@ export function awaitTool(
         'Wait for sub-agent tasks to finish and return their results. settle:"all" (default) ' +
         'waits for every listed task; settle:"first" returns as soon as one finishes. Pass ' +
         'timeoutMs to cap the wait — tasks keep running and can be awaited again. Use after spawn ' +
-        'when you need the deliverable before continuing.',
+        'when you need the deliverable before continuing. Ids that do not exist are listed in ' +
+        "'unknown' — check it whenever a result seems missing. A failed result's failureKind " +
+        "tells you why: 'app-restart' (interrupted; retry or respawn), 'await-cancelled' (your " +
+        'wait was aborted — the task may still be running), otherwise a genuine task failure. ' +
+        "resultSource:'inferred' means the sub-agent never called report(result); treat that " +
+        'summary with lower confidence.',
       inputSchema: zodSchema(awaitInputSchema),
       outputSchema: zodSchema(awaitOutputSchema),
       metadata: { tanzo: { kind: 'read', component: 'SubagentCard' } },
       toModelOutput: toolResultToModelOutput,
       async execute({ tasks, settle = 'all', timeoutMs }, { abortSignal }) {
         const known = tasks.filter((id) => deps.getTask(rootChatId, id))
-        if (known.length === 0) return toolError('No known tasks to await.')
+        const unknown = tasks.filter((id) => !deps.getTask(rootChatId, id))
+        if (known.length === 0) {
+          return toolError(
+            `No known tasks to await. Unknown ids: ${unknown.join(', ')}. ` +
+              'Use the exact ids returned by spawn.'
+          )
+        }
 
         const settled = new Map<string, SubagentTaskResult>()
         let timedOut = false
@@ -154,6 +178,7 @@ export function awaitTool(
         return {
           results,
           ...(pending.length > 0 ? { pending } : {}),
+          ...(unknown.length > 0 ? { unknown } : {}),
           ...(timedOut ? { timedOut: true } : {})
         }
       }

@@ -25,9 +25,10 @@ export interface SubagentTaskResult {
   /** Whether the result was submitted via an explicit `report(result:...)` call or
    *  inferred from the last assistant text when the sub-agent terminated without one. */
   resultSource?: 'explicit' | 'inferred'
-  /** Distinguishes app-restart interruptions from genuine logic failures so the UI
-   *  can offer targeted recovery actions (e.g. "retry interrupted tasks"). */
-  failureKind?: 'app-restart' | 'logic-error'
+  /** Distinguishes app-restart interruptions and cancelled awaits from genuine
+   *  logic failures so the parent agent and UI can react appropriately
+   *  ('await-cancelled' means the wait was aborted — the task may still run). */
+  failureKind?: 'app-restart' | 'logic-error' | 'await-cancelled'
   /** When the failure was caused by a dependency failing/cancelling, the id of that
    *  dependency. Structured so cascade-retry does not have to parse error messages. */
   failedDependencyId?: string

@@ -59,7 +59,7 @@ const STATUS_CHIP_TONE: Record<SubagentTask['status'], ToolBadgeTone> = {
 
 function panelToneForStatus(
   status: SubagentTask['status'],
-  failureKind?: 'app-restart' | 'logic-error'
+  failureKind?: SubagentTaskResult['failureKind']
 ): ToolPanelTone {
   if (status === 'blocked') return 'warning'
   if (status === 'failed') return failureKind === 'app-restart' ? 'subtle' : 'danger'

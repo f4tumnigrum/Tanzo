@@ -166,6 +166,7 @@ export type TanzoTools = {
       | {
           results: Array<{ task: string; result: SubagentTaskResultWire }>
           pending?: string[]
+          unknown?: string[]
           timedOut?: boolean
         }
       | ToolError

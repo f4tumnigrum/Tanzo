@@ -333,6 +333,35 @@ describe('agent/subagent/task-service', () => {
     expect(tasks.get(spawned.id)?.result?.resultSource).toBe('inferred')
   })
 
+  it('fails a task that finishes with an empty inferred deliverable', async () => {
+    // Stream pass succeeds but the transcript has no assistant text and the
+    // sub-agent never called report(result).
+    let transcript: unknown[] = []
+    const load = vi.fn(async () => transcript)
+    const save = vi.fn((_chatId: string, messages: unknown[]) => {
+      transcript = messages
+    })
+    const startChatRun = vi.fn(async () => {
+      transcript = [{ id: 'u1', role: 'user', parts: [{ type: 'text', text: 'objective' }] }]
+      return { aborted: false, streamFailed: false }
+    })
+    const { service, tasks } = createHarness({ startChatRun, load, save })
+
+    const spawned = service.spawn({
+      parentChatId: 'root-chat',
+      objective: 'do something',
+      agentType: 'explore'
+    })
+
+    await vi.waitFor(() => {
+      expect(tasks.get(spawned.id)?.status).toBe('failed')
+    })
+    const result = tasks.get(spawned.id)?.result
+    expect(result?.failed).toBe(true)
+    expect(result?.failureKind).toBe('logic-error')
+    expect(result?.errorMessage).toContain('without a deliverable')
+  })
+
   it('cancels a task without recursively cancelling itself forever', () => {
     const tasks = new Map<string, SubagentTask>()
     tasks.set('explore-1', task())
@@ -428,7 +457,7 @@ describe('agent/subagent/task-service', () => {
     expect(tasks.get('explore-1')?.result?.errorMessage).toContain('restarted')
   })
 
-  it('fails a self-dependent spawn instead of leaving it pending forever', () => {
+  it('rejects a self-dependent spawn before creating any executor conversation', () => {
     const tasks = new Map<string, SubagentTask>()
     const callbacks = {
       abortRun: vi.fn(),
@@ -475,21 +504,21 @@ describe('agent/subagent/task-service', () => {
 
     // 'explore-1' is the id readableId() will assign (countByAgent=0 → n=1),
     // so declaring dependsOn:['explore-1'] makes the task depend on itself.
-    const spawned = service.spawn({
-      parentChatId: 'root-chat',
-      objective: 'wait on myself',
-      agentType: 'explore',
-      dependsOn: ['explore-1']
-    })
-
-    const stored = tasks.get(spawned.id)
-    expect(stored?.status).toBe('failed')
-    expect(stored?.result?.errorMessage).toContain('cannot depend on itself')
-    // The driver must never start for a task that can never run.
+    // Static dependency errors are rejected before any writes: no task row,
+    // no orphaned executor conversation, no driver.
+    expect(() =>
+      service.spawn({
+        parentChatId: 'root-chat',
+        objective: 'wait on myself',
+        agentType: 'explore',
+        dependsOn: ['explore-1']
+      })
+    ).toThrow(/cannot depend on itself/)
+    expect(tasks.size).toBe(0)
     expect(callbacks.startChatRun).not.toHaveBeenCalled()
   })
 
-  it('fails a spawn whose dependency id does not exist', () => {
+  it('rejects a spawn whose dependency id does not exist, leaving no orphans', () => {
     const tasks = new Map<string, SubagentTask>()
     const callbacks = {
       abortRun: vi.fn(),
@@ -534,16 +563,15 @@ describe('agent/subagent/task-service', () => {
       callbacks
     )
 
-    const spawned = service.spawn({
-      parentChatId: 'root-chat',
-      objective: 'wait on a ghost',
-      agentType: 'explore',
-      dependsOn: ['nonexistent-9']
-    })
-
-    const stored = tasks.get(spawned.id)
-    expect(stored?.status).toBe('failed')
-    expect(stored?.result?.errorMessage).toContain("'nonexistent-9'")
+    expect(() =>
+      service.spawn({
+        parentChatId: 'root-chat',
+        objective: 'wait on a ghost',
+        agentType: 'explore',
+        dependsOn: ['nonexistent-9']
+      })
+    ).toThrow(/'nonexistent-9' not found/)
+    expect(tasks.size).toBe(0)
     expect(callbacks.startChatRun).not.toHaveBeenCalled()
   })
 

@@ -212,12 +212,28 @@ export function createTaskService(
     const rootChatId = deps.store.rootOf(input.parentChatId)
     const def = deps.identity.resolveAgentType(input.agentType)
     if (!def) throw new Error(`Unknown subagent type "${input.agentType}".`)
+    // Static dependency errors are rejected BEFORE any writes so a bad spawn
+    // leaves no orphaned executor conversation or task row behind. Depending
+    // on a settled-but-failed task is not a static error — that case creates
+    // the task and fail-fasts below, keeping it retryable via cascade-retry.
+    const id = readableId(rootChatId, input.agentType)
+    const dependsOn = input.dependsOn ?? []
+    if (dependsOn.includes(id)) {
+      throw new Error(
+        `Task '${id}' cannot depend on itself; dependsOn must reference other, already-spawned task ids.`
+      )
+    }
+    for (const depId of dependsOn) {
+      if (!deps.store.tasks.get(rootChatId, depId)) {
+        throw new Error(
+          `Dependency '${depId}' not found; dependsOn must reference already-spawned task ids.`
+        )
+      }
+    }
     let task!: SubagentTask
     deps.store.transaction(() => {
       const chatId = createExecutorConversation(input.parentChatId, input.agentType)
       writeObjective(chatId, input.objective)
-      const id = readableId(rootChatId, input.agentType)
-      const dependsOn = input.dependsOn ?? []
       const now = Date.now()
       task = {
         id,
@@ -244,32 +260,19 @@ export function createTaskService(
     })
     broadcastTasks(rootChatId)
     if (task.status === 'pending') {
-      // Self-dependency can never be satisfied (the task would wait on its own
-      // completion forever) and is invisible to dependencyUnsatisfiable, which
-      // finds the freshly inserted row in a non-terminal state. Fail fast.
-      if (task.dependsOn.includes(task.id)) {
-        failTask(
+      const blocker = dependencyUnsatisfiable(task)
+      if (blocker) {
+        const dep = deps.store.tasks.get(rootChatId, blocker)
+        failDependency(
           rootChatId,
           task.id,
-          `Task '${task.id}' cannot depend on itself; dependsOn must reference other, already-spawned task ids.`
+          blocker,
+          `Dependency '${blocker}' failed: ${dep?.result?.errorMessage ?? 'did not complete successfully'}`
         )
-      } else {
-        const blocker = dependencyUnsatisfiable(task)
-        if (blocker) {
-          const dep = deps.store.tasks.get(rootChatId, blocker)
-          failDependency(
-            rootChatId,
-            task.id,
-            blocker,
-            dep
-              ? `Dependency '${blocker}' failed: ${dep.result?.errorMessage ?? 'did not complete successfully'}`
-              : `Dependency '${blocker}' not found; dependsOn must reference already-spawned task ids.`
-          )
-        }
       }
       // Every settle edge reevaluates the graph: if this spawn fail-fasted,
       // anything already depending on it must fail fast too. Re-read from the
-      // store — failTask dispatches a new object; the local `task` is stale.
+      // store — failDependency dispatches a new object; the local `task` is stale.
       const fresh = deps.store.tasks.get(rootChatId, task.id)
       if (fresh && isTerminal(fresh.status)) {
         task = fresh
@@ -513,6 +516,19 @@ export function createTaskService(
     const hasExplicitResult = Boolean(task.result && !task.result.failed)
     const summary = hasExplicitResult ? task.result!.summary : lastAssistantText(messages)
     const resultSource: 'explicit' | 'inferred' = hasExplicitResult ? 'explicit' : 'inferred'
+    // An empty inferred deliverable is a failure, not a success: the sub-agent
+    // never called report(result) and produced no final text. Completing with
+    // an empty summary would hand the parent a silent nothing.
+    if (resultSource === 'inferred' && summary.trim() === '') {
+      dispatch(rootChatId, taskId, {
+        kind: 'fail',
+        message:
+          'Sub-agent finished without a deliverable: it never called report(result) and produced no final text.',
+        failureKind: 'logic-error',
+        now: Date.now()
+      })
+      return
+    }
     dispatch(rootChatId, taskId, { kind: 'complete', summary, resultSource, now: Date.now() })
   }
 
@@ -664,7 +680,12 @@ export function createTaskService(
       return Promise.resolve(resolveResult(task))
     }
     if (signal?.aborted) {
-      return Promise.resolve({ summary: '', failed: true, errorMessage: 'await cancelled.' })
+      return Promise.resolve({
+        summary: '',
+        failed: true,
+        errorMessage: 'await cancelled.',
+        failureKind: 'await-cancelled'
+      })
     }
     const key = waiterKey(rootChatId, taskId)
     return new Promise<SubagentTaskResult>((resolve) => {
@@ -677,7 +698,12 @@ export function createTaskService(
       const onAbort = (): void => {
         waiters.delete(onSettle)
         if (waiters.size === 0) settleWaiters.delete(key)
-        resolve({ summary: '', failed: true, errorMessage: 'await cancelled.' })
+        resolve({
+          summary: '',
+          failed: true,
+          errorMessage: 'await cancelled.',
+          failureKind: 'await-cancelled'
+        })
       }
       waiters.add(onSettle)
       settleWaiters.set(key, waiters)

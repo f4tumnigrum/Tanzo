@@ -10,7 +10,7 @@ import {
   PowerOff
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import type { SubagentTask } from '@shared/subagent-task'
+import type { SubagentTask, SubagentTaskResult } from '@shared/subagent-task'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
@@ -32,7 +32,7 @@ const INTERRUPTED_ICON_TONE = 'text-muted-foreground/55'
 
 function statusIcon(
   status: SubagentTask['status'],
-  failureKind?: 'app-restart' | 'logic-error'
+  failureKind?: SubagentTaskResult['failureKind']
 ): { Icon: React.ElementType; spin?: boolean; overrideTone?: string } {
   switch (status) {
     case 'done':

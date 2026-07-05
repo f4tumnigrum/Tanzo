@@ -180,6 +180,51 @@ describe('main/agent/tools/subagent (tasks)', () => {
     expect(d.awaitTask).toHaveBeenCalledWith('parent', 'explore-1', undefined)
   })
 
+  it('lists unknown task ids explicitly instead of dropping them', async () => {
+    const d = deps({
+      getTask: vi.fn((_root: string, id: string) =>
+        id === 'explore-1' ? task(id, 'running') : undefined
+      )
+    })
+    const tool = awaitTool(d, 'parent')
+    const result = (await exec(tool, { tasks: ['explore-1', 'explorer-2'] })) as {
+      results: Array<{ task: string }>
+      unknown?: string[]
+    }
+    expect(result.results.map((r) => r.task)).toEqual(['explore-1'])
+    expect(result.unknown).toEqual(['explorer-2'])
+  })
+
+  it('errors with the unknown ids when no listed task exists', async () => {
+    const d = deps({ getTask: vi.fn(() => undefined) })
+    const tool = awaitTool(d, 'parent')
+    await expect(exec(tool, { tasks: ['ghost-1', 'ghost-2'] })).resolves.toMatchObject({
+      error: true,
+      message: expect.stringContaining('ghost-1, ghost-2')
+    })
+  })
+
+  it('reports partial spawn failure with the already-started ids', async () => {
+    const d = deps({
+      spawnTask: vi.fn((input: { objective: string }) => {
+        if (input.objective === 'b') throw new Error('parent parent not found.')
+        return task('explore-1', 'running', { objective: input.objective })
+      }) as never
+    })
+    const tool = spawnTool(d, 'parent', [READ_ONLY])
+    const result = await exec(tool, {
+      tasks: [
+        { objective: 'a', agent: 'explore' },
+        { objective: 'b', agent: 'explore' }
+      ]
+    })
+    expect(result).toMatchObject({ error: true })
+    const message = (result as { message: string }).message
+    expect(message).toContain('explore-1')
+    expect(message).toContain('spec 2')
+    expect(message).toContain('await or cancel')
+  })
+
   it('returns pending tasks and timedOut when the wait times out', async () => {
     const d = deps({
       getTask: vi.fn((_root: string, id: string) => task(id, 'running')),
