@@ -6,6 +6,7 @@ export interface SidebarSessionRowModel {
   title: string
   lastActivityAt: number | null
   isStreaming: boolean
+  isPinned: boolean
 }
 
 export interface SidebarConversationFamilyModel {
@@ -13,6 +14,9 @@ export interface SidebarConversationFamilyModel {
   mainSession: SidebarSessionRowModel
   branchCount: number
   branches: SidebarSessionRowModel[]
+  /** Stable id arrays so memoized rows keep referential equality across renders. */
+  familySessionIds: string[]
+  branchSessionIds: string[]
 }
 
 export interface SidebarWorkspaceGroupModel {
@@ -139,7 +143,13 @@ export function buildSidebarModel({
         .sort((a, b) => b.updatedAt - a.updatedAt)
       const rootConversations = workspaceConversations
         .filter((conversation) => rootIds.has(conversation.id))
-        .sort((a, b) => familyActivity(b, branchesByParent) - familyActivity(a, branchesByParent))
+        .sort((a, b) => {
+          const aPinned = a.pinnedAt != null
+          const bPinned = b.pinnedAt != null
+          if (aPinned !== bPinned) return aPinned ? -1 : 1
+          if (aPinned && bPinned) return (b.pinnedAt ?? 0) - (a.pinnedAt ?? 0)
+          return familyActivity(b, branchesByParent) - familyActivity(a, branchesByParent)
+        })
 
       return {
         key: workspace.id,
@@ -153,12 +163,15 @@ export function buildSidebarModel({
             .slice()
             .sort((a, b) => b.updatedAt - a.updatedAt)
           const branchRows = branches.map((branch) => sessionRow(branch, runningChatIds))
+          const branchSessionIds = branches.map((branch) => branch.id)
 
           return {
             familyId: conversation.id,
             branchCount: branches.length,
             mainSession: sessionRow(conversation, runningChatIds),
-            branches: branchRows
+            branches: branchRows,
+            familySessionIds: [conversation.id, ...branchSessionIds],
+            branchSessionIds
           }
         })
       }
@@ -174,7 +187,8 @@ function sessionRow(
     sessionId: conversation.id,
     title: conversation.title || fallbackTitleFromCwd(conversation.cwd) || conversation.id,
     lastActivityAt: conversation.updatedAt,
-    isStreaming: runningChatIds?.has(conversation.id) ?? false
+    isStreaming: runningChatIds?.has(conversation.id) ?? false,
+    isPinned: conversation.pinnedAt != null
   }
 }
 

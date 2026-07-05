@@ -26,6 +26,7 @@ interface ConversationRow {
   cwd: string | null
   parent_conversation_id: string | null
   parent_relation: ConversationParentRelation | null
+  pinned_at: number | null
   created_at: number
   updated_at: number
   archived_at: number | null
@@ -47,6 +48,7 @@ export interface ConversationRepo {
   setSubagentModelRef(chatId: string, modelRef: string, updatedAt: number): void
   setReasoningEffort(chatId: string, effort: string, updatedAt: number): void
   setAgentId(chatId: string, agentId: string, updatedAt: number): void
+  setPinnedAt(chatId: string, pinnedAt: number | null): void
   depthOf(chatId: string): number
   rootOf(chatId: string): string
 }
@@ -130,6 +132,9 @@ export function createConversationRepo(db: SqlDatabase, fallbackCwd: string): Co
   const setAgentIdRow = db.prepare(
     'UPDATE conversations SET agent_id = @agent_id, updated_at = @t WHERE id = @id'
   )
+  const setPinnedAtRow = db.prepare(
+    'UPDATE conversations SET pinned_at = @pinned_at WHERE id = @id'
+  )
 
   function rowToWorkspace(row: WorkspaceRow): WorkspaceSummary {
     return {
@@ -155,6 +160,7 @@ export function createConversationRepo(db: SqlDatabase, fallbackCwd: string): Co
       cwd: row.cwd || fallbackCwd,
       parentConversationId: row.parent_conversation_id,
       parentRelation: row.parent_relation ?? null,
+      pinnedAt: row.pinned_at ?? null,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       archivedAt: row.archived_at
@@ -234,6 +240,9 @@ export function createConversationRepo(db: SqlDatabase, fallbackCwd: string): Co
     },
     setAgentId(chatId, agentId, updatedAt) {
       setAgentIdRow.run({ id: chatId, agent_id: agentId, t: updatedAt })
+    },
+    setPinnedAt(chatId, pinnedAt) {
+      setPinnedAtRow.run({ id: chatId, pinned_at: pinnedAt })
     },
     // depthOf/rootOf express *execution* lineage: how deep an agent runs below
     // the conversation that owns its policy mode, task registry, and delegation

@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { GitBranch, Pencil, Trash2 } from 'lucide-react'
+import { GitBranch, Pencil, Pin, PinOff, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Item } from '@/components/ui/item'
 import { Spinner } from '@/components/ui/spinner'
@@ -18,8 +18,9 @@ interface ConversationItemProps {
   onSelect: (sessionId: string) => void
   onDelete: (sessionId: string) => void
   onRename?: (sessionId: string, title: string) => void
+  onTogglePin?: (sessionId: string) => void
   onRequestDeleteWithBranches?: (sessionId: string, branchCount: number) => void
-  onToggleBranches?: () => void
+  onToggleBranches?: (familyId: string) => void
 }
 
 const DELETE_CONFIRM_TIMEOUT = 2000
@@ -33,6 +34,7 @@ export const ConversationItem = memo(function ConversationItem({
   onSelect,
   onDelete,
   onRename,
+  onTogglePin,
   onRequestDeleteWithBranches,
   onToggleBranches
 }: ConversationItemProps): React.JSX.Element {
@@ -44,12 +46,10 @@ export const ConversationItem = memo(function ConversationItem({
   const [isRenaming, setIsRenaming] = useState(false)
   const [draftTitle, setDraftTitle] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
-  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   useEffect(
     () => () => {
       clearTimeout(confirmTimerRef.current)
-      clearTimeout(clickTimerRef.current)
     },
     []
   )
@@ -80,21 +80,18 @@ export const ConversationItem = memo(function ConversationItem({
     setIsRenaming(false)
   }, [])
 
+  // Select immediately on click: selection is idempotent, so the extra select
+  // fired before a double-click rename is harmless, while a debounce timer
+  // would delay every conversation switch by its full window.
   const handleClick = useCallback(() => {
-    if (!onRename) {
-      onSelect(session.sessionId)
-      return
-    }
-    clearTimeout(clickTimerRef.current)
-    clickTimerRef.current = setTimeout(() => onSelect(session.sessionId), 200)
-  }, [onRename, onSelect, session.sessionId])
+    onSelect(session.sessionId)
+  }, [onSelect, session.sessionId])
 
   const handleDoubleClick = useCallback(
     (event: React.MouseEvent) => {
       if (!onRename) return
       event.preventDefault()
       event.stopPropagation()
-      clearTimeout(clickTimerRef.current)
       beginRename()
     },
     [beginRename, onRename]
@@ -205,6 +202,9 @@ export const ConversationItem = memo(function ConversationItem({
         {variant === 'branch' && !session.isStreaming ? (
           <GitBranch className="size-3 shrink-0 text-foreground/50" />
         ) : null}
+        {variant === 'main' && session.isPinned && !session.isStreaming ? (
+          <Pin className="size-3 shrink-0 text-foreground/45" />
+        ) : null}
         {isRenaming ? (
           <input
             ref={inputRef}
@@ -249,7 +249,7 @@ export const ConversationItem = memo(function ConversationItem({
             type="button"
             onClick={(event) => {
               event.stopPropagation()
-              onToggleBranches?.()
+              onToggleBranches?.(session.sessionId)
             }}
             className={cn(
               'inline-flex shrink-0 items-center gap-0.5 rounded-full border px-1.5 py-px',
@@ -266,10 +266,10 @@ export const ConversationItem = memo(function ConversationItem({
         ) : null}
       </div>
       {isRenaming ? null : (
-        <div className="relative flex shrink-0 items-center">
+        <div className="grid shrink-0 items-center [grid-template-areas:'cell']">
           <span
             className={cn(
-              'text-[0.625rem] font-medium tabular-nums tracking-[0.01em] transition-opacity duration-150',
+              'justify-self-end text-[0.625rem] font-medium tabular-nums tracking-[0.01em] transition-opacity duration-150 [grid-area:cell]',
               isSelected
                 ? 'text-foreground/55'
                 : isAncestorSelected
@@ -282,13 +282,43 @@ export const ConversationItem = memo(function ConversationItem({
           </span>
           <div
             className={cn(
-              'absolute right-0 flex items-center gap-px',
+              'flex items-center justify-end gap-px [grid-area:cell]',
               confirmDelete
                 ? 'opacity-100'
-                : 'opacity-0 group-hover/item:opacity-100 group-focus-within/item:opacity-100',
+                : 'pointer-events-none opacity-0 group-hover/item:pointer-events-auto group-hover/item:opacity-100 group-focus-within/item:pointer-events-auto group-focus-within/item:opacity-100',
               'transition-opacity duration-150'
             )}
           >
+            {onTogglePin && variant === 'main' && !confirmDelete ? (
+              <Tooltip>
+                <TooltipTrigger
+                  render={(triggerProps) => (
+                    <Button
+                      {...triggerProps}
+                      variant="ghost"
+                      size="icon"
+                      className="size-5 rounded-[var(--radius-sm)] text-foreground/45 transition-colors duration-150 hover:bg-[color-mix(in_oklab,var(--foreground)_5%,transparent)] hover:text-foreground/70 focus-visible:ring-2 focus-visible:ring-ring/50 dark:hover:bg-[color-mix(in_oklab,var(--foreground)_6%,transparent)]"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        onTogglePin(session.sessionId)
+                      }}
+                      aria-label={
+                        session.isPinned ? t('chat.sidebar.unpin') : t('chat.sidebar.pin')
+                      }
+                    >
+                      {session.isPinned ? (
+                        <PinOff className="size-2.5" />
+                      ) : (
+                        <Pin className="size-2.5" />
+                      )}
+                    </Button>
+                  )}
+                />
+                <TooltipContent side="top">
+                  {session.isPinned ? t('chat.sidebar.unpin') : t('chat.sidebar.pin')}
+                </TooltipContent>
+              </Tooltip>
+            ) : null}
             {onRename && !confirmDelete ? (
               <Tooltip>
                 <TooltipTrigger

@@ -6,7 +6,8 @@ function conversation(
   id: string,
   workspaceId = 'workspace-1',
   parentConversationId: string | null = null,
-  updatedAt = id === 'chat-1' ? 2 : 3
+  updatedAt = id === 'chat-1' ? 2 : 3,
+  pinnedAt: number | null = null
 ): ConversationSummary {
   return {
     id,
@@ -17,6 +18,7 @@ function conversation(
     cwd: `/tmp/${workspaceId}`,
     parentConversationId,
     parentRelation: parentConversationId ? 'fork' : null,
+    pinnedAt,
     createdAt: 1,
     updatedAt,
     archivedAt: null
@@ -124,5 +126,26 @@ describe('chat/sidebar-model', () => {
     expect(model.groups[0]?.families[0]?.branches.map((branch) => branch.sessionId)).toEqual([
       'branch'
     ])
+  })
+
+  it('sorts pinned families first, most recently pinned on top', () => {
+    const model = buildSidebarModel({
+      conversations: [
+        conversation('active', 'workspace-1', null, 100),
+        conversation('pinned-old', 'workspace-1', null, 10, 1),
+        conversation('pinned-new', 'workspace-1', null, 5, 2)
+      ],
+      currentWorkspaceId: 'workspace-1',
+      expandedById: {},
+      hydrated: true
+    })
+
+    expect(model.groups[0]?.families.map((family) => family.familyId)).toEqual([
+      'pinned-new',
+      'pinned-old',
+      'active'
+    ])
+    expect(model.groups[0]?.families[0]?.mainSession.isPinned).toBe(true)
+    expect(model.groups[0]?.families[2]?.mainSession.isPinned).toBe(false)
   })
 })

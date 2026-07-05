@@ -179,6 +179,8 @@ export const en = {
         },
         delete: 'Delete conversation',
         rename: 'Rename',
+        pin: 'Pin conversation',
+        unpin: 'Unpin conversation',
         newWorkspaceConversation: 'New conversation in this workspace',
         removeWorkspaceAction: 'Remove workspace',
         removeWorkspace: {
@@ -710,6 +712,7 @@ export const en = {
         setModel: 'Failed to switch model.',
         setAgent: 'Failed to switch agent.',
         renameConversation: 'Failed to rename conversation.',
+        pinConversation: 'Failed to pin conversation.',
         agentCommandMissing: 'Usage: /agent <name|id>.',
         agentCommandUnknown: 'No agent found for "{{agent}}".',
         agentCommandDuringRun: 'Wait for the active run to finish before switching agent.',

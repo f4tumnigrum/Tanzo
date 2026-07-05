@@ -98,6 +98,20 @@ describe('main/agent/store', () => {
     )
   })
 
+  it('pins and unpins conversations without touching updated_at', () => {
+    const store = createAgentStore(createRealDb(), identity(), logger(), root)
+    const conversation = store.createConversation({ title: 'Pin me' })
+
+    const pinned = store.setConversationPinned(conversation.id, true)
+    expect(pinned.pinnedAt).toBeTypeOf('number')
+    expect(store.getConversation(conversation.id)?.pinnedAt).toBe(pinned.pinnedAt)
+    expect(store.getConversation(conversation.id)?.updatedAt).toBe(conversation.updatedAt)
+
+    const unpinned = store.setConversationPinned(conversation.id, false)
+    expect(unpinned.pinnedAt).toBeNull()
+    expect(store.getConversation(conversation.id)?.pinnedAt).toBeNull()
+  })
+
   it('saves, loads, and deletes messages', async () => {
     const db = createRealDb()
     const store = createAgentStore(db, identity(), logger(), root)

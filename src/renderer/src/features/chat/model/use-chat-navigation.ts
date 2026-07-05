@@ -13,6 +13,7 @@ import {
   useDeleteConversation,
   useDeleteWorkspace,
   useForkConversation,
+  useSetConversationPinned,
   useSetConversationTitle
 } from './mutations'
 import { useRunningConversations } from './use-running-conversations'
@@ -33,6 +34,7 @@ export interface ChatNavigation {
   handleToggleWorkspaceExpanded: (workspaceId: string) => void
   handleDelete: (chatId: string) => void
   handleRename: (chatId: string, title: string) => void
+  handleTogglePinned: (chatId: string) => void
   handleForkMessage: (messageId: string) => Promise<void>
   handleWorkspaceRemove: (workspaceId: string) => void
   handlePickWorkspace: () => Promise<void>
@@ -51,6 +53,7 @@ export function useChatNavigation(): ChatNavigation {
   const deleteWorkspace = useDeleteWorkspace()
   const forkConversation = useForkConversation()
   const renameConversation = useSetConversationTitle()
+  const setConversationPinned = useSetConversationPinned()
   const conversationList = useMemo(() => conversations.data ?? [], [conversations.data])
   const workspaceList = useMemo(() => workspaceQuery.data ?? [], [workspaceQuery.data])
   const workspaces = useMemo(
@@ -222,6 +225,15 @@ export function useChatNavigation(): ChatNavigation {
     [renameConversation]
   )
 
+  const handleTogglePinned = useCallback(
+    (chatId: string) => {
+      const conversation = conversationList.find((candidate) => candidate.id === chatId)
+      if (!conversation) return
+      setConversationPinned.mutate({ chatId, pinned: conversation.pinnedAt == null })
+    },
+    [conversationList, setConversationPinned]
+  )
+
   const handleForkMessage = useCallback(
     async (messageId: string) => {
       if (!activeChatId) return
@@ -276,6 +288,7 @@ export function useChatNavigation(): ChatNavigation {
     handleToggleWorkspaceExpanded,
     handleDelete,
     handleRename,
+    handleTogglePinned,
     handleForkMessage,
     handleWorkspaceRemove,
     handlePickWorkspace

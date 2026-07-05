@@ -82,16 +82,12 @@ type SidebarRow =
       type: 'main'
       key: string
       family: SidebarConversationFamilyModel
-      familySessionIds: readonly string[]
-      branchSessionIds: readonly string[]
     }
   | {
       type: 'branch'
       key: string
-      familyId: string
       branch: SidebarSessionRowModel
       familySessionIds: readonly string[]
-      isExpanded: boolean
       isLast: boolean
     }
 
@@ -102,6 +98,7 @@ export interface ConversationSidebarProps {
   onConversationSelect: (sessionId: string) => void
   onConversationDelete: (sessionId: string) => void
   onConversationRename?: (sessionId: string, title: string) => void
+  onConversationTogglePin?: (sessionId: string) => void
   onWorkspaceRemove?: (workspaceId: string) => void
   onWorkspaceConversationCreate?: (workspaceId: string) => void | Promise<void>
   onPickWorkspace?: () => Promise<void>
@@ -110,15 +107,17 @@ export interface ConversationSidebarProps {
   className?: string
 }
 
-type BranchSidebarRow = Extract<SidebarRow, { type: 'branch' }>
-
 const BranchRow = memo(function BranchRow({
-  row,
+  branch,
+  familySessionIds,
+  isLast,
   onConversationSelect,
   onConversationDelete,
   onConversationRename
 }: {
-  row: BranchSidebarRow
+  branch: SidebarSessionRowModel
+  familySessionIds: readonly string[]
+  isLast: boolean
   onConversationSelect: (sessionId: string) => void
   onConversationDelete: (sessionId: string) => void
   onConversationRename?: (sessionId: string, title: string) => void
@@ -126,21 +125,22 @@ const BranchRow = memo(function BranchRow({
   return (
     <div className="ml-2 px-1 pb-0.5 pl-4">
       <div className="relative">
+        {/* Rounded elbow: drops from the row above and curves toward this item. */}
         <span
           aria-hidden
-          className={cn(
-            'pointer-events-none absolute -left-4 border-l border-border/55',
-            row.isLast ? 'top-0 h-1/2' : 'top-[-2px] bottom-[-2px]'
-          )}
+          className="pointer-events-none absolute -left-4 top-[-2px] bottom-1/2 w-2.5 rounded-bl-[6px] border-b border-l border-border/55"
         />
-        <span
-          aria-hidden
-          className="pointer-events-none absolute -left-4 top-1/2 w-4 border-t border-border/55"
-        />
+        {/* Straight rail continuing down to the next sibling. */}
+        {isLast ? null : (
+          <span
+            aria-hidden
+            className="pointer-events-none absolute -left-4 top-[-2px] bottom-[-2px] border-l border-border/55"
+          />
+        )}
         <ConversationItem
-          session={row.branch}
+          session={branch}
           variant="branch"
-          familySessionIds={row.familySessionIds}
+          familySessionIds={familySessionIds}
           onSelect={onConversationSelect}
           onDelete={onConversationDelete}
           onRename={onConversationRename}
@@ -251,6 +251,7 @@ export function ConversationSidebar({
   onConversationSelect,
   onConversationDelete,
   onConversationRename,
+  onConversationTogglePin,
   onWorkspaceRemove,
   onWorkspaceConversationCreate,
   onPickWorkspace,
@@ -321,27 +322,19 @@ export function ConversationSidebar({
         continue
       }
       for (const family of group.families) {
-        const branchSessionIds = family.branches.map((branch) => branch.sessionId)
-        const familySessionIds = [family.mainSession.sessionId, ...branchSessionIds]
-        next.push({
-          type: 'main',
-          key: `main:${family.familyId}`,
-          family,
-          familySessionIds,
-          branchSessionIds
-        })
+        next.push({ type: 'main', key: `main:${family.familyId}`, family })
         if (family.branchCount === 0) continue
         const isExpanded = expandedBranchFamilies[family.familyId] ?? false
-        const isFamilyActive = Boolean(activeChatId && familySessionIds.includes(activeChatId))
+        const isFamilyActive = Boolean(
+          activeChatId && family.familySessionIds.includes(activeChatId)
+        )
         if (!isExpanded && !isFamilyActive) continue
         family.branches.forEach((branch, index) => {
           next.push({
             type: 'branch',
             key: `branch:${branch.sessionId}`,
-            familyId: family.familyId,
             branch,
-            familySessionIds,
-            isExpanded,
+            familySessionIds: family.familySessionIds,
             isLast: index === family.branches.length - 1
           })
         })
@@ -475,13 +468,14 @@ export function ConversationSidebar({
             <ConversationItem
               session={family.mainSession}
               branchCount={family.branchCount}
-              familySessionIds={row.familySessionIds}
-              branchSessionIds={row.branchSessionIds}
+              familySessionIds={family.familySessionIds}
+              branchSessionIds={family.branchSessionIds}
               onSelect={onConversationSelect}
               onDelete={onConversationDelete}
               onRename={onConversationRename}
+              onTogglePin={onConversationTogglePin}
               onRequestDeleteWithBranches={handleRequestDeleteWithBranches}
-              onToggleBranches={() => toggleBranches(family.familyId)}
+              onToggleBranches={toggleBranches}
             />
           </div>
         )
@@ -489,7 +483,9 @@ export function ConversationSidebar({
 
       return (
         <BranchRow
-          row={row}
+          branch={row.branch}
+          familySessionIds={row.familySessionIds}
+          isLast={row.isLast}
           onConversationSelect={onConversationSelect}
           onConversationDelete={onConversationDelete}
           onConversationRename={onConversationRename}
@@ -501,6 +497,7 @@ export function ConversationSidebar({
       onConversationDelete,
       onConversationRename,
       onConversationSelect,
+      onConversationTogglePin,
       onToggleWorkspaceExpanded,
       onWorkspaceConversationCreate,
       onWorkspaceRemove,

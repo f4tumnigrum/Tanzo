@@ -89,6 +89,25 @@ export function useSetConversationTitle() {
   })
 }
 
+export function useSetConversationPinned() {
+  const { t } = useTranslation()
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { chatId: string; pinned: boolean }) =>
+      chatClient.setConversationPinned(input.chatId, input.pinned),
+    onSuccess: (updated) => {
+      // Patch only pinnedAt: pinning does not touch updated_at, so the
+      // response row may be staler than concurrently refreshed cache entries.
+      queryClient.setQueryData<ConversationSummary[]>(chatKeys.conversations(), (list) =>
+        list
+          ? list.map((c) => (c.id === updated.id ? { ...c, pinnedAt: updated.pinnedAt } : c))
+          : list
+      )
+    },
+    onError: (error) => toast.error(errorMessage(error, t('chat.errors.pinConversation')))
+  })
+}
+
 export function useSetPolicyMode() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()

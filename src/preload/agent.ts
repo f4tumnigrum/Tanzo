@@ -43,6 +43,9 @@ export const chatApi: ChatApi = {
     CHAT_CHANNELS.setConversationReasoningEffort
   ),
   setConversationAgent: invoke<ChatApi['setConversationAgent']>(CHAT_CHANNELS.setConversationAgent),
+  setConversationPinned: invoke<ChatApi['setConversationPinned']>(
+    CHAT_CHANNELS.setConversationPinned
+  ),
   listAgents: invoke<ChatApi['listAgents']>(CHAT_CHANNELS.listAgents),
   compact: invoke<ChatApi['compact']>(CHAT_CHANNELS.compact),
   contextSnapshot: invoke<ChatApi['contextSnapshot']>(CHAT_CHANNELS.contextSnapshot),

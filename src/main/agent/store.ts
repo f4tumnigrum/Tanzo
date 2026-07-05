@@ -169,6 +169,7 @@ export function createAgentStore(
       cwd,
       parentConversationId,
       parentRelation: parentConversationId ? (input.parentRelation ?? 'subagent') : null,
+      pinnedAt: null,
       createdAt: now,
       updatedAt: now,
       archivedAt: null
@@ -236,6 +237,15 @@ export function createAgentStore(
     return { ...existing, agentId: normalizedAgentId, updatedAt }
   }
 
+  function setConversationPinned(chatId: string, pinned: boolean): ConversationSummary {
+    const existing = requireConversation(chatId, 'CHAT_CONVERSATION_NOT_FOUND')
+    // Pinning is sidebar-only metadata; leave updated_at untouched so it does
+    // not reshuffle activity-based ordering.
+    const pinnedAt = pinned ? Date.now() : null
+    conversations.setPinnedAt(chatId, pinnedAt)
+    return { ...existing, pinnedAt }
+  }
+
   async function resolveAgentDefinition(chatId: string): Promise<AgentDefinition> {
     const conversation = requireConversation(chatId, 'AGENT_DEFINITION_NOT_FOUND')
     const def = identity.resolveAgentType(conversation.agentId)
@@ -301,6 +311,7 @@ export function createAgentStore(
     setConversationSubagentModel,
     setConversationReasoningEffort,
     setConversationAgent,
+    setConversationPinned,
     save(chatId, nextMessages) {
       requireConversation(chatId, 'CHAT_CONVERSATION_NOT_FOUND')
       db.transaction(() => writeActiveMessages(chatId, nextMessages))

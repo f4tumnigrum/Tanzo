@@ -52,6 +52,8 @@ export interface ConversationSummary {
   cwd: string
   parentConversationId: string | null
   parentRelation: ConversationParentRelation | null
+  /** Epoch ms when the conversation was pinned in the sidebar; null when unpinned. */
+  pinnedAt: number | null
   createdAt: number
   updatedAt: number
   archivedAt: number | null
@@ -119,6 +121,7 @@ export const CHAT_CHANNELS = {
   setConversationSubagentModel: 'chat:set-conversation-subagent-model',
   setConversationReasoningEffort: 'chat:set-conversation-reasoning-effort',
   setConversationAgent: 'chat:set-conversation-agent',
+  setConversationPinned: 'chat:set-conversation-pinned',
   listAgents: 'chat:list-agents',
   compact: 'chat:compact',
   loadArchived: 'chat:load-archived',
@@ -267,6 +270,7 @@ export interface ChatApi {
   setConversationSubagentModel(chatId: string, modelRef: string): Promise<ConversationSummary>
   setConversationReasoningEffort(chatId: string, effort: string): Promise<ConversationSummary>
   setConversationAgent(chatId: string, agentId: string): Promise<ConversationSummary>
+  setConversationPinned(chatId: string, pinned: boolean): Promise<ConversationSummary>
   listAgents(kind: AgentKind): Promise<AgentSummary[]>
   compact(chatId: string, options?: { instructions?: string }): Promise<CompactionOutcome>
   contextSnapshot(chatId: string): Promise<TanzoDataParts['context'] | null>

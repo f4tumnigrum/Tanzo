@@ -44,6 +44,7 @@ export interface AgentStore {
   setConversationSubagentModel(chatId: string, modelRef: string): ConversationSummary
   setConversationReasoningEffort(chatId: string, effort: string): ConversationSummary
   setConversationAgent(chatId: string, agentId: string): ConversationSummary
+  setConversationPinned(chatId: string, pinned: boolean): ConversationSummary
   save(chatId: string, messages: TanzoUIMessage[]): void
 
   finalizeCompaction(

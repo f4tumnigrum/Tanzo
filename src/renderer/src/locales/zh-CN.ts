@@ -179,6 +179,8 @@ export const zhCN = {
         },
         delete: '删除会话',
         rename: '重命名',
+        pin: '置顶会话',
+        unpin: '取消置顶',
         newWorkspaceConversation: '在该工作区新建对话',
         removeWorkspaceAction: '删除工作区',
         removeWorkspace: {
@@ -702,6 +704,7 @@ export const zhCN = {
         setModel: '切换模型失败。',
         setAgent: '切换智能体失败。',
         renameConversation: '重命名对话失败。',
+        pinConversation: '置顶对话失败。',
         agentCommandMissing: '用法：/agent <名称|ID>。',
         agentCommandUnknown: '未找到“{{agent}}”对应的智能体。',
         agentCommandDuringRun: '请等待当前运行结束后再切换智能体。',

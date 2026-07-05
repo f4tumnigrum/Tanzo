@@ -205,6 +205,11 @@ export function chatHandlers(deps: AgentIpcDeps): IpcRegistration[] {
         )
     ],
     [
+      CHAT_CHANNELS.setConversationPinned,
+      (chatId, pinned) =>
+        deps.store.setConversationPinned(chatIdSchema.parse(chatId), z.boolean().parse(pinned))
+    ],
+    [
       CHAT_CHANNELS.listAgents,
       (kind) => deps.identity.listAgents(agentKindSchema.parse(kind)).map(toAgentSummary)
     ],

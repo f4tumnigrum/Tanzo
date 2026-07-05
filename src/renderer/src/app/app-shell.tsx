@@ -86,6 +86,7 @@ export function AppShell({ children }: AppShellProps): React.JSX.Element {
                   onConversationSelect={navigation.handleSelectConversation}
                   onConversationDelete={navigation.handleDelete}
                   onConversationRename={navigation.handleRename}
+                  onConversationTogglePin={navigation.handleTogglePinned}
                   onNewConversation={navigation.handleNewConversation}
                   onWorkspaceConversationCreate={navigation.handleWorkspaceConversationCreate}
                   onWorkspaceRemove={navigation.handleWorkspaceRemove}

@@ -125,6 +125,9 @@ export const chatClient = {
   setConversationAgent(chatId: string, agentId: string): Promise<ConversationSummary> {
     return requireChatApi().setConversationAgent(chatId, agentId)
   },
+  setConversationPinned(chatId: string, pinned: boolean): Promise<ConversationSummary> {
+    return requireChatApi().setConversationPinned(chatId, pinned)
+  },
   listAgents(kind: AgentKind): Promise<AgentSummary[]> {
     return requireChatApi()
       .listAgents(kind)

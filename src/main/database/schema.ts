@@ -171,6 +171,7 @@ CREATE TABLE conversations (
   subagent_model_ref     TEXT NOT NULL DEFAULT '',
   reasoning_effort       TEXT NOT NULL DEFAULT '',
   cwd                    TEXT NOT NULL DEFAULT '',
+  pinned_at              INTEGER,
   created_at             INTEGER NOT NULL,
   updated_at             INTEGER NOT NULL,
   archived_at            INTEGER
@@ -588,6 +589,19 @@ export const tanzoMigrations: ModuleMigrations = {
         }>
         if (columns.some((column) => column.name === 'blocker_last_run_id')) return
         db.exec('ALTER TABLE conversation_goals ADD COLUMN blocker_last_run_id TEXT')
+      }
+    },
+    {
+      // Sidebar pinning: pinned_at is a timestamp (not a flag) so pinned
+      // conversations keep a stable most-recently-pinned-first order.
+      version: 26,
+      name: 'conversation_pinned_at',
+      up: (db) => {
+        const columns = db.prepare('PRAGMA table_info(conversations)').all() as Array<{
+          name: string
+        }>
+        if (columns.some((column) => column.name === 'pinned_at')) return
+        db.exec('ALTER TABLE conversations ADD COLUMN pinned_at INTEGER')
       }
     }
   ]
