@@ -65,10 +65,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: macOS
+          - name: macOS (arm64)
             os: macos-latest
-            command: pnpm build && pnpm exec electron-builder --mac --publish never
-            artifact-name: Tanzo-macOS
+            command: pnpm build && pnpm exec electron-builder --mac --arm64 --publish never
+            artifact-name: Tanzo-macOS-arm64
+            artifact-path: |
+              dist/*.dmg
+              dist/*.zip
+              dist/*.blockmap
+              dist/latest-mac.yml
+          - name: macOS (x64)
+            os: macos-13
+            command: pnpm build && pnpm exec electron-builder --mac --x64 --publish never
+            artifact-name: Tanzo-macOS-x64
             artifact-path: |
               dist/*.dmg
               dist/*.zip
@@ -171,11 +180,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: dist/artifacts
-          merge-multiple: true
+
+      - name: Collect release files and merge mac update manifests
+        run: node scripts/collect-release-artifacts.mjs dist/artifacts dist/release
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
           body: ${{ steps.notes.outputs.body }}
-          files: dist/artifacts/**
+          files: dist/release/**
           prerelease: ${{ contains(github.ref_name, '-') }}
