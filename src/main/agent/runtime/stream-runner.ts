@@ -18,7 +18,6 @@ import type {
   TanzoUIMessage,
   TanzoUsageMetadata
 } from '@shared/agent-message'
-import { splitStepMessages } from '@shared/message-steps'
 import type { AgentDefinition } from '../agents/types'
 import type { ContextEngine } from '../context'
 import { getContextProvenance } from '../context/section'
@@ -39,7 +38,11 @@ export type UsageLike = {
   inputTokens?: number
   outputTokens?: number
   totalTokens?: number
-  inputTokenDetails?: { cacheReadTokens?: number; cacheWriteTokens?: number }
+  inputTokenDetails?: {
+    noCacheTokens?: number
+    cacheReadTokens?: number
+    cacheWriteTokens?: number
+  }
   outputTokenDetails?: { reasoningTokens?: number }
   reasoningTokens?: number
   cachedInputTokens?: number
@@ -68,6 +71,9 @@ export interface AgentStreamFinalState {
   isGoalContinuation: boolean
   exitPlanModeCalled: boolean
   endedWithTextOnly: boolean
+  /** Worktree diff verdict from the change-set capture (null = unavailable).
+   *  Filled by turn-loop after settleChangeCapture, before goal evaluation. */
+  worktreeChanged?: boolean | null
 }
 
 export function streamStatus(state: AgentStreamFinalState): Exclude<ChatRunStatus, 'running'> {
@@ -217,16 +223,27 @@ function isUsageLimitError(error: unknown): boolean {
 
 const OVERHEAD_TOOL_NAMES = new Set(['updateGoal', 'todo'])
 
-function toolKind(tools: ToolSet, toolName: string): string | undefined {
-  const tool = tools[toolName] as { metadata?: { tanzo?: { kind?: unknown } } } | undefined
-  const kind = tool?.metadata?.tanzo?.kind
-  return typeof kind === 'string' ? kind : undefined
+function toolMeta(
+  tools: ToolSet,
+  toolName: string
+): { kind?: string; workSignal?: boolean } {
+  const tool = tools[toolName] as
+    | { metadata?: { tanzo?: { kind?: unknown; workSignal?: unknown } } }
+    | undefined
+  const tanzo = tool?.metadata?.tanzo
+  return {
+    ...(typeof tanzo?.kind === 'string' ? { kind: tanzo.kind } : {}),
+    ...(typeof tanzo?.workSignal === 'boolean' ? { workSignal: tanzo.workSignal } : {})
+  }
 }
 
 function isWorkToolCall(tools: ToolSet, toolName: string): boolean {
   if (OVERHEAD_TOOL_NAMES.has(toolName)) return false
-  const kind = toolKind(tools, toolName)
-  return kind === 'edit' || kind === 'exec'
+  const meta = toolMeta(tools, toolName)
+  // Explicit workSignal wins (unannotated MCP tools opt out of work evidence
+  // while keeping the conservative 'edit' approval kind).
+  if (meta.workSignal !== undefined) return meta.workSignal
+  return meta.kind === 'edit' || meta.kind === 'exec'
 }
 
 export function startAgentStream(
@@ -275,18 +292,39 @@ export function startAgentStream(
       let stepCounter = 0
       const aggregatedUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 }
       const stepUsages: TanzoStepUsageMetadata[] = []
-      const consumedSteering: ModelMessage[] = []
       const rootChatId = deps.store.rootOf(opts.chatId)
       const mode = deps.policy.getMode(rootChatId)
-      const cwd = deps.store.getConversation(opts.chatId)?.cwd ?? process.cwd()
+      const conversation = deps.store.getConversation(opts.chatId)
+      const cwd = conversation?.cwd ?? process.cwd()
       const tools = await deps.buildTools({
         def: opts.def,
         chatId: opts.chatId,
         depth: opts.depth,
         mode,
-        messages: opts.messages
+        messages: opts.messages,
+        runId: opts.runId
       })
       const compactionPolicy = deps.contextEngine?.compactionPolicy(opts.def)
+      // Goal budget snapshot (v2): only for the main agent on a broadcast run
+      // with an active, budgeted goal. Read once at run start — the machine's
+      // end-of-turn evaluation remains the single source of truth.
+      const goalBudget = (() => {
+        if (!opts.broadcast || !deps.goal) return undefined
+        if (conversation?.parentConversationId) return undefined
+        const goal = deps.goal.get(opts.chatId)
+        if (!goal || goal.userState !== 'active' || goal.outcome || goal.limit) return undefined
+        const remainingTokens =
+          goal.tokenBudget != null ? Math.max(0, goal.tokenBudget - goal.tokensUsed) : undefined
+        const remainingSeconds =
+          goal.timeBudgetSeconds != null
+            ? Math.max(0, goal.timeBudgetSeconds - goal.timeUsedSeconds)
+            : undefined
+        if (remainingTokens === undefined && remainingSeconds === undefined) return undefined
+        return {
+          ...(remainingTokens !== undefined ? { remainingTokens } : {}),
+          ...(remainingSeconds !== undefined ? { remainingSeconds } : {})
+        }
+      })()
       const agentCall = buildAgentCall({
         def: opts.def,
         chatId: opts.chatId,
@@ -296,6 +334,8 @@ export function startAgentStream(
         decide: deps.policy.decide,
         shouldStop: () => hookRequestedStop,
         telemetry: telemetry.options,
+        ...(conversation?.reasoningEffort ? { reasoningEffort: conversation.reasoningEffort } : {}),
+        ...(goalBudget ? { goalBudget } : {}),
         ...(opts.forceExitPlanMode
           ? { toolChoice: { type: 'tool' as const, toolName: 'exitPlanMode' } }
           : {})
@@ -305,14 +345,17 @@ export function startAgentStream(
         await convertToModelMessages(opts.messages, { tools, ignoreIncompleteToolCalls: true })
       )
 
-      // In-stream compaction state (invariant I4): when the compaction fires,
-      // the compacted transcript replaces the base and prepareStep's returned
-      // messages carry forward through the rest of the run.
-      // `responseCountAtCompaction` marks the step boundary — responseMessages
-      // accumulated before it belong to the pre-compaction transcript and must
-      // be dropped from the base.
-      let compactedBase: ModelMessage[] | null = null
-      let responseCountAtCompaction = 0
+      // Rebased model transcript (append-only prefix invariant). Two events
+      // replace the base mid-run: in-stream compaction (invariant I4) swaps in
+      // `[summary, ...tail]`, and consumed steering is pinned at the step where
+      // it was drained. Steering must NOT be re-appended after the moving
+      // frontier each step — that would shift its position as responses
+      // accumulate and break the provider prefix cache for the rest of the run.
+      // `responseCountAtRebase` marks the step boundary — responseMessages
+      // accumulated before it are already baked into the base and must be
+      // dropped when reassembling.
+      let rebasedBase: ModelMessage[] | null = null
+      let responseCountAtRebase = 0
       let lastStepInputTokens = 0
 
       // The trigger reads the *reported* usage of the previous step. This is
@@ -342,6 +385,12 @@ export function startAgentStream(
           if (rawStreamError === undefined) rawStreamError = error
         },
         prepareStep: async ({ responseMessages, stepNumber }) => {
+          const liveResponses = (responseMessages as ModelMessage[]).slice(
+            rebasedBase ? responseCountAtRebase : 0
+          )
+          const base = rebasedBase ?? initialMessages
+          let transcript = canonicalizeToolTranscript([...base, ...liveResponses])
+
           const steers = opts.steerQueue.drain(opts.chatId)
           if (steers.length > 0) {
             opts.recordConsumedSteering?.(
@@ -352,15 +401,16 @@ export function startAgentStream(
               })),
               stepNumber
             )
-            for (const text of steers) consumedSteering.push({ role: 'user', content: text })
+            // Pin the steering at its consumption point by rebasing: later
+            // steps keep it at this fixed position in the transcript, so the
+            // prompt prefix stays append-only across the rest of the run.
+            transcript = [
+              ...transcript,
+              ...steers.map<ModelMessage>((text) => ({ role: 'user', content: text }))
+            ]
+            rebasedBase = transcript
+            responseCountAtRebase = (responseMessages as ModelMessage[]).length
           }
-
-          const liveResponses = (responseMessages as ModelMessage[]).slice(
-            compactedBase ? responseCountAtCompaction : 0
-          )
-          const base = compactedBase ?? initialMessages
-          let transcript = canonicalizeToolTranscript([...base, ...liveResponses])
-          if (consumedSteering.length > 0) transcript = [...transcript, ...consumedSteering]
 
           // --- In-stream compaction (v2) ---
           if (deps.contextEngine && compactionPolicy && shouldCompactInline()) {
@@ -398,12 +448,8 @@ export function startAgentStream(
               )
               if (compacted) {
                 transcript = compacted.transcript
-                compactedBase = compacted.transcript
-                responseCountAtCompaction = (responseMessages as ModelMessage[]).length
-                // Steering consumed so far is baked into the compacted
-                // transcript (it was part of the input); clear it so later
-                // steps do not append it a second time.
-                consumedSteering.length = 0
+                rebasedBase = compacted.transcript
+                responseCountAtRebase = (responseMessages as ModelMessage[]).length
                 // Clear the stale trigger reading; the next step's reported
                 // usage reflects the compacted prompt.
                 lastStepInputTokens = 0
@@ -446,7 +492,8 @@ export function startAgentStream(
             opts.chatId,
             cwd,
             transcript,
-            stepNumber
+            stepNumber,
+            opts.runId
           )
           if (!built) return undefined
           const messages = canonicalizeToolTranscript(built.messages as ModelMessage[])
@@ -554,14 +601,11 @@ export function startAgentStream(
         })
       )
     },
-    // Persist per-step rows (design §4.5): the SDK aggregates the whole pass
-    // into one assistant message; storage splits it so compaction cuts always
-    // land on whole rows. The chunk stream to the renderer is untouched.
     onStepEnd: async ({ messages }) => {
-      await opts.persistStepMessages?.(splitStepMessages(messages))
+      await opts.persistStepMessages?.(messages)
     },
     onEnd: async ({ messages }) => {
-      await opts.persistFinalMessages?.(splitStepMessages(messages), { streamFailed })
+      await opts.persistFinalMessages?.(messages, { streamFailed })
     },
     onError: (error) => {
       streamFailed = true

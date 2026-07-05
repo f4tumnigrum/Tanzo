@@ -8,10 +8,12 @@ import {
   type ToolSet
 } from 'ai'
 import type { ProviderOptions } from '@ai-sdk/provider-utils'
+import { requireModelRef } from '@shared/provider'
 import type { TanzoUsageMetadata } from '@shared/agent-message'
 import type { AgentDefinition } from '../../agents/types'
 import type { ContextEngine } from '../index'
 import { estimateModelMessagesTokens, estimateTextTokens } from '../ledger'
+import { mergeProviderOptionsInto } from '../../../provider/options'
 import { hasProviderOptions, resolveLanguageModelConfig } from '../../runtime/model-config'
 import type { AgentRuntimeDeps, Logger } from '../../runtime/types'
 import { extractPartialSummary } from './prompt'
@@ -244,17 +246,23 @@ async function streamSummary(call: StreamSummaryCall): Promise<SummarizeForkResu
 
   try {
     let stepUsage: TanzoUsageMetadata | undefined
-    const mergedProviderOptions = {
-      ...(hasProviderOptions(call.model.providerOptions) ? call.model.providerOptions : {}),
-      ...(call.providerOptions ?? {})
-    }
+    const mergedProviderOptions = mergeProviderOptionsInto(
+      call.model.providerOptions,
+      call.providerOptions ?? {}
+    )
     const result = streamText<ToolSet>({
       model: call.model.model,
       ...(call.tools ? { tools: call.tools } : {}),
       ...(call.toolChoice ? { toolChoice: call.toolChoice } : {}),
       ...(call.instructions ? { instructions: call.instructions } : {}),
       stopWhen: [isStepCount(1)],
-      ...call.model.callSettings,
+      // Internal summarization call: inherit only the retry policy. The
+      // remaining user call settings (temperature, stopSequences,
+      // maxOutputTokens, …) are tuned for the interactive conversation and
+      // could truncate or distort the summary.
+      ...(call.model.callSettings.maxRetries !== undefined
+        ? { maxRetries: call.model.callSettings.maxRetries }
+        : {}),
       ...(hasProviderOptions(mergedProviderOptions)
         ? { providerOptions: mergedProviderOptions }
         : {}),
@@ -290,7 +298,7 @@ async function streamSummary(call: StreamSummaryCall): Promise<SummarizeForkResu
 }
 
 function providerOf(modelRef: string): string {
-  return modelRef.split(':', 1)[0]
+  return requireModelRef(modelRef).providerId
 }
 
 /**
@@ -328,7 +336,14 @@ export async function runSummarizeFork(
   // passed verbatim (as SystemModelMessage[]) so provider cache markers are
   // preserved and the prompt prefix stays byte-identical to the main run's.
   if (!input.def.compactionModelRef && input.tools && headTokens <= forkBudget) {
-    const built = await deps.contextEngine.build(input.def, input.chatId, input.cwd, input.head, 0)
+    const built = await deps.contextEngine.build(
+      input.def,
+      input.chatId,
+      input.cwd,
+      input.head,
+      0,
+      input.runId
+    )
     // Anthropic serializes tool_choice into the cached prefix — keep it 'auto'
     // there and rely on the instruction; other providers hash only the message
     // prefix, so 'none' is free.

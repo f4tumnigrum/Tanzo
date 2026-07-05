@@ -27,6 +27,14 @@ interface RunPersistenceSession {
   baseMessages: TanzoUIMessage[]
   consumedSteers: ConsumedSteer[]
   context: ChatRunPersistenceContext
+  /**
+   * In-memory view of the persisted transcript, hydrated lazily on the first
+   * persist call. The run is the single writer for its conversation while it
+   * is active (run/persistence choreography in run-session-registry.ts), so
+   * subsequent steps merge against this view instead of re-reading the whole
+   * conversation from SQLite on every streaming step.
+   */
+  persistedView: TanzoUIMessage[] | null
 }
 
 export interface ChatRunPersistenceRegistry {
@@ -98,12 +106,13 @@ function persistableMessages(messages: TanzoUIMessage[]): TanzoUIMessage[] {
 }
 
 /**
- * Splice consumed steering into the persisted transcript at the exact position
- * the model saw it (D6-2). Messages are per-step rows: the fragment produced by
- * run-step `s` carries `metadata.steps[0].stepNumber === s + 1`, so a steer
- * drained before step `s` inserts before that fragment. Fallbacks: before the
- * first generated message for pre-run steers (step 0), at the end when the
- * step never persisted (aborted run).
+ * Splice consumed steering into the persisted transcript as close as possible
+ * to the position the model saw it (D6-2). Generated assistant messages carry
+ * `metadata.steps[0].stepNumber`; a steer drained before step `s` inserts
+ * before the first generated message whose steps start at `s + 1` or later.
+ * With one aggregated row per reply this degrades to before/after the reply:
+ * pre-run steers (step 0) go before it, mid-run steers after it. Fallback for
+ * transcripts without step metadata: the first generated boundary.
  */
 function withConsumedSteering(
   session: RunPersistenceSession,
@@ -188,9 +197,12 @@ async function persistRunMessages(
   if (!allowed) return false
   const incoming = persistableMessages(withConsumedSteering(session, messages))
   if (incoming.length === 0) return false
-  const current = context.store.loadUnvalidated(session.chatId)
+  // First persist hydrates the view from the store; later steps merge against
+  // the in-memory view (the run is the single writer while it is active).
+  const current = session.persistedView ?? context.store.loadUnvalidated(session.chatId)
   const persisted = mergeGeneratedMessages(session, current, incoming)
   context.store.save(session.chatId, persisted)
+  session.persistedView = persisted
   if (options.publishContext) await publishContextSnapshot(session, persisted)
   return true
 }
@@ -211,7 +223,8 @@ export function createChatRunPersistenceRegistry(): ChatRunPersistenceRegistry {
         runId,
         baseMessages: clone(baseMessages),
         consumedSteers: [],
-        context
+        context,
+        persistedView: null
       })
     },
 

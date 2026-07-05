@@ -47,3 +47,14 @@ export async function renderContextInjection(
 export function isContextInjectionMessage(message: TanzoUIMessage): boolean {
   return message.parts.some((part) => part.type === 'data-contextInjection')
 }
+
+/** Section ids that actually rendered into an injection message (I6). */
+export function renderedSectionIds(message: TanzoUIMessage): Set<string> {
+  for (const part of message.parts) {
+    if (part.type === 'data-contextInjection') {
+      const sections = (part.data as { sections?: string[] } | undefined)?.sections
+      return new Set(sections ?? [])
+    }
+  }
+  return new Set()
+}

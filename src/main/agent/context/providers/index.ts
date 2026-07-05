@@ -1,4 +1,4 @@
-import type { ProviderId } from '@shared/provider'
+import { parseModelRef } from '@shared/provider'
 import { createAnthropicStrategy } from './anthropic'
 import { createDeepseekStrategy } from './deepseek'
 import { createOpenAIStrategy, createOpenAICompatibleStrategy } from './openai'
@@ -7,13 +7,8 @@ import type { ProviderContextStrategy } from './strategy'
 
 export type { ProviderContextStrategy, CacheKind, CachingInput } from './strategy'
 
-function providerOf(modelRef: string): string {
-  return modelRef.split(':', 1)[0]
-}
-
 export function strategyFor(modelRef: string, chatId: string): ProviderContextStrategy {
-  const provider = providerOf(modelRef) as ProviderId
-  switch (provider) {
+  switch (parseModelRef(modelRef)?.providerId) {
     case 'anthropic':
       return createAnthropicStrategy()
     case 'openai':

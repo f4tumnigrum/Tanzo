@@ -6,7 +6,6 @@ import type { ProviderService } from '../../provider/service'
 import type { SkillsStore } from '../skills/types'
 import type { PluginCapabilitySummary } from '../plugins/manager'
 import type { ContextEngineDeps } from './index'
-import type { GoalSectionReader } from './sections/goal'
 import type { PlanModeSectionReader } from './sections/plan-mode'
 
 const PROJECT_INSTRUCTION_CANDIDATES = [
@@ -30,7 +29,7 @@ export interface ContextEngineWiring {
   pluginCapabilities: () => PluginCapabilitySummary[]
   pluginMention: { peek: (chatId: string) => string[]; take: (chatId: string) => void }
   providerService: ProviderService
-  goal: GoalSectionReader
+  goal: ContextEngineDeps['goal']
   policyMode: PlanModeSectionReader
 }
 

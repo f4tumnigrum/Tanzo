@@ -89,10 +89,9 @@ function reportedAnchor(messages: TanzoUIMessage[], afterIndex: number): AnchorI
     const last = steps[steps.length - 1]
     const inputTokens = last?.usage?.inputTokens
     if (typeof inputTokens !== 'number' || inputTokens <= 0) continue
-    // The anchor input is the prompt of the LAST step in this row, which
+    // The anchor input is the prompt of the LAST step in this message, which
     // already contains every earlier step's output — so the only increment the
-    // row itself adds is the last step's own output. With per-step rows
-    // (design §4.5) each row carries exactly one step, making this exact.
+    // message itself adds is the last step's own output.
     const outputTokens = last?.usage?.outputTokens ?? 0
     return { index: i, inputTokens, outputTokens }
   }

@@ -8,6 +8,7 @@ import { createPluginsIndexSection, type PluginsIndexReader } from './sections/p
 import { createPluginsMentionSection, type PluginMentionReader } from './sections/plugins-mention'
 import { createGitStatusSection, type GitStatusReader } from './sections/git-status'
 import { createGoalSection, type GoalSectionReader } from './sections/goal'
+import { createGoalCharterSection } from './sections/goal-charter'
 import { createPlanModeSection, type PlanModeSectionReader } from './sections/plan-mode'
 
 export interface SectionDeps {
@@ -28,6 +29,7 @@ export function createSectionRegistry(deps: SectionDeps): ContextSection[] {
     createTanzoSection(deps.tanzoInstructions),
     createSkillsIndexSection(deps.skillsIndex),
     createPluginsIndexSection(deps.pluginsIndex),
+    createGoalCharterSection(deps.goal),
     envSection,
     createDatetimeSection(deps.clock),
     createGitStatusSection(deps.gitStatus),

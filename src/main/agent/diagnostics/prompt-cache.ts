@@ -1,5 +1,6 @@
 import { createHash } from 'crypto'
 import type { ModelMessage, ToolSet } from 'ai'
+import { parseModelRef } from '@shared/provider'
 import type { AgentDefinition } from '../agents/types'
 import type {
   ContextMessageProvenance,
@@ -360,7 +361,7 @@ export function buildPromptCacheDiagnostic(input: {
   }
   previous?: PromptDiagnosticPrevious
 }): PromptCacheDiagnosticRecord {
-  const provider = input.def.modelRef.split(':', 1)[0] || ''
+  const provider = parseModelRef(input.def.modelRef)?.providerId ?? ''
   const system = input.prepared.system ?? []
   const messages = input.prepared.messages ?? []
   const providerOptions = input.prepared.providerOptions ?? {}

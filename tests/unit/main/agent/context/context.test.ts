@@ -366,7 +366,7 @@ describe('main/agent/context provider strategies', () => {
     })
   })
 
-  it('adds OpenAI-compatible prompt cache options under the SDK camelCase key', () => {
+  it('adds the OpenAI-compatible prompt cache key in wire format (snake_case passthrough)', () => {
     const plan = {
       system: [],
       stableBoundary: 0,
@@ -381,8 +381,7 @@ describe('main/agent/context provider strategies', () => {
 
     expect(out.providerOptions).toEqual({
       openaiCompatible: {
-        promptCacheKey: 'tanzo:chat:chat-9',
-        promptCacheRetention: '24h'
+        prompt_cache_key: 'tanzo:chat:chat-9'
       }
     })
   })

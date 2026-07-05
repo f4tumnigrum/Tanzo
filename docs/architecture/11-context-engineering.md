@@ -154,38 +154,26 @@ summary message records `degraded: 'prune' | 'drop-oldest'` in its `data-compact
 Tool serialization order is pinned via `toolOrder` (sorted) in `build-agent.ts`, since the Anthropic cache
 prefix includes the tools block.
 
-## 7. Per-step persistence (design §4.5)
+## 7. Message-row representation (one row per reply)
 
-### 7.1 Write path
+Storage keeps the **live-domain shape**: one assistant row per model pass, parts delimited by
+`step-start`, per-step usage in `metadata.steps[]`. This is intentional — the AI SDK streams a whole
+reply under a single message id, and giving that reply a second persisted identity proved to be a
+systematic bug source (duplicate rendering wherever live and persisted views met by id).
 
-The AI SDK aggregates a whole model pass into one assistant UIMessage (parts delimited by `step-start`,
-usage accumulated in `metadata.steps[]`). `@shared/message-steps` (`splitAssistantSteps`) splits that
-message at the persistence boundary (`stream-runner.ts` `onStepEnd`/`onEnd`) into **one row per step
-group**: the first fragment keeps the original id, later fragments get deterministic ids
-(`{baseId}::step-k`), and each fragment carries exactly its own `metadata.steps[0]` (the ledger anchor
-shape). The aggregate `metadata.usage` rides on the last fragment. The chunk stream to the renderer is
-untouched — splitting happens only in what gets written to the store.
+When a UI-domain compaction cut must land inside a multi-step reply, `cut.ts` splits the message
+**in memory at that moment** (`partitionAtCut`): the head fragment keeps the original id and is
+archived; the tail fragment gets a fresh id and stays in the tail. The split complexity lives in one
+function, at one instant — not in the storage schema.
 
-Consequences:
+Mid-run steering persists near the position the model saw it (D6-2): `recordConsumedSteering` carries
+the prepareStep `stepNumber`; with aggregated rows this resolves to before the reply (pre-run steers)
+or after it (mid-run steers), using `metadata.steps[0].stepNumber` when present.
 
-- compaction cuts always cover whole rows; overlay `covers_from_seq/covers_to_seq` semantics are exact;
-- mid-run steering persists at the exact step position the model saw it: `recordConsumedSteering` carries
-  the prepareStep `stepNumber`, and the merge inserts the steer before the first fragment whose
-  `steps[0].stepNumber` exceeds it (D6-2 fully closed);
-- the ledger anchor is trivially the newest per-step row's reported `inputTokens` plus its own output.
-
-### 7.2 Display path
-
-The renderer regroups consecutive step fragments (`groupAssistantSteps`, applied in `message-list.tsx`)
-so a multi-step reply renders as one block, identical to the live-stream view. The merged block takes the
-**last** fragment's id so fork (which slices through the target id) captures the whole reply.
-
-### 7.3 Migration
-
-DB migration 22 (`database/per-step-migration.ts`) splits historical multi-step assistant rows using the
-same `splitAssistantSteps`, renumbers each conversation's rows densely, remaps compaction-overlay coverage
-onto the new seqs, and drops stale aggregated revisions (the log projection COALESCEs revisions over base
-rows).
+History: migration 22 briefly split storage into one row per step (`{baseId}::step-k` ids); migration
+23 (`database/merge-step-rows-migration.ts`) merges those fragment runs back into aggregated rows,
+remaps compaction-overlay coverage outward to whole rows, and drops fragment revisions.
+`@shared/message-steps` remains only to serve these two migrations.
 
 ## 8. Tool-record normalization
 

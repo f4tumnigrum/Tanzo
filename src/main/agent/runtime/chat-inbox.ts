@@ -203,11 +203,13 @@ export function createChatInbox(
   }
 
   /**
-   * Re-run the last turn after a failure. The transcript is replayed as-is:
-   * a failed run leaves the history ending either with the user message (no
-   * assistant output persisted) or with a partial assistant reply. Both replay
-   * fine — convertToModelMessages drops incomplete tool calls, and the model
-   * simply continues from the last user prompt.
+   * Resume the last turn after a failure. The full transcript is replayed:
+   * steps that completed before the failure (tool calls with results, partial
+   * text) were persisted per-step and stay in context, so the model continues
+   * from where it stopped instead of redoing the whole turn. The turn loop
+   * strips trailing incomplete tool inputs, and when the history ends with an
+   * assistant message the persistence layer merges the new stream into it
+   * (continuationMessageId), so the reply stays a single message in the UI.
    */
   async function retryTurn(chatId: string): Promise<void> {
     if (callbacks.isInflight(chatId)) {
@@ -217,16 +219,14 @@ export function createChatInbox(
       )
     }
     const current = await deps.store.load(chatId)
-    const lastUserIndex = current.findLastIndex((message) => message.role === 'user')
-    if (lastUserIndex === -1) {
+    const hasUserMessage = current.some((message) => message.role === 'user')
+    if (!hasUserMessage) {
       throw new TanzoValidationError(
         'CHAT_RETRY_NOTHING_TO_RETRY',
         'There is no user message to retry.'
       )
     }
-    // Drop any partial assistant output from the failed turn so the retry is a
-    // clean re-ask instead of a continuation of a broken reply.
-    await routeMessages(chatId, current.slice(0, lastUserIndex + 1))
+    await routeMessages(chatId, current)
   }
 
   async function submitUserMessage(chatId: string, message: string): Promise<void> {

@@ -135,55 +135,39 @@ describe('agent/runtime/run-persistence-registry', () => {
     expect(saved.at(-1)).toEqual([storeUser, steer, assistant])
   })
 
-  it('interleaves mid-run steering at the exact step position the model saw (D6-2)', async () => {
+  it('places pre-run steering before the reply and mid-run steering after it (D6-2)', async () => {
     const { registry, storeUser, saved } = startPersistence()
-    const step = (id: string, stepNumber: number): TanzoUIMessage =>
-      ({
-        id,
-        role: 'assistant',
-        parts: [{ type: 'step-start' }, { type: 'text', text: `s${stepNumber}` }],
-        metadata: { steps: [{ stepNumber }] }
-      }) as TanzoUIMessage
-    const steer: TanzoUIMessage = {
+    // One aggregated row per reply: the whole pass is a single assistant
+    // message whose metadata lists every step.
+    const reply: TanzoUIMessage = {
+      id: 'a1',
+      role: 'assistant',
+      parts: [
+        { type: 'step-start' },
+        { type: 'text', text: 's1' },
+        { type: 'step-start' },
+        { type: 'text', text: 's2' }
+      ],
+      metadata: { steps: [{ stepNumber: 1 }, { stepNumber: 2 }] }
+    } as TanzoUIMessage
+    const preRun: TanzoUIMessage = {
+      id: 'steer-0',
+      role: 'user',
+      parts: [{ type: 'text', text: 'before the run' }]
+    }
+    const midRun: TanzoUIMessage = {
       id: 'steer-1',
       role: 'user',
       parts: [{ type: 'text', text: 'also check lint' }]
     }
 
-    // Steer drained in prepareStep of run-step 2 (0-based) → the model saw it
-    // after the step-2 fragment (stepNumber 2) and before step 3.
-    registry.addConsumedSteering('chat-1', 'run-1', [steer], 2)
-    await registry.persistFinalMessages(
-      'chat-1',
-      'run-1',
-      [baseMessages[0], step('a1', 1), step('a1::step-1', 2), step('a1::step-2', 3)],
-      { streamFailed: false }
-    )
-
-    expect(saved.at(-1)).toEqual([
-      storeUser,
-      step('a1', 1),
-      step('a1::step-1', 2),
-      steer,
-      step('a1::step-2', 3)
-    ])
-  })
-
-  it('persists multiple new per-step rows in stream order', async () => {
-    const { registry, storeUser, saved } = startPersistence()
-    const rows: TanzoUIMessage[] = [
-      { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'one' }] },
-      { id: 'a1::step-1', role: 'assistant', parts: [{ type: 'text', text: 'two' }] },
-      { id: 'a1::step-2', role: 'assistant', parts: [{ type: 'text', text: 'three' }] }
-    ]
-
-    // Step persist mid-run (two rows), then final persist (three rows).
-    await registry.persistStepMessages('chat-1', 'run-1', [baseMessages[0], ...rows.slice(0, 2)])
-    await registry.persistFinalMessages('chat-1', 'run-1', [baseMessages[0], ...rows], {
+    registry.addConsumedSteering('chat-1', 'run-1', [preRun], 0)
+    registry.addConsumedSteering('chat-1', 'run-1', [midRun], 1)
+    await registry.persistFinalMessages('chat-1', 'run-1', [baseMessages[0], reply], {
       streamFailed: false
     })
 
-    expect(saved.at(-1)).toEqual([storeUser, ...rows])
+    expect(saved.at(-1)).toEqual([storeUser, preRun, reply, midRun])
   })
 
   it('orders steering before the continued assistant message after approval', async () => {

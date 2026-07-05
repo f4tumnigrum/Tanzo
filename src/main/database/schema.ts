@@ -1,4 +1,5 @@
 import type { ModuleMigrations } from './types'
+import { mergeStepMessageRows } from './merge-step-rows-migration'
 import { migratePerStepMessages } from './per-step-migration'
 
 const INITIAL_SCHEMA = `
@@ -553,6 +554,13 @@ export const tanzoMigrations: ModuleMigrations = {
       version: 22,
       name: 'per_step_message_rows',
       up: (db) => migratePerStepMessages(db)
+    },
+    {
+      // Rollback of 22: per-step rows gave one reply two identities (live SDK
+      // message vs. persisted fragments); storage returns to one row per reply.
+      version: 23,
+      name: 'merge_step_message_rows',
+      up: (db) => mergeStepMessageRows(db)
     }
   ]
 }

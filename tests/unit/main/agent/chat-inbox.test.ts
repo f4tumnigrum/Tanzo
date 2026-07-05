@@ -118,16 +118,16 @@ describe('agent/chat-inbox retryTurn', () => {
     parts: [{ type: 'text', text }]
   })
 
-  it('replays the transcript up to the last user message, dropping partial output', async () => {
+  it('replays the full transcript so completed steps stay in context', async () => {
     const history = [
       user('u1', 'hi'),
       assistant('a1', 'hello'),
       user('u2', 'go'),
-      assistant('a2', 'part')
+      assistant('a2', 'partial work from the failed turn')
     ]
     const { inbox, runTurn } = setup({ inflight: false, history })
     await inbox.retryTurn('chat-1')
-    expect(runTurn).toHaveBeenCalledWith('chat-1', [history[0], history[1], history[2]])
+    expect(runTurn).toHaveBeenCalledWith('chat-1', history)
   })
 
   it('replays a transcript that already ends with the user message', async () => {

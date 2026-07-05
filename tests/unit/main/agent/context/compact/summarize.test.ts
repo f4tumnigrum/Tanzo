@@ -142,6 +142,51 @@ describe('compact/summarize — fork paths', () => {
     expect(aiMocks.calls[0].toolChoice).toBeUndefined()
   })
 
+  it('deep-merges user provider options with the built prompt-cache options', async () => {
+    mockStream()
+    const deps = makeDeps()
+    ;(deps.providerService as { getProviderOptions: ReturnType<typeof vi.fn> }).getProviderOptions =
+      vi.fn(() => ({ openai: { reasoningEffort: 'high' } }))
+
+    await runSummarizeFork(deps, {
+      chatId: 'c1',
+      def: DEF,
+      cwd: '/tmp',
+      runId: 'r1',
+      head: HEAD,
+      prompt: 'SUMMARIZE',
+      tools: { shell: {} } as never
+    })
+
+    // Path A built options (promptCacheKey) must not clobber the user's
+    // configured namespace — both survive the merge.
+    expect(aiMocks.calls[0].providerOptions).toEqual({
+      openai: { reasoningEffort: 'high', promptCacheKey: 'tanzo:chat:c1' }
+    })
+  })
+
+  it('inherits only the retry policy from user call settings', async () => {
+    mockStream()
+    const deps = makeDeps()
+    ;(deps.providerService as { getCallSettings: ReturnType<typeof vi.fn> }).getCallSettings =
+      vi.fn(() => ({ maxRetries: 2, temperature: 0.9, stopSequences: ['DONE'] }))
+
+    await runSummarizeFork(deps, {
+      chatId: 'c1',
+      def: DEF,
+      cwd: '/tmp',
+      runId: 'r1',
+      head: HEAD,
+      prompt: 'SUMMARIZE'
+    })
+
+    const call = aiMocks.calls[0]
+    expect(call.maxRetries).toBe(2)
+    // Conversation-tuned settings could truncate or distort the summary.
+    expect(call.temperature).toBeUndefined()
+    expect(call.stopSequences).toBeUndefined()
+  })
+
   it('path B chunks a head that exceeds the fork window (rolling summary)', async () => {
     mockStream('rolling')
     // Tiny fork window forces chunking.

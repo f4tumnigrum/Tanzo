@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto'
 import type { ChatRunError, ChatRunStatus } from '@shared/chat'
+import type { ChangePreviewData } from '@shared/change-set'
 import { ERROR_CODES } from '@shared/errors'
 import type { SubagentTraceEntry, TanzoUIMessage } from '@shared/agent-message'
 import type { AgentDefinition } from '../agents/types'
@@ -275,6 +276,10 @@ export function createTurnLoop(
     started: boolean
     cwd: string | undefined
     carried: boolean
+    /** Set once settleChangeCapture ran; repeat calls return the cached verdict. */
+    settled?: boolean
+    /** Worktree verdict: true/false when verified, null when unavailable. */
+    verdict?: boolean | null
   }
 
   /**
@@ -313,26 +318,44 @@ export function createTurnLoop(
    * Finalize the change-set capture at the true end of a turn. When the turn
    * paused for approval, the before-checkpoint is carried to the resuming run()
    * instead of being finalized. Otherwise the preview is captured once (or
-   * discarded on failure). No-op when nothing was captured.
+   * discarded on failure). Idempotent: the terminal path settles before goal
+   * dispatch to obtain the worktree verdict (invariant I5); the run() finally
+   * re-invokes it as a safety net and gets the cached verdict.
+   *
+   * Returns the worktree verdict: true (changed), false (verified unchanged),
+   * or null (no capture / deferred / failed).
    */
   async function settleChangeCapture(
     chatId: string,
     capture: ChangeCapture,
     turnAwaitingApproval: boolean
-  ): Promise<void> {
-    if (!capture.started || !deps.changeSet || !capture.cwd) return
+  ): Promise<boolean | null> {
+    if (capture.settled) return capture.verdict ?? null
+    if (!capture.started || !deps.changeSet || !capture.cwd) {
+      capture.settled = true
+      capture.verdict = null
+      return null
+    }
     if (turnAwaitingApproval) {
       // Deferred: keep the before-checkpoint alive for the resuming run(). A
       // cancel/delete clears it explicitly via discardPendingChangeCapture, so
       // a paused capture can never leak past the turn it belongs to.
       pendingChangeCapture.set(chatId, capture.runId)
-      return
+      capture.settled = true
+      capture.verdict = null
+      return null
     }
     pendingChangeCapture.delete(chatId)
-    await finalizeChangeSet(chatId, capture.runId).catch((error) => {
+    capture.settled = true
+    try {
+      const preview = await finalizeChangeSet(chatId, capture.runId)
+      capture.verdict = preview ? preview.fileCount > 0 : false
+    } catch (error) {
       deps.logger?.warn('change-set captureAfterRun failed', { chatId, error })
       deps.changeSet?.discard(capture.runId)
-    })
+      capture.verdict = null
+    }
+    return capture.verdict
   }
 
   async function run(
@@ -502,6 +525,15 @@ export function createTurnLoop(
         turnAwaitingApproval =
           !state.aborted && !state.streamFailed && (await turnPausedForApproval(chatId))
 
+        // Settle the change capture before terminal dispatch so the goal
+        // evaluation reads the real worktree verdict (invariant I5). The
+        // finally-side settle becomes a no-op afterwards.
+        state.worktreeChanged = await settleChangeCapture(
+          chatId,
+          changeCapture,
+          turnAwaitingApproval
+        )
+
         // Terminal turn: dispatch queued work / goal continuation exactly once.
         // The plan-exit retry path `continue`s above and never reaches here.
         await runTerminalDispatch(chatId, state)
@@ -538,12 +570,17 @@ export function createTurnLoop(
     }
   }
 
-  async function finalizeChangeSet(chatId: string, runId: string): Promise<void> {
-    if (!deps.changeSet) return
+  /** Capture the after-checkpoint and attach the preview. Returns the preview
+   *  (null = worktree unchanged or nothing to attach). */
+  async function finalizeChangeSet(
+    chatId: string,
+    runId: string
+  ): Promise<ChangePreviewData | null> {
+    if (!deps.changeSet) return null
     const cwd = deps.store.getConversation(chatId)?.cwd
     if (!cwd) {
       deps.changeSet.discard(runId)
-      return
+      return null
     }
     const messages = await deps.store.load(chatId)
     const lastAssistant = [...messages].reverse().find((message) => message.role === 'assistant')
@@ -554,7 +591,7 @@ export function createTurnLoop(
       assistantMessageId,
       cwd
     })
-    if (!preview || !lastAssistant) return
+    if (!preview || !lastAssistant) return preview
     const withPreview: TanzoUIMessage = {
       ...lastAssistant,
       parts: [
@@ -574,6 +611,7 @@ export function createTurnLoop(
       data: preview,
       transient: true
     } as never)
+    return preview
   }
 
   async function startGoalContinuation(

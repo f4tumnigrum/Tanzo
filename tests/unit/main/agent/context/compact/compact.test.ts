@@ -89,31 +89,28 @@ describe('main/agent/context/compact', () => {
     })
   })
 
-  it('cuts between per-step assistant rows inside a single round', () => {
-    // Per-step persistence (design §4.5): a multi-step reply is stored as one
-    // row per step group, so the cut always lands on a whole-row boundary.
-    const stepA = {
+  it('cuts inside an assistant tool loop at a step boundary', () => {
+    const loop = {
       id: 'a1',
       role: 'assistant',
-      parts: [{ type: 'step-start' }, { type: 'text', text: 'x'.repeat(400) }]
-    } as TanzoUIMessage
-    const stepB = {
-      id: 'a1::step-1',
-      role: 'assistant',
       parts: [
+        { type: 'step-start' },
+        { type: 'text', text: 'x'.repeat(400) },
         { type: 'step-start' },
         { type: 'reasoning', text: 'thinking' },
         { type: 'text', text: 'y'.repeat(8) }
       ]
     } as TanzoUIMessage
-    const { head, tail, archivedIds } = splitForCompaction(
-      [userMessage('u1', 'go'), stepA, stepB],
-      1
-    )!
+    const { head, tail, archivedIds } = splitForCompaction([userMessage('u1', 'go'), loop], 1)!
 
     expect(archivedIds).toEqual(['u1', 'a1'])
-    expect(head).toEqual([userMessage('u1', 'go'), stepA])
-    expect(tail).toEqual([stepB])
+    expect(head).toHaveLength(2)
+    expect(head[1].parts).toEqual([{ type: 'step-start' }, { type: 'text', text: 'x'.repeat(400) }])
+
+    expect(tail).toHaveLength(1)
+    expect(tail[0].id).not.toBe('a1')
+    expect(tail[0].role).toBe('assistant')
+    expect(tail[0].parts).toEqual([{ type: 'step-start' }, { type: 'text', text: 'y'.repeat(8) }])
   })
 
   it('passes plain-text summaries through unchanged', () => {

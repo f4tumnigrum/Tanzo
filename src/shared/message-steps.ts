@@ -1,18 +1,17 @@
 import type { TanzoStepUsageMetadata, TanzoUIMessage } from './agent-message'
 
 /**
- * Per-step message rows (design §4.5).
+ * Step-fragment utilities for message rows.
  *
- * The AI SDK aggregates a whole model pass into one assistant UIMessage whose
- * parts are delimited by `step-start` markers. Persistence splits that message
- * into one row per step group so that:
- * - compaction cuts always land on whole rows (no mid-message splits),
- * - the overlay `covers_from_seq/covers_to_seq` semantics are exact,
- * - the token-ledger anchor is one reported step per message.
+ * HISTORICAL: migration 22 briefly persisted one row per model step
+ * (`a1`, `a1::step-1`, …); that representation was rolled back by migration 23
+ * because it gave one reply two identities (live SDK message vs. persisted
+ * fragments). Storage is one aggregated row per reply again.
  *
- * The renderer's live stream still reconstructs the single SDK message; the
- * display layer regroups persisted fragments (`groupAssistantSteps` in the
- * renderer) so the visual stays one block per reply.
+ * These helpers remain solely for the two migrations: `splitAssistantSteps`
+ * replays the 22 split; `groupAssistantSteps` is its inverse used by 23 (and
+ * safe on databases that never ran 22 — grouping is a no-op without
+ * `::step-` fragment runs). Do not use them in runtime code paths.
  */
 
 type Part = TanzoUIMessage['parts'][number]
@@ -83,18 +82,16 @@ export function splitAssistantSteps(message: TanzoUIMessage): TanzoUIMessage[] {
   })
 }
 
-/** Split every assistant message in a transcript into per-step rows. */
-export function splitStepMessages(messages: TanzoUIMessage[]): TanzoUIMessage[] {
-  return messages.flatMap((message) => splitAssistantSteps(message))
-}
-
 /**
  * Display-side inverse of {@link splitAssistantSteps}: merge consecutive
  * persisted step fragments back into one visual assistant block.
  *
- * The merged message takes the LAST fragment's id so that fork (which slices
- * the transcript through the target id) captures the whole reply, and so the
- * streaming indicator (keyed to the last transcript message) still matches.
+ * The merged block keeps the FIRST fragment's id — which equals the id the AI
+ * SDK assigns to the live aggregated message for the same reply. That identity
+ * is load-bearing: every id-based path in the renderer (upsertMessage during
+ * streaming, mergeRunBaseMessages on conversation switch, the query cache seed,
+ * fork/edit targeting) compares the live/persisted views of one reply, and they
+ * must agree on the id or the reply renders twice.
  */
 export function groupAssistantSteps(messages: readonly TanzoUIMessage[]): TanzoUIMessage[] {
   const result: TanzoUIMessage[] = []
@@ -114,6 +111,8 @@ export function groupAssistantSteps(messages: readonly TanzoUIMessage[]): TanzoU
       }
       const merged: TanzoUIMessage = {
         ...message,
+        // Keep the first fragment's id (== the live SDK message id).
+        id: prev.id,
         parts: [...prev.parts, ...message.parts]
       }
       if (Object.keys(metadata).length > 0) merged.metadata = metadata

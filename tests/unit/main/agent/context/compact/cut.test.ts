@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { ModelMessage } from 'ai'
 import type { TanzoUIMessage } from '@shared/agent-message'
-import { findCut, splitForCompaction, splitModelTranscript } from '@main/agent/context/compact/cut'
+import {
+  findCut,
+  partitionAtCut,
+  splitForCompaction,
+  splitModelTranscript
+} from '@main/agent/context/compact/cut'
 import { degradeTranscript } from '@main/agent/context/compact/degrade'
-import { splitAssistantSteps } from '@shared/message-steps'
 
 function user(id: string, text: string): TanzoUIMessage {
   return { id, role: 'user', parts: [{ type: 'text', text }] } as TanzoUIMessage
@@ -41,21 +45,21 @@ describe('compact/cut — UI domain (persisted transcript)', () => {
       assistantLoop('a2', ['d'.repeat(40)])
     ]
     // budget 100 tokens: the last round (u2+a2 ≈ 20 tokens) fits; cut before u2.
-    expect(findCut(messages, 100)).toBe(2)
+    expect(findCut(messages, 100)).toEqual({ messageIndex: 2, partIndex: 0 })
   })
 
-  it('degrades to a step-group row boundary inside a giant single round', () => {
-    // v1 defect D1: a 50-step autonomous round could never be cut. Persisted
-    // transcripts are per-step rows (design §4.5), so the cut lands between
-    // step fragments of the same reply.
+  it('degrades to a step-group boundary inside a giant single round', () => {
+    // v1 defect D1: a 50-step autonomous round could never be cut. Now the cut
+    // lands on a step boundary inside the assistant loop.
     const steps = Array.from({ length: 50 }, () => 'x'.repeat(400))
-    const rows = [user('u1', 'go'), ...splitAssistantSteps(assistantLoop('a1', steps))]
-    const cut = findCut(rows, 500)
+    const messages = [user('u1', 'go'), assistantLoop('a1', steps)]
+    const cut = findCut(messages, 500)
     expect(cut).not.toBeNull()
-    expect(cut!).toBeGreaterThan(1)
-    expect(cut!).toBeLessThan(rows.length)
-    // The cut lands on a step fragment of a1, not on a whole-message boundary.
-    expect(rows[cut!].id).toMatch(/^a1::step-/)
+    expect(cut!.messageIndex).toBe(1)
+    expect(cut!.partIndex).toBeGreaterThan(0)
+    // Cut must land on a step-start part.
+    const parts = messages[1].parts
+    expect(parts[cut!.partIndex].type).toBe('step-start')
   })
 
   it('never cuts before the latest summary but may archive it (rolling)', () => {
@@ -83,19 +87,16 @@ describe('compact/cut — UI domain (persisted transcript)', () => {
     expect(findCut(messages, 100)).toBeNull()
   })
 
-  it('splits on whole rows only — head ids and tail rows stay intact', () => {
-    const rows = [
-      user('u1', 'go'),
-      ...splitAssistantSteps(assistantLoop('a1', ['early'.repeat(100), 'late']))
-    ]
-    const partition = splitForCompaction(rows, 4)
-    expect(partition).not.toBeNull()
-    const { head, tail, archivedIds } = partition!
-    // No synthetic ids: every id in head/tail existed in the input.
-    const inputIds = new Set(rows.map((row) => row.id))
-    for (const row of [...head, ...tail]) expect(inputIds.has(row.id)).toBe(true)
-    expect(archivedIds).toEqual(head.map((row) => row.id))
-    expect(head.length + tail.length).toBe(rows.length)
+  it('partitions a mid-message cut into head + fresh-id tail fragment', () => {
+    const loop = assistantLoop('a1', ['early'.repeat(100), 'late'])
+    const { head, tail, archivedIds } = partitionAtCut([user('u1', 'go'), loop], {
+      messageIndex: 1,
+      partIndex: 2
+    })
+    expect(archivedIds).toEqual(['u1', 'a1'])
+    expect(head[1].parts).toHaveLength(2)
+    expect(tail[0].id).not.toBe('a1')
+    expect(tail[0].parts[0]).toEqual({ type: 'step-start' })
   })
 })
 

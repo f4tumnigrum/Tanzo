@@ -1,25 +1,35 @@
+import { randomUUID } from 'node:crypto'
 import type { ModelMessage } from 'ai'
 import type { TanzoUIMessage } from '@shared/agent-message'
-import { estimateModelMessageTokens, estimateUIMessageTokens, isSummaryUIMessage } from '../ledger'
+import { estimateModelMessageTokens, estimateTextTokens, isSummaryUIMessage } from '../ledger'
+
+type Part = TanzoUIMessage['parts'][number]
 
 /**
- * Token-aware cut (v2). Replaces the step-count based `segments.ts`.
- *
- * Persisted transcripts are per-step rows (`@shared/message-steps`): a
- * multi-step assistant reply is stored as one message per step group, so every
- * message boundary is a valid cut point and tool call/result pairs — which
- * live inside a single step group — can never be split apart.
+ * Token-aware, model-domain cut (v2). Replaces the step-count based
+ * `segments.ts`.
  *
  * Boundaries:
- * - `round`: a user message and everything up to the next user message
- *   (preferred cut point);
- * - any message boundary (step-group granularity) when the trailing round
- *   alone exceeds the budget.
+ * - `round`: a user message and everything up to the next user message.
+ * - `step group`: within an assistant message, a `step-start`-delimited slice —
+ *   tool calls and their results live in the same UI part, so a step boundary
+ *   can never orphan a tool pair.
+ *
+ * The cut retains a token budget from the tail. Preferred cut points are round
+ * boundaries; when the trailing round alone exceeds the budget the cut degrades
+ * to a step-group boundary inside it (splitting the assistant message into an
+ * archived head fragment and a fresh-id tail fragment, as the persistence
+ * overlay covers whole rows only).
  *
  * The scan never crosses the latest compaction summary: the summary itself may
  * be archived (rolling summarization — `coverageFor` merges its covered range),
  * but nothing before it can be re-archived.
  */
+
+export interface Cut {
+  messageIndex: number
+  partIndex: number
+}
 
 export interface Partition {
   head: TanzoUIMessage[]
@@ -27,59 +37,160 @@ export interface Partition {
   archivedIds: string[]
 }
 
-/**
- * Returns the cut index (first retained message), or null when there is
- * nothing worth archiving (transcript already fits the retain budget, or only
- * a summary would move).
- */
-export function findCut(messages: TanzoUIMessage[], retainBudgetTokens: number): number | null {
-  if (messages.length === 0) return null
+interface Unit {
+  messageIndex: number
+  partStart: number
+  partEnd: number
+  tokens: number
+  isRoundStart: boolean
+  isSummary: boolean
+}
 
-  // Messages at or before the latest summary are off-limits for the retention
-  // scan — the cut may include the summary itself in the head (rolling),
-  // never less.
+function partTokens(part: Part): number {
+  const type = (part as { type?: string }).type
+  if (type === 'step-start') return 0
+  const text = (part as { text?: unknown }).text
+  if (typeof text === 'string') return estimateTextTokens(text)
+  try {
+    return estimateTextTokens(JSON.stringify(part))
+  } catch {
+    return 16
+  }
+}
+
+function sliceTokens(parts: Part[], start: number, end: number): number {
+  let tokens = 0
+  for (let i = start; i < end; i += 1) tokens += partTokens(parts[i])
+  return tokens
+}
+
+function stepBoundaries(parts: Part[]): number[] {
+  const bounds = [0]
+  for (let i = 1; i < parts.length; i += 1) {
+    if (parts[i].type === 'step-start') bounds.push(i)
+  }
+  return bounds
+}
+
+export function buildUnits(messages: TanzoUIMessage[]): Unit[] {
+  const units: Unit[] = []
+  messages.forEach((message, messageIndex) => {
+    const isSummary = isSummaryUIMessage(message)
+    if (message.role !== 'assistant') {
+      units.push({
+        messageIndex,
+        partStart: 0,
+        partEnd: message.parts.length,
+        tokens: sliceTokens(message.parts, 0, message.parts.length),
+        isRoundStart: message.role === 'user',
+        isSummary
+      })
+      return
+    }
+    const bounds = stepBoundaries(message.parts)
+    bounds.forEach((partStart, k) => {
+      const partEnd = bounds[k + 1] ?? message.parts.length
+      units.push({
+        messageIndex,
+        partStart,
+        partEnd,
+        tokens: sliceTokens(message.parts, partStart, partEnd),
+        isRoundStart: false,
+        isSummary
+      })
+    })
+  })
+  return units
+}
+
+/**
+ * Returns the cut point, or null when there is nothing worth archiving
+ * (transcript already fits the retain budget, or only a summary would move).
+ */
+export function findCut(messages: TanzoUIMessage[], retainBudgetTokens: number): Cut | null {
+  const units = buildUnits(messages)
+  if (units.length === 0) return null
+
+  // Units at or before the latest summary are off-limits for retention scan —
+  // the cut may include the summary itself in the head (rolling), never less.
   let summaryLimit = -1
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    if (isSummaryUIMessage(messages[i])) {
+  for (let i = units.length - 1; i >= 0; i -= 1) {
+    if (units[i].isSummary) {
       summaryLimit = i
       break
     }
   }
 
-  const suffixTokens: number[] = new Array(messages.length + 1)
-  suffixTokens[messages.length] = 0
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    suffixTokens[i] = suffixTokens[i + 1] + estimateUIMessageTokens(messages[i])
+  const suffixTokens: number[] = new Array(units.length + 1)
+  suffixTokens[units.length] = 0
+  for (let i = units.length - 1; i >= 0; i -= 1) {
+    suffixTokens[i] = suffixTokens[i + 1] + units[i].tokens
   }
 
   // Whole transcript (after the summary) already within budget → nothing to do.
   if (suffixTokens[summaryLimit + 1] <= retainBudgetTokens) return null
 
   // Preferred: the earliest round boundary whose suffix fits the budget.
-  let cut = -1
-  for (let i = summaryLimit + 1; i < messages.length; i += 1) {
-    if (messages[i].role !== 'user') continue
+  let cutUnit = -1
+  for (let i = summaryLimit + 1; i < units.length; i += 1) {
+    if (!units[i].isRoundStart) continue
     if (suffixTokens[i] <= retainBudgetTokens) {
-      cut = i
+      cutUnit = i
       break
     }
   }
 
-  if (cut === -1) {
-    // Degrade: any message boundary (per-step rows make this a step-group
-    // boundary). Keep at least the final message.
-    cut = messages.length - 1
-    for (let i = messages.length - 2; i > summaryLimit; i -= 1) {
+  if (cutUnit === -1) {
+    // Degrade: step-group boundary. Keep at least the final unit.
+    cutUnit = units.length - 1
+    for (let i = units.length - 2; i > summaryLimit; i -= 1) {
       if (suffixTokens[i] > retainBudgetTokens) break
-      cut = i
+      cutUnit = i
     }
   }
 
-  if (cut <= 0) return null
+  const unit = units[cutUnit]
+  if (unit.messageIndex === 0 && unit.partStart === 0) return null
   // Honor the contract: a head that would archive nothing but summaries is
   // not worth a cut (rolling a summary alone re-summarizes nothing new).
-  if (messages.slice(0, cut).every(isSummaryUIMessage)) return null
-  return cut
+  const headOnlySummaries = units.slice(0, cutUnit).every((u) => u.isSummary)
+  if (headOnlySummaries) return null
+  return { messageIndex: unit.messageIndex, partIndex: unit.partStart }
+}
+
+function normalizeTailParts(parts: Part[]): Part[] {
+  const head: Part = parts[0]?.type === 'step-start' ? parts[0] : { type: 'step-start' }
+  const rest = parts[0]?.type === 'step-start' ? parts.slice(1) : parts
+  let i = 0
+  while (i < rest.length && rest[i].type === 'reasoning') i += 1
+  return [head, ...rest.slice(i)]
+}
+
+export function partitionAtCut(messages: TanzoUIMessage[], cut: Cut): Partition {
+  if (cut.partIndex === 0) {
+    const head = messages.slice(0, cut.messageIndex)
+    return {
+      head,
+      tail: messages.slice(cut.messageIndex),
+      archivedIds: head.map((m) => m.id)
+    }
+  }
+  const splitMessage = messages[cut.messageIndex]
+  const headFragment: TanzoUIMessage = {
+    ...splitMessage,
+    parts: splitMessage.parts.slice(0, cut.partIndex)
+  }
+  const tailFragment: TanzoUIMessage = {
+    id: randomUUID(),
+    role: splitMessage.role,
+    parts: normalizeTailParts(splitMessage.parts.slice(cut.partIndex))
+  }
+  const before = messages.slice(0, cut.messageIndex)
+  return {
+    head: [...before, headFragment],
+    tail: [tailFragment, ...messages.slice(cut.messageIndex + 1)],
+    archivedIds: [...before.map((m) => m.id), splitMessage.id]
+  }
 }
 
 export function splitForCompaction(
@@ -87,13 +198,8 @@ export function splitForCompaction(
   retainBudgetTokens: number
 ): Partition | null {
   const cut = findCut(messages, retainBudgetTokens)
-  if (cut === null) return null
-  const head = messages.slice(0, cut)
-  return {
-    head,
-    tail: messages.slice(cut),
-    archivedIds: head.map((message) => message.id)
-  }
+  if (!cut) return null
+  return partitionAtCut(messages, cut)
 }
 
 // ---------------------------------------------------------------------------

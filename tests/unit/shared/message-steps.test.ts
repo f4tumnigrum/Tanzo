@@ -4,7 +4,6 @@ import {
   groupAssistantSteps,
   isStepFragmentOf,
   splitAssistantSteps,
-  splitStepMessages,
   stepBaseId,
   stepFragmentId
 } from '@shared/message-steps'
@@ -95,9 +94,9 @@ describe('shared/message-steps', () => {
     expect(rows[2].metadata?.steps?.[0]?.usage?.inputTokens).toBe(600)
   })
 
-  it('groupAssistantSteps is the display inverse of splitStepMessages', () => {
+  it('groupAssistantSteps inverts splitAssistantSteps (migration 23 undoes 22)', () => {
     const transcript = [user('u1', 'go'), MULTI_STEP, user('u2', 'next')]
-    const rows = splitStepMessages(transcript)
+    const rows = transcript.flatMap((message) => splitAssistantSteps(message))
     expect(rows).toHaveLength(5)
 
     const grouped = groupAssistantSteps(rows)
@@ -106,8 +105,9 @@ describe('shared/message-steps', () => {
     expect(merged.parts).toEqual(MULTI_STEP.parts)
     expect(merged.metadata?.steps).toEqual(MULTI_STEP.metadata!.steps)
     expect(merged.metadata?.usage).toEqual(MULTI_STEP.metadata!.usage)
-    // The merged block takes the LAST fragment id (fork slices through it).
-    expect(merged.id).toBe('a1::step-2')
+    // The merged block keeps the FIRST fragment id, matching the live SDK
+    // message id for the same reply (so live/persisted views never double).
+    expect(merged.id).toBe('a1')
   })
 
   it('does not merge unrelated consecutive assistant messages', () => {

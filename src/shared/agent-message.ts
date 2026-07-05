@@ -203,7 +203,10 @@ export type TanzoTools = {
   }
   updateGoal: {
     input: { status: 'complete' | 'blocked' }
-    output: { updated: true; status: 'complete' | 'blocked' } | ToolError
+    output:
+      | { updated: true; status: 'complete' | 'blocked' }
+      | { recorded: true; attempts: number; required: number; message: string }
+      | ToolError
   }
   askQuestion: {
     input: AskQuestionInput

@@ -1,5 +1,6 @@
 import type { LanguageModelUsage, ModelMessage } from 'ai'
 import type { TanzoUIMessage } from '@shared/agent-message'
+import type { GoalInjection } from '@shared/goal'
 import type { AgentDefinition } from '../agents/types'
 import {
   createCapabilities,
@@ -7,18 +8,29 @@ import {
   type ModelCapabilities,
   type ModelMetadataResolver
 } from './capabilities'
-import { compileSections } from './compile'
-import { renderContextInjection } from './injection'
+import { assembleContext, renderSections, type RenderedSection } from './compile'
+import { renderContextInjection, renderedSectionIds } from './injection'
 import { measureTranscript, type TranscriptMeasure } from './ledger'
 import { projectHistory } from './project'
 import { createSectionRegistry, type SectionDeps } from './registry'
 import { computeCompactionPolicy, type CompactionPolicy } from './compact/policy'
 import { strategyFor, type CacheKind } from './providers'
-import { attachContextProvenance, type CompiledContext, type ContextSection } from './section'
+import {
+  attachContextProvenance,
+  type BuildInput,
+  type CompiledContext,
+  type ContextSection
+} from './section'
 
 export interface ContextEngineDeps extends SectionDeps {
   resolveModelMetadata: ModelMetadataResolver
   extraSections?: ContextSection[]
+  /** Sections read the goal; the engine additionally consumes the one-shot
+   *  injection state — only when the goal section actually rendered (I6). */
+  goal: SectionDeps['goal'] & {
+    peekInjection(chatId: string): GoalInjection | null
+    takeInjection(chatId: string): GoalInjection | null
+  }
 }
 
 export interface ContextSnapshot {
@@ -42,14 +54,18 @@ export interface ContextEngine {
   /**
    * Assemble the per-step prompt: system sections + leading-user block +
    * canonicalized history. Pure with respect to per-chat state — the same
-   * transcript yields the same prompt (append-only prefix invariant).
+   * transcript yields the same prompt (append-only prefix invariant). When a
+   * runId is given, section rendering is frozen for that run (invariant I7):
+   * mid-run changes to instruction files, skills, plan mode, or the goal
+   * cannot rewrite the prompt prefix until the next run.
    */
   build(
     def: AgentDefinition,
     chatId: string,
     cwd: string,
     transcript: ModelMessage[],
-    stepNumber: number
+    stepNumber: number,
+    runId?: string
   ): Promise<BuiltContext>
   /**
    * Render the volatile per-turn injection (datetime, git snapshot, goal,
@@ -93,19 +109,34 @@ export function createContextEngine(deps: ContextEngineDeps): ContextEngine {
   const registry: ContextSection[] = [...createSectionRegistry(deps), ...(deps.extraSections ?? [])]
   const capabilities: CapabilitiesFor = createCapabilities(deps.resolveModelMetadata)
   const lastUsage = new Map<string, LanguageModelUsage>()
+  const sectionSnapshots = new Map<string, { runId: string; rendered: RenderedSection[] }>()
+
+  /** Run-level section snapshot (I7): first build of a run renders and
+   *  freezes; later steps (and the compaction fork, which passes the same
+   *  runId for byte-identical prefix reuse) get the frozen snapshot. */
+  async function renderForRun(input: BuildInput, runId?: string): Promise<RenderedSection[]> {
+    if (!runId) return renderSections(registry, input)
+    const cached = sectionSnapshots.get(input.chatId)
+    if (cached && cached.runId === runId) return cached.rendered
+    const rendered = await renderSections(registry, input)
+    sectionSnapshots.set(input.chatId, { runId, rendered })
+    return rendered
+  }
 
   async function build(
     def: AgentDefinition,
     chatId: string,
     cwd: string,
     transcript: ModelMessage[],
-    _stepNumber: number
+    _stepNumber: number,
+    runId?: string
   ): Promise<BuiltContext> {
     void _stepNumber
     const cap = capabilities(def.modelRef)
     const history = projectHistory(transcript, cap)
     const strategy = strategyFor(def.modelRef, chatId)
-    let plan = await compileSections(registry, { def, chatId, cwd, capabilities: cap }, history)
+    const rendered = await renderForRun({ def, chatId, cwd, capabilities: cap }, runId)
+    let plan = assembleContext(rendered, history)
     plan = strategy.applyCaching({ plan, summaryIndex: summaryIndexOf(history) })
     return attachContextProvenance(
       {
@@ -140,9 +171,15 @@ export function createContextEngine(deps: ContextEngineDeps): ContextEngine {
       pluginMention,
       isFirstTurn: options.isFirstTurn
     })
+    // Settle one-shot injection state per section (invariant I6): consume only
+    // what actually rendered into the message. A goal cleared between peek and
+    // render must not lose its injection to a message that never carried it.
     if (message) {
-      if (goalInjection) deps.goal.takeInjection(chatId)
-      if (pluginMention && pluginMention.length > 0) deps.pluginMention.take(chatId)
+      const kept = renderedSectionIds(message)
+      if (goalInjection && kept.has('goal')) deps.goal.takeInjection(chatId)
+      if (pluginMention && pluginMention.length > 0 && kept.has('plugins-mention')) {
+        deps.pluginMention.take(chatId)
+      }
     }
     return message
   }
@@ -199,6 +236,7 @@ export function createContextEngine(deps: ContextEngineDeps): ContextEngine {
 
   function clear(chatId: string): void {
     lastUsage.delete(chatId)
+    sectionSnapshots.delete(chatId)
   }
 
   return {
