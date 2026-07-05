@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-07-05
+
+### Added
+
+- Sub-agents: read-only drill-down into a sub-agent's transcript, presented as a
+  full-screen view with a back button and a header that matches the app header
+  and shows the agent name.
+- Task rows now expose cancel, retry, and steer actions.
+
+### Changed
+
+- Sub-agent scheduling hardened: dependents are re-evaluated on every settle
+  path, tasks stay alive on chat cancel, steer is guarded against terminal and
+  dependency-blocked tasks, approval waiters register before the block is
+  surfaced, and dependency failures are tracked with structured
+  unknown/failureKind feedback in the tools.
+- CI: macOS builds now produce Intel (x64) alongside arm64.
+
+### Fixed
+
+- Steer input schema no longer uses a top-level union.
+- Locale parity restored with the missing `zh-CN` sub-agent keys.
+
 ## [0.3.0] - 2026-07-04
 
 ### Added
