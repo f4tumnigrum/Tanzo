@@ -658,8 +658,12 @@ export const zhCN = {
           resultFailed: '失败',
           dependsOn: '依赖 {{tasks}}。',
           blockedDependency: '等待 {{tasks}}。',
+          blockedBy: '受阻于',
+          waitingFor: '等待',
           blockedApproval: '等待批准。',
           awaitPending: '仍在运行：{{tasks}}。',
+          inferred: '推断',
+          resultInferred: '结果由最后一条助手消息推断——子代理未调用 report()。',
           errors: {
             taskFailed: '子代理失败。'
           }
@@ -671,7 +675,8 @@ export const zhCN = {
         running: '进行中',
         done: '已完成',
         blockedDependency: '等待 {{tasks}}',
-        blockedApproval: '等待批准'
+        blockedApproval: '等待批准',
+        interrupted: '已中断——应用曾重启。点击重试恢复。'
       },
       goal: {
         pause: '暂停目标',
