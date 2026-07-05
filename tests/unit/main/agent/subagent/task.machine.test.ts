@@ -92,6 +92,35 @@ describe('agent/subagent/task.machine', () => {
     expect(result.state.phases).toEqual([])
   })
 
+  it('resume and redefine are no-ops on terminal tasks (results are final)', () => {
+    for (const status of ['done', 'failed', 'cancelled'] as const) {
+      const settled = task({ status, result: { summary: 'final' } })
+      const resumed = taskTransition(settled, { kind: 'resume', now: 5 })
+      expect(resumed.state).toBe(settled)
+      expect(resumed.effects).toEqual([])
+      const redefined = taskTransition(settled, { kind: 'redefine', objective: 'again', now: 5 })
+      expect(redefined.state).toBe(settled)
+      expect(redefined.effects).toEqual([])
+    }
+  })
+
+  it('resume does not bypass the dependency gate', () => {
+    const gated = task({ status: 'pending', block: { kind: 'dependency', taskIds: ['a-1'] } })
+    const result = taskTransition(gated, { kind: 'resume', now: 5 })
+    expect(result.state).toBe(gated)
+    expect(result.effects).toEqual([])
+  })
+
+  it('resume still restarts an approval-blocked task', () => {
+    const blocked = task({
+      status: 'blocked',
+      block: { kind: 'approval', approvals: [{ approvalId: 'a1', toolName: 'shell', input: {} }] }
+    })
+    const result = taskTransition(blocked, { kind: 'resume', now: 5 })
+    expect(result.state.status).toBe('running')
+    expect(result.state.block).toBeUndefined()
+  })
+
   it('appends phases without dropping prior ones', () => {
     const first = taskTransition(task(), { kind: 'set-phase', phase: 'reading', now: 2 })
     const second = taskTransition(first.state, { kind: 'set-phase', phase: 'writing', now: 4 })

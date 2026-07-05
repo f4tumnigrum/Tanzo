@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto'
 import type { TanzoUIMessage } from '@shared/agent-message'
 import type {
+  SteerTaskOutcome,
   SubagentTask,
   SubagentTaskApproval,
   SubagentTaskApprovalResponse,
@@ -58,8 +59,8 @@ export interface TaskService {
   await(rootChatId: string, taskId: string, signal?: AbortSignal): Promise<SubagentTaskResult>
   get(rootChatId: string, taskId: string): SubagentTask | undefined
   list(rootChatId: string, status?: SubagentTaskStatus): SubagentTask[]
-  instruct(rootChatId: string, taskId: string, instruction: string): Promise<void>
-  redefine(rootChatId: string, taskId: string, objective: string): Promise<void>
+  instruct(rootChatId: string, taskId: string, instruction: string): Promise<SteerTaskOutcome>
+  redefine(rootChatId: string, taskId: string, objective: string): Promise<SteerTaskOutcome>
   cancel(rootChatId: string, taskId: string): void
   retry(rootChatId: string, taskId: string): void
   resumeByChat(chatId: string): Promise<void>
@@ -680,32 +681,57 @@ export function createTaskService(
     cancelTree(task.chatId)
   }
 
-  async function instruct(rootChatId: string, taskId: string, instruction: string): Promise<void> {
+  /**
+   * Steering guard shared by instruct/redefine: settled results are final and
+   * the dependency gate may not be bypassed. Mirrors the machine-level stay()
+   * guards, but rejects *before* aborting the old driver — the machine guard
+   * alone would leave the task aborted-but-not-restarted.
+   */
+  function steerGuard(task: SubagentTask | undefined): SteerTaskOutcome | null {
+    if (!task) return { ok: false, reason: 'not-found' }
+    if (isTerminal(task.status)) return { ok: false, reason: 'terminal' }
+    if (task.block?.kind === 'dependency') return { ok: false, reason: 'dependency-blocked' }
+    return null
+  }
+
+  async function instruct(
+    rootChatId: string,
+    taskId: string,
+    instruction: string
+  ): Promise<SteerTaskOutcome> {
     const task = deps.store.tasks.get(rootChatId, taskId)
-    if (!task) return
-    const oldDone = driverDone.get(task.chatId)
-    controllers.get(task.chatId)?.abort()
-    callbacks.abortRun(task.chatId)
+    const rejected = steerGuard(task)
+    if (rejected) return rejected
+    const oldDone = driverDone.get(task!.chatId)
+    controllers.get(task!.chatId)?.abort()
+    callbacks.abortRun(task!.chatId)
     await oldDone
-    const history = await deps.store.load(task.chatId)
-    deps.store.save(task.chatId, [
+    const history = await deps.store.load(task!.chatId)
+    deps.store.save(task!.chatId, [
       ...history,
       { id: randomUUID(), role: 'user', parts: [{ type: 'text', text: instruction }] }
     ])
     const resumed = dispatch(rootChatId, taskId, { kind: 'resume', now: Date.now() })
-    if (resumed) startDriver(resumed)
+    if (resumed?.status === 'running') startDriver(resumed)
+    return { ok: true }
   }
 
-  async function redefine(rootChatId: string, taskId: string, objective: string): Promise<void> {
+  async function redefine(
+    rootChatId: string,
+    taskId: string,
+    objective: string
+  ): Promise<SteerTaskOutcome> {
     const task = deps.store.tasks.get(rootChatId, taskId)
-    if (!task) return
-    const oldDone = driverDone.get(task.chatId)
-    controllers.get(task.chatId)?.abort()
-    callbacks.abortRun(task.chatId)
+    const rejected = steerGuard(task)
+    if (rejected) return rejected
+    const oldDone = driverDone.get(task!.chatId)
+    controllers.get(task!.chatId)?.abort()
+    callbacks.abortRun(task!.chatId)
     await oldDone
-    writeObjective(task.chatId, objective)
+    writeObjective(task!.chatId, objective)
     const restarted = dispatch(rootChatId, taskId, { kind: 'redefine', objective, now: Date.now() })
-    if (restarted) startDriver(restarted)
+    if (restarted?.status === 'running') startDriver(restarted)
+    return { ok: true }
   }
 
   async function resumeByChat(chatId: string): Promise<void> {
@@ -719,7 +745,9 @@ export function createTaskService(
     callbacks.abortRun(task.chatId)
     await oldDone
     const resumed = dispatch(task.rootChatId, task.id, { kind: 'resume', now: Date.now() })
-    if (resumed) startDriver(resumed)
+    // The machine keeps dependency-blocked tasks pending (stay); only start a
+    // driver when the transition actually moved the task to running.
+    if (resumed?.status === 'running') startDriver(resumed)
   }
 
   function retry(rootChatId: string, taskId: string): void {

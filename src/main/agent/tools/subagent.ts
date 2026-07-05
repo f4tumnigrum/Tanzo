@@ -203,19 +203,35 @@ export function steerTool(
       metadata: { tanzo: { kind: 'exec', component: 'SubagentCard' } },
       toModelOutput: toolResultToModelOutput,
       async execute({ task, instruction, objective }) {
-        if (!deps.getTask(rootChatId, task)) return toolError(`Unknown task ${task}.`)
+        const found = deps.getTask(rootChatId, task)
+        if (!found) return toolError(`Unknown task ${task}.`)
         if (objective && instruction) {
           return toolError('Provide either instruction or objective, not both.')
         }
-        if (objective) {
-          await deps.redefineTask(rootChatId, task, objective)
-          return { steered: true, mode: 'redefined' }
+        if (!objective && !instruction) {
+          return toolError('Provide an instruction to append or an objective to replace.')
         }
-        if (instruction) {
-          await deps.instructTask(rootChatId, task, instruction)
-          return { steered: true, mode: 'instructed' }
+        const outcome = objective
+          ? await deps.redefineTask(rootChatId, task, objective)
+          : await deps.instructTask(rootChatId, task, instruction!)
+        if (!outcome.ok) {
+          switch (outcome.reason) {
+            case 'terminal':
+              return toolError(
+                `Task '${task}' already settled (${found.status}). Its result is final; ` +
+                  'spawn a new task and reference the old result in the objective.'
+              )
+            case 'dependency-blocked':
+              return toolError(
+                `Task '${task}' has not started (blocked on [${
+                  found.block?.kind === 'dependency' ? found.block.taskIds.join(', ') : ''
+                }]). Steer it after its dependencies complete, or cancel and respawn.`
+              )
+            default:
+              return toolError(`Unknown task ${task}.`)
+          }
         }
-        return toolError('Provide an instruction to append or an objective to replace.')
+        return { steered: true, mode: objective ? 'redefined' : 'instructed' }
       }
     }
   )

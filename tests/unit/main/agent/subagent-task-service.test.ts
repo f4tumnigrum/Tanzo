@@ -143,6 +143,51 @@ describe('agent/subagent/task-service', () => {
     expect(result.failed).toBe(true)
   })
 
+  it('rejects instruct/redefine on settled tasks without aborting anything', async () => {
+    const { service, tasks, callbacks } = createHarness()
+    const a = service.spawn({ parentChatId: 'root-chat', objective: 'a', agentType: 'explore' })
+    service.cancel('root-chat', a.id)
+    expect(tasks.get(a.id)?.status).toBe('cancelled')
+    callbacks.abortRun.mockClear()
+
+    await expect(service.instruct('root-chat', a.id, 'more')).resolves.toEqual({
+      ok: false,
+      reason: 'terminal'
+    })
+    await expect(service.redefine('root-chat', a.id, 'new goal')).resolves.toEqual({
+      ok: false,
+      reason: 'terminal'
+    })
+    expect(callbacks.abortRun).not.toHaveBeenCalled()
+    // The settled state must remain untouched.
+    expect(tasks.get(a.id)?.status).toBe('cancelled')
+  })
+
+  it('rejects instruct on a dependency-blocked task instead of bypassing the gate', async () => {
+    const { service, tasks, callbacks } = createHarness()
+    const a = service.spawn({ parentChatId: 'root-chat', objective: 'a', agentType: 'explore' })
+    const b = service.spawn({
+      parentChatId: 'root-chat',
+      objective: 'b',
+      agentType: 'explore',
+      dependsOn: [a.id]
+    })
+    expect(tasks.get(b.id)?.status).toBe('pending')
+
+    await expect(service.instruct('root-chat', b.id, 'start now')).resolves.toEqual({
+      ok: false,
+      reason: 'dependency-blocked'
+    })
+    expect(tasks.get(b.id)?.status).toBe('pending')
+    expect(tasks.get(b.id)?.block?.kind).toBe('dependency')
+    // No driver may start for the gated task (A's own driver is fine).
+    const bChatId = tasks.get(b.id)!.chatId
+    const bDrivers = callbacks.startChatRun.mock.calls.filter(
+      (call) => (call[0] as { chatId: string }).chatId === bChatId
+    )
+    expect(bDrivers).toHaveLength(0)
+  })
+
   it('cancels a task without recursively cancelling itself forever', () => {
     const tasks = new Map<string, SubagentTask>()
     tasks.set('explore-1', task())
@@ -399,7 +444,10 @@ describe('agent/subagent/task-service', () => {
     )
 
     // Must resolve (not hang) when task is missing — the guard `if (!task) return` exits.
-    await expect(service.instruct('root-chat', 'ghost-1', 'hello')).resolves.toBeUndefined()
+    await expect(service.instruct('root-chat', 'ghost-1', 'hello')).resolves.toEqual({
+      ok: false,
+      reason: 'not-found'
+    })
     expect(callbacks.abortRun).not.toHaveBeenCalled()
   })
 
@@ -438,7 +486,10 @@ describe('agent/subagent/task-service', () => {
       callbacks
     )
 
-    await expect(service.redefine('root-chat', 'ghost-1', 'new objective')).resolves.toBeUndefined()
+    await expect(service.redefine('root-chat', 'ghost-1', 'new objective')).resolves.toEqual({
+      ok: false,
+      reason: 'not-found'
+    })
     expect(callbacks.abortRun).not.toHaveBeenCalled()
   })
 

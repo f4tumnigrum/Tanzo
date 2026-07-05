@@ -104,8 +104,8 @@ function deps(overrides: Partial<ToolDeps> = {}): ToolDeps {
     awaitTask: vi.fn(async () => ({ summary: 'result text' })),
     getTask: vi.fn((_root: string, id: string) => tasks.get(id) ?? task(id, 'running')),
     listTasks: vi.fn(() => [...tasks.values()]),
-    instructTask: vi.fn(async () => undefined),
-    redefineTask: vi.fn(async () => undefined),
+    instructTask: vi.fn(async () => ({ ok: true }) as const),
+    redefineTask: vi.fn(async () => ({ ok: true }) as const),
     cancelTask: vi.fn(),
     reportTaskPhase: vi.fn(),
     submitTaskResult: vi.fn(),
@@ -260,6 +260,38 @@ describe('main/agent/tools/subagent (tasks)', () => {
       exec(steerTool(d, 'parent'), { task: 'explore-1', objective: 'new goal' })
     ).resolves.toEqual({ steered: true, mode: 'redefined' })
     expect(d.redefineTask).toHaveBeenCalledWith('parent', 'explore-1', 'new goal')
+  })
+
+  it('rejects steering a settled task with an actionable error', async () => {
+    const d = deps()
+    ;(d.instructTask as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      reason: 'terminal'
+    })
+    const result = await exec(steerTool(d, 'parent'), {
+      task: 'explore-1',
+      instruction: 'more'
+    })
+    expect(result).toMatchObject({ error: true })
+    expect((result as { message: string }).message).toContain('already settled')
+    expect((result as { message: string }).message).toContain('spawn a new task')
+  })
+
+  it('rejects steering a dependency-blocked task and names the blockers', async () => {
+    const d = deps()
+    ;(d.getTask as ReturnType<typeof vi.fn>).mockReturnValue(
+      task('explore-2', 'pending', { block: { kind: 'dependency', taskIds: ['explore-1'] } })
+    )
+    ;(d.instructTask as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      reason: 'dependency-blocked'
+    })
+    const result = await exec(steerTool(d, 'parent'), {
+      task: 'explore-2',
+      instruction: 'go faster'
+    })
+    expect(result).toMatchObject({ error: true })
+    expect((result as { message: string }).message).toContain('explore-1')
   })
 
   it('report tool forwards phase and result to the service', async () => {

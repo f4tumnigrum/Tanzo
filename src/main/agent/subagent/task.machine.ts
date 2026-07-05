@@ -10,6 +10,11 @@
  *      │                      complete  fail     cancel   (terminal)
  *      └─(spawn with unmet deps)─▶ pending(block:dependency)
  *
+ * Guards: terminal states are absorbing — only `retry` and `reset-dependency`
+ * (both explicitly from failed/cancelled) leave them. `resume`/`redefine` are
+ * no-ops on terminal tasks, and `resume` is a no-op on dependency-blocked
+ * tasks (the dependency gate may not be bypassed by steering).
+ *
  * The pure transition produces the next task object plus effect descriptions
  * (persist, notify-settled). Imperative pre-steps that some callers run before a
  * transition (aborting controllers, saving messages, starting the driver) stay
@@ -110,6 +115,10 @@ export function taskTransition(
     }
 
     case 'resume':
+      // Guards: a settled task's result is final (awaiters may have consumed
+      // it), and a dependency-blocked task must not start before its deps.
+      if (isTaskTerminal(task.status)) return stay(task)
+      if (task.block?.kind === 'dependency') return stay(task)
       return next(
         {
           ...withoutBlock(task),
@@ -120,6 +129,9 @@ export function taskTransition(
       )
 
     case 'redefine': {
+      // Same terminal guard as resume: redefining a settled task would
+      // silently overwrite a result the parent may already have consumed.
+      if (isTaskTerminal(task.status)) return stay(task)
       const restarted: SubagentTask = {
         ...withoutBlock(task),
         objective: event.objective,

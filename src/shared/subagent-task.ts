@@ -75,3 +75,12 @@ export interface PendingTaskQuestion {
   questionId: string
   input: AskQuestionInput
 }
+
+/**
+ * Result of steering (instruct/redefine) a task. Steering is rejected when the
+ * task is settled (its result is final) or dependency-blocked (the gate may
+ * not be bypassed).
+ */
+export type SteerTaskOutcome =
+  | { ok: true }
+  | { ok: false; reason: 'not-found' | 'terminal' | 'dependency-blocked' }

@@ -6,6 +6,7 @@ import type {
   ForkConversationResult
 } from '@shared/chat'
 import type {
+  SteerTaskOutcome,
   SubagentTask,
   SubagentTaskApprovalResponse,
   SubagentTaskApprovalView,
@@ -139,8 +140,8 @@ export interface AgentService {
   awaitTask(rootChatId: string, taskId: string, signal?: AbortSignal): Promise<SubagentTaskResult>
   getTask(rootChatId: string, taskId: string): SubagentTask | undefined
   listTasks(rootChatId: string, status?: SubagentTaskStatus): SubagentTask[]
-  instructTask(rootChatId: string, taskId: string, instruction: string): Promise<void>
-  redefineTask(rootChatId: string, taskId: string, objective: string): Promise<void>
+  instructTask(rootChatId: string, taskId: string, instruction: string): Promise<SteerTaskOutcome>
+  redefineTask(rootChatId: string, taskId: string, objective: string): Promise<SteerTaskOutcome>
   cancelTask(rootChatId: string, taskId: string): void
   retryTask(rootChatId: string, taskId: string): void
   reportTaskPhase(chatId: string, phase: string): void
