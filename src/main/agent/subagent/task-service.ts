@@ -484,8 +484,13 @@ export function createTaskService(
         completeTask(rootChatId, taskId, reloaded)
         return
       }
+      // Register waiters BEFORE surfacing: surfaceApprovals persists and
+      // broadcasts the block, after which a response can arrive at any moment.
+      // A response that lands before its waiter is registered would resolve
+      // nothing, and the later-registered waiter would hang forever.
+      const waits = pending.map((p) => waitApproval(p.approvalId, signal))
       surfaceApprovals(rootChatId, taskId, pending)
-      await Promise.all(pending.map((p) => waitApproval(p.approvalId, signal)))
+      await Promise.all(waits)
       clearApprovalBlock(rootChatId, taskId)
     }
   }
@@ -610,6 +615,15 @@ export function createTaskService(
       }
       const resolve = approvalWaiters.get(response.approvalId)
       approvalWaiters.delete(response.approvalId)
+      if (!resolve) {
+        // Regression sentinel: waiters are registered before approvals are
+        // surfaced, so a missing waiter means either the task was cancelled
+        // (fine) or the register-before-surface ordering broke (a bug).
+        deps.logger?.warn('subagent approval response had no registered waiter', {
+          approvalId: response.approvalId,
+          chatId: task.chatId
+        })
+      }
       resolve?.()
     })
   }

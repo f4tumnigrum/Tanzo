@@ -11,6 +11,21 @@ export interface AppUpdate {
   install: () => void
 }
 
+/** Human-readable byte size, e.g. "12.4 MB". Returns null for unknown sizes. */
+export function formatBytes(bytes: number): string | null {
+  if (!Number.isFinite(bytes) || bytes <= 0) return null
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`
+}
+
+/** "3.1 MB/s"-style download speed, or null when unknown. */
+export function formatSpeed(bytesPerSecond: number): string | null {
+  const size = formatBytes(bytesPerSecond)
+  return size ? `${size}/s` : null
+}
+
 export function useAppUpdate(): AppUpdate {
   const [state, setState] = useState<UpdaterState>(INITIAL_UPDATER_STATE)
 

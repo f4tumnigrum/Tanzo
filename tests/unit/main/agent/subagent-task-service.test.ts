@@ -26,9 +26,16 @@ describe('agent/subagent/task-service', () => {
    * store + runtime callbacks. `startChatRun` hangs by default so tasks stay
    * running until explicitly cancelled.
    */
-  function createHarness(): {
+  function createHarness(
+    overrides: {
+      startChatRun?: ReturnType<typeof vi.fn>
+      load?: ReturnType<typeof vi.fn>
+      save?: ReturnType<typeof vi.fn>
+    } = {}
+  ): {
     service: ReturnType<typeof createTaskService>
     tasks: Map<string, SubagentTask>
+    policyRemember: ReturnType<typeof vi.fn>
     callbacks: {
       abortRun: ReturnType<typeof vi.fn>
       clearTransientChatState: ReturnType<typeof vi.fn>
@@ -40,6 +47,7 @@ describe('agent/subagent/task-service', () => {
   } {
     const tasks = new Map<string, SubagentTask>()
     let childSeq = 0
+    const policyRemember = vi.fn()
     const callbacks = {
       abortRun: vi.fn(),
       clearTransientChatState: vi.fn(),
@@ -47,7 +55,7 @@ describe('agent/subagent/task-service', () => {
       hasAdvancedSince: vi.fn(() => false),
       isInflight: vi.fn(() => false),
       // Hang forever: the task stays 'running' until cancelled.
-      startChatRun: vi.fn(() => new Promise(() => {}))
+      startChatRun: overrides.startChatRun ?? vi.fn(() => new Promise(() => {}))
     }
     const service = createTaskService(
       {
@@ -56,8 +64,8 @@ describe('agent/subagent/task-service', () => {
           transaction: vi.fn((fn: () => unknown) => fn()),
           getConversation: vi.fn(() => ({ id: 'root-chat' })),
           createConversation: vi.fn(() => ({ id: `child-${++childSeq}` })),
-          save: vi.fn(),
-          load: vi.fn(async () => []),
+          save: overrides.save ?? vi.fn(),
+          load: overrides.load ?? vi.fn(async () => []),
           depthOf: vi.fn(() => 1),
           resolveAgentDefinition: vi.fn(async () => ({
             id: 'explore',
@@ -94,11 +102,11 @@ describe('agent/subagent/task-service', () => {
       } as never,
       {
         compaction: { prepareMessages: vi.fn(async () => []) } as never,
-        policy: { remember: vi.fn() } as never
+        policy: { remember: policyRemember } as never
       },
       callbacks
     )
-    return { service, tasks, callbacks }
+    return { service, tasks, policyRemember, callbacks }
   }
 
   it('fails dependents fast when a pending dependency is cancelled (no driver finally)', async () => {
@@ -186,6 +194,84 @@ describe('agent/subagent/task-service', () => {
       (call) => (call[0] as { chatId: string }).chatId === bChatId
     )
     expect(bDrivers).toHaveLength(0)
+  })
+
+  it('resolves approvals responded to in the register/surface window (waiter-first ordering)', async () => {
+    // The first stream pass leaves one approval-requested tool part behind.
+    const approvalMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'objective' }] },
+      {
+        id: 'a1',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-shell',
+            toolCallId: 'call-1',
+            state: 'approval-requested',
+            input: { cmd: 'pnpm test' },
+            approval: { id: 'approval-1' }
+          }
+        ]
+      }
+    ]
+    // Stateful store: writeObjective/respondApproval both go through save, and
+    // each stream pass writes what the model produced (approval part, then the
+    // final answer) — mirroring the real transcript lifecycle.
+    let transcript: unknown[] = []
+    const load = vi.fn(async () => transcript)
+    const save = vi.fn((_chatId: string, messages: unknown[]) => {
+      transcript = messages
+    })
+    let streamPasses = 0
+    const startChatRun = vi.fn(async () => {
+      streamPasses++
+      transcript =
+        streamPasses === 1
+          ? approvalMessages
+          : [
+              approvalMessages[0],
+              {
+                id: 'a2',
+                role: 'assistant',
+                parts: [{ type: 'text', text: 'verified: all green' }]
+              }
+            ]
+      return { aborted: false, streamFailed: false }
+    })
+    const { service, tasks, policyRemember } = createHarness({ startChatRun, load, save })
+
+    const spawned = service.spawn({
+      parentChatId: 'root-chat',
+      objective: 'verify the change',
+      agentType: 'explore'
+    })
+
+    // Wait until the task surfaces the approval block.
+    await vi.waitFor(() => {
+      expect(tasks.get(spawned.id)?.status).toBe('blocked')
+    })
+    const approvals = service.listApprovals('root-chat')
+    expect(approvals).toHaveLength(1)
+    expect(approvals[0].approval.approvalId).toBe('approval-1')
+
+    // Respond immediately — with waiter-first ordering this must resolve the
+    // wait even if the response lands right after surfacing.
+    await service.respondApproval('root-chat', {
+      approvalId: 'approval-1',
+      approved: true,
+      scope: 'session'
+    })
+    expect(policyRemember).toHaveBeenCalledWith(
+      expect.objectContaining({ toolName: 'shell', decision: 'approved', scope: 'session' }),
+      tasks.get(spawned.id)!.chatId
+    )
+
+    // The task must resume, run the second pass, and complete.
+    await vi.waitFor(() => {
+      expect(tasks.get(spawned.id)?.status).toBe('done')
+    })
+    expect(tasks.get(spawned.id)?.result?.summary).toBe('verified: all green')
+    expect(tasks.get(spawned.id)?.result?.resultSource).toBe('inferred')
   })
 
   it('cancels a task without recursively cancelling itself forever', () => {

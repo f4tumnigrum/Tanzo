@@ -42,7 +42,7 @@ export function initAutoUpdater(
   target.handle(UPDATER_CHANNELS.getState, () => state)
   target.handle(UPDATER_CHANNELS.download, () => {
     if (state.status !== 'available') return
-    setState({ status: 'downloading', percent: 0 })
+    setState({ status: 'downloading', percent: 0, bytesPerSecond: 0, transferred: 0, total: 0 })
     void autoUpdater.downloadUpdate().catch((error) => {
       log.error('downloadUpdate threw', error)
       setState({ status: 'error' })
@@ -80,11 +80,17 @@ export function initAutoUpdater(
     setState({ status: 'idle', version: null, percent: 0 })
   })
   autoUpdater.on('download-progress', (progress) => {
-    setState({ status: 'downloading', percent: Math.round(progress.percent) })
+    setState({
+      status: 'downloading',
+      percent: Math.round(progress.percent),
+      bytesPerSecond: Math.round(progress.bytesPerSecond),
+      transferred: progress.transferred,
+      total: progress.total
+    })
   })
   autoUpdater.on('update-downloaded', (info) => {
     log.info('update downloaded; ready to install', { version: info.version })
-    setState({ status: 'downloaded', version: info.version, percent: 100 })
+    setState({ status: 'downloaded', version: info.version, percent: 100, bytesPerSecond: 0 })
   })
 
   void autoUpdater.checkForUpdates().catch((error) => {

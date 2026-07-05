@@ -101,13 +101,19 @@ function UpdatePill(): React.JSX.Element | null {
   }
 
   if (state.status === 'downloading') {
+    const transferred = formatBytes(state.transferred)
+    const total = formatBytes(state.total)
+    const speed = formatSpeed(state.bytesPerSecond)
+    const size = transferred && total ? t('update.progress.size', { transferred, total }) : null
+    const detail = [size, speed].filter(Boolean).join(' · ')
     return (
       <span className={cn(pillClass, 'border border-border/20 text-foreground/60')}>
-        <Spinner className="size-3.5" />
+        <ProgressRing value={state.percent} className="size-3.5 text-foreground/70" />
         {t('settings.about.update.downloading', {
           defaultValue: 'Downloading… {{percent}}%',
           percent: state.percent
         })}
+        {detail ? <span className="text-foreground/45">· {detail}</span> : null}
       </span>
     )
   }

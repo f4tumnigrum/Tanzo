@@ -13,12 +13,21 @@ export interface UpdaterState {
   version: string | null
   /** Download progress in the range 0–100 while `status` is `downloading`. */
   percent: number
+  /** Current download speed in bytes per second while `status` is `downloading`. */
+  bytesPerSecond: number
+  /** Bytes downloaded so far while `status` is `downloading`. */
+  transferred: number
+  /** Total download size in bytes, known once the download starts. */
+  total: number
 }
 
 export const INITIAL_UPDATER_STATE: UpdaterState = {
   status: 'idle',
   version: null,
-  percent: 0
+  percent: 0,
+  bytesPerSecond: 0,
+  transferred: 0,
+  total: 0
 }
 
 export interface UpdaterApi {

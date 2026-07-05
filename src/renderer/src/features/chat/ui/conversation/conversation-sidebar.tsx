@@ -5,6 +5,7 @@ import { ChevronDown, Download, FolderOpen, Plus, RefreshCw, Settings, Trash2 } 
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Spinner } from '@/components/ui/spinner'
+import { ProgressRing } from '@/components/ui/progress-ring'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   AlertDialog,
@@ -18,7 +19,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { cn } from '@/lib/utils'
 import { createLogger } from '@/common/logger'
-import { useAppUpdate } from '@/hooks/use-app-update'
+import { useAppUpdate, formatBytes, formatSpeed } from '@/hooks/use-app-update'
 import { useChatUiStore } from '../../model/store'
 import type {
   SidebarConversationFamilyModel,
@@ -217,12 +218,21 @@ function UpdateButton({
   }
 
   if (state.status === 'downloading') {
+    const transferred = formatBytes(state.transferred)
+    const total = formatBytes(state.total)
+    const speed = formatSpeed(state.bytesPerSecond)
+    const size = transferred && total ? t('update.progress.size', { transferred, total }) : null
+    const detail = [size, speed].filter(Boolean).join(' · ')
     return (
       <Tooltip>
         <TooltipTrigger type="button" className={iconClass} disabled>
-          <Spinner className="size-4" />
+          <ProgressRing value={state.percent} className="size-4 text-primary" />
         </TooltipTrigger>
-        <TooltipContent>{t('update.downloading', { percent: state.percent })}</TooltipContent>
+        <TooltipContent>
+          {detail
+            ? `${t('update.downloading', { percent: state.percent })} · ${detail}`
+            : t('update.downloading', { percent: state.percent })}
+        </TooltipContent>
       </Tooltip>
     )
   }
