@@ -86,8 +86,11 @@ See [50 Cross-Cutting](./50-cross-cutting.md).
 
 `ProviderDefaultsState` (`src/shared/provider.ts`) has three buckets:
 
-- `callDefaults` — raw call settings (temperature, max tokens, …), returned directly by
-  `getCallSettings(providerId, family)`.
+- `callDefaults` — call settings (temperature, max tokens, …). The schema in
+  `provider/call-settings.ts` is the single source of truth: `saveDefaults` validates strictly
+  (unknown keys / mistyped values reject the save with `PROVIDER_CALL_SETTINGS_INVALID`), while
+  `getCallSettings(providerId, family)` reads leniently — pre-validation rows are coerced field by
+  field — and returns a typed `CallSettings`.
 - `providerOptions` — scoped to the provider key during merge.
 - `rawProviderOptions` — merged verbatim (bypasses scoping).
 
@@ -95,7 +98,24 @@ See [50 Cross-Cutting](./50-cross-cutting.md).
 schema `providerKey` into that namespace, deep-merges `rawProviderOptions`, and guards against prototype
 pollution (`UNSAFE_OPTION_KEYS = { __proto__, constructor, prototype }`). Per-provider option schemas live in
 `provider/options/*.ts` (e.g. anthropic `thinking.budgetTokens`, openai `reasoningEffort`, google
-`thinkingConfig`). The `'openai-compatible'` key is canonicalized to `'openaiCompatible'`.
+`thinkingConfig`). Provider-id aliases are canonicalized to the schema's `providerKey` (derived from
+`OPTION_SCHEMAS`, e.g. `'openai-compatible'` → `'openaiCompatible'`).
+
+Model refs (`provider:modelId`) are parsed only by `parseModelRef` / `requireModelRef` in
+`src/shared/provider.ts`; no layer splits refs ad hoc.
+
+### Reasoning effort
+
+Each provider's effort field is marked in its option schema with `role: 'reasoningEffort'`
+(`provider/options/*.ts`); the renderer badge and the runtime locate it through that role — no
+per-provider paths outside the schemas. Reasoning effort is a **per-conversation** setting
+(`conversations.reasoning_effort`, same scope as `model_ref`): the composer badge writes it via
+`chat:set-conversation-reasoning-effort`, and the runtime merges it as an overlay on top of the
+provider defaults (`resolveLanguageModelConfig` → `reasoningEffortOverlay`). An empty value means
+"follow provider defaults". Forks and subagent children inherit the parent's value; the overlay
+validates it against the target provider's schema (strict `select` fields drop out-of-range values,
+free-form `string` fields pass anything), so cross-provider inheritance can never send an invalid
+API value.
 
 ## 6. SSE filtering (`provider/sse-filter.ts`)
 

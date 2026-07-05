@@ -29,7 +29,7 @@ describe('agent/runtime', () => {
         presencePenalty: 0.1,
         frequencyPenalty: 0.2,
         seed: 42,
-        stopSequences: ['DONE', 7, 'STOP']
+        stopSequences: ['DONE', 'STOP']
       }))
     }
     const tools = {
@@ -92,15 +92,34 @@ describe('agent/runtime', () => {
     })
   })
 
+  it('overlays the conversation reasoning effort onto provider options', () => {
+    const providerService = {
+      resolveLanguageModel: vi.fn(() => 'model'),
+      getProviderOptions: vi.fn(() => ({ openai: { serviceTier: 'priority' } })),
+      getCallSettings: vi.fn(() => ({}))
+    }
+
+    const call = buildAgentCall({
+      def: agentDef,
+      chatId: 'chat-3',
+      mode: 'default',
+      providerService: providerService as never,
+      tools: {} as never,
+      decide: vi.fn(),
+      reasoningEffort: 'high'
+    })
+
+    // Deep merge: the override lands next to existing provider defaults.
+    expect(call.providerOptions).toEqual({
+      openai: { serviceTier: 'priority', reasoningEffort: 'high' }
+    })
+  })
+
   it('omits the maxSteps stop condition and provider options when absent', () => {
     const providerService = {
       resolveLanguageModel: vi.fn(() => 'model'),
       getProviderOptions: vi.fn(() => ({})),
-      getCallSettings: vi.fn(() => ({
-        maxOutputTokens: Number.NaN,
-        temperature: 'warm',
-        stopSequences: [false, 1]
-      }))
+      getCallSettings: vi.fn(() => ({}))
     }
 
     const call = buildAgentCall({
@@ -114,9 +133,7 @@ describe('agent/runtime', () => {
 
     expect(call.providerOptions).toBeUndefined()
     expect(call.stopWhen).toHaveLength(0)
-    expect(call.callSettings.maxRetries).toBe(5)
-    expect(call.callSettings.maxOutputTokens).toBeUndefined()
-    expect(call.callSettings.temperature).toBeUndefined()
-    expect(call.callSettings.stopSequences).toBeUndefined()
+    // Runtime default when the user has not configured retries.
+    expect(call.callSettings).toEqual({ maxRetries: 5 })
   })
 })

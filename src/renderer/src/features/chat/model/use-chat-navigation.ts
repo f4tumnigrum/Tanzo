@@ -145,7 +145,7 @@ export function useChatNavigation(): ChatNavigation {
   }, [defaultWorkspace, handlePickWorkspace, createConversationInWorkspace])
 
   const handleStartConversation = useCallback(
-    async ({ message, modelRef }: StartConversationDraft) => {
+    async ({ message, modelRef, reasoningEffort }: StartConversationDraft) => {
       let cwd = defaultWorkspace?.cwd ?? null
       const workspaceId = defaultWorkspace?.id ?? null
 
@@ -157,6 +157,7 @@ export function useChatNavigation(): ChatNavigation {
 
       const conversation = await createConversation.mutateAsync({
         modelRef,
+        ...(reasoningEffort ? { reasoningEffort } : {}),
         cwd,
         ...(workspaceId ? { workspaceId } : {})
       })

@@ -91,9 +91,7 @@ export const chatClient = {
       .then((workspaces) => [...workspaces])
   },
   listMessages(chatId: string): Promise<TanzoUIMessage[]> {
-    return requireChatApi()
-      .listMessages(chatId)
-      .then((messages) => [...messages])
+    return requireChatApi().listMessages(chatId)
   },
   compact(chatId: string, options?: { instructions?: string }): Promise<CompactionOutcome> {
     return requireChatApi().compact(chatId, options)
@@ -120,6 +118,9 @@ export const chatClient = {
   },
   setConversationSubagentModel(chatId: string, modelRef: string): Promise<ConversationSummary> {
     return requireChatApi().setConversationSubagentModel(chatId, modelRef)
+  },
+  setConversationReasoningEffort(chatId: string, effort: string): Promise<ConversationSummary> {
+    return requireChatApi().setConversationReasoningEffort(chatId, effort)
   },
   setConversationAgent(chatId: string, agentId: string): Promise<ConversationSummary> {
     return requireChatApi().setConversationAgent(chatId, agentId)
