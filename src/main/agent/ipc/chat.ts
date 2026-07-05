@@ -90,24 +90,43 @@ const taskApprovalResponseSchema = z
   })
   .strict()
 
+/**
+ * Defense-in-depth for the read-only sub-agent drill-down: even though the UI
+ * never renders a composer for an executor conversation, no renderer entry
+ * point may write a user message into one — that would trigger resumeByChat
+ * semantics and corrupt the task lifecycle. Steering goes through the dedicated
+ * steer-task channel instead.
+ */
+function rejectSubagentWrite(deps: AgentIpcDeps, chatId: string): void {
+  const conversation = deps.store.getConversation(chatId)
+  if (conversation?.parentRelation === 'subagent') {
+    throw new Error(
+      'Cannot send messages directly to a sub-agent conversation. Steer the task from the task panel instead.'
+    )
+  }
+}
+
 export function chatHandlers(deps: AgentIpcDeps): IpcRegistration[] {
   return [
     [
       CHAT_CHANNELS.submit,
-      (chatId, message) =>
-        deps.service.submitMessage(
-          chatIdSchema.parse(chatId),
-          userMessageSchema.parse(message) as TanzoUIMessage
-        )
+      (chatId, message) => {
+        const id = chatIdSchema.parse(chatId)
+        rejectSubagentWrite(deps, id)
+        return deps.service.submitMessage(id, userMessageSchema.parse(message) as TanzoUIMessage)
+      }
     ],
     [
       CHAT_CHANNELS.editMessage,
-      (chatId, messageId, text) =>
-        deps.service.editMessage(
-          chatIdSchema.parse(chatId),
+      (chatId, messageId, text) => {
+        const id = chatIdSchema.parse(chatId)
+        rejectSubagentWrite(deps, id)
+        return deps.service.editMessage(
+          id,
           z.string().trim().min(1).parse(messageId),
           messageTextSchema.parse(text)
         )
+      }
     ],
     [
       CHAT_CHANNELS.respondApprovals,

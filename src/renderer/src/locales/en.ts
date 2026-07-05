@@ -684,7 +684,10 @@ export const en = {
         retryTask: 'Retry subagent',
         steerTask: 'Send guidance',
         steerPlaceholder: 'Add guidance, Enter to send…',
-        steerSend: 'Send'
+        steerSend: 'Send',
+        openTranscript: 'Open transcript',
+        readOnlyView: 'Read-only view of the delegated sub-agent.',
+        emptyTranscript: 'No activity yet.'
       },
       goal: {
         pause: 'Pause goal',

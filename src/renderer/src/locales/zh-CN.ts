@@ -681,7 +681,10 @@ export const zhCN = {
         retryTask: '重试子代理',
         steerTask: '发送指引',
         steerPlaceholder: '补充指引，回车发送…',
-        steerSend: '发送'
+        steerSend: '发送',
+        openTranscript: '查看转录',
+        readOnlyView: '所委派子代理的只读视图。',
+        emptyTranscript: '暂无活动。'
       },
       goal: {
         pause: '暂停目标',

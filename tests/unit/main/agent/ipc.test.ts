@@ -66,6 +66,7 @@ function deps() {
   const store = {
     createConversation: vi.fn((input: unknown) => ({ id: 'chat-1', ...(input as object) })),
     listConversations: vi.fn(() => [{ id: 'chat-1' }]),
+    getConversation: vi.fn((chatId: string) => ({ id: chatId, parentRelation: null })),
     load: vi.fn((chatId: string) => [{ id: 'm1', chatId }]),
     loadDisplay: vi.fn((chatId: string) => [{ id: 'm1', chatId }]),
     setConversationModel: vi.fn((chatId: string, modelRef: string) => ({ chatId, modelRef })),
@@ -215,6 +216,13 @@ describe('agent/ipc', () => {
     expect(fakeDeps.service.submitMessage).toHaveBeenCalledWith('chat-1', userMessage)
     expect(() => handlers.get(CHAT_CHANNELS.submit)?.(null, 'chat-1', { id: 'bad' })).toThrow()
     expect(() => handlers.get(CHAT_CHANNELS.submit)?.(null, '', userMessage)).toThrow()
+
+    // Writing into a sub-agent executor conversation must be rejected (the
+    // read-only drill-down never renders a composer, but this is defense in depth).
+    fakeDeps.store.getConversation.mockReturnValueOnce({ id: 'sub-1', parentRelation: 'subagent' })
+    expect(() => handlers.get(CHAT_CHANNELS.submit)?.(null, 'sub-1', userMessage)).toThrow(
+      /sub-agent conversation/
+    )
 
     await handlers.get(CHAT_CHANNELS.respondApprovals)?.(null, 'chat-1', [
       { approvalId: 'approval-9', approved: false, reason: 'nope', scope: 'once' }
