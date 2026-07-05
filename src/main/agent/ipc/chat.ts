@@ -257,6 +257,15 @@ export function chatHandlers(deps: AgentIpcDeps): IpcRegistration[] {
         deps.service.cancelTask(chatIdSchema.parse(rootChatId), z.string().min(1).parse(taskId))
     ],
     [
+      CHAT_CHANNELS.steerTask,
+      (rootChatId, taskId, instruction) =>
+        deps.service.instructTask(
+          chatIdSchema.parse(rootChatId),
+          z.string().min(1).parse(taskId),
+          z.string().min(1).parse(instruction)
+        )
+    ],
+    [
       CHAT_CHANNELS.answerQuestion,
       (chatId, questionId, reply) => {
         const parsed = questionReplySchema.parse(reply)

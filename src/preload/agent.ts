@@ -55,6 +55,7 @@ export const chatApi: ChatApi = {
   listTasks: invoke<ChatApi['listTasks']>(CHAT_CHANNELS.listTasks),
   retryTask: invoke<ChatApi['retryTask']>(CHAT_CHANNELS.retryTask),
   cancelTask: invoke<ChatApi['cancelTask']>(CHAT_CHANNELS.cancelTask),
+  steerTask: invoke<ChatApi['steerTask']>(CHAT_CHANNELS.steerTask),
   answerQuestion: invoke<ChatApi['answerQuestion']>(CHAT_CHANNELS.answerQuestion),
   runSnapshot: invoke<ChatApi['runSnapshot']>(CHAT_CHANNELS.runSnapshot),
   onEvent: (chatId, callback) => subscribe<ChatEvent>(chatEventChannel(chatId), callback),

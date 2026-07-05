@@ -7,6 +7,7 @@ import type {
   TanzoUIMessage
 } from './agent-message'
 import type {
+  SteerTaskOutcome,
   SubagentTask,
   SubagentTaskApprovalResponse,
   SubagentTaskApprovalScope,
@@ -14,6 +15,7 @@ import type {
 } from './subagent-task'
 
 export type {
+  SteerTaskOutcome,
   SubagentTask,
   SubagentTaskApprovalResponse,
   SubagentTaskApprovalScope,
@@ -131,6 +133,7 @@ export const CHAT_CHANNELS = {
   listTasks: 'chat:list-tasks',
   retryTask: 'chat:retry-task',
   cancelTask: 'chat:cancel-task',
+  steerTask: 'chat:steer-task',
   taskEvent: 'chat:task-event',
   answerQuestion: 'chat:answer-question'
 } as const
@@ -280,6 +283,7 @@ export interface ChatApi {
   listTasks(rootChatId: string): Promise<SubagentTask[]>
   retryTask(rootChatId: string, taskId: string): Promise<void>
   cancelTask(rootChatId: string, taskId: string): Promise<void>
+  steerTask(rootChatId: string, taskId: string, instruction: string): Promise<SteerTaskOutcome>
   answerQuestion(chatId: string, questionId: string, reply: QuestionReply): Promise<void>
   runSnapshot(chatId: string): Promise<ChatRunSnapshot | null>
   onEvent(chatId: string, callback: (event: ChatEvent) => void): () => void

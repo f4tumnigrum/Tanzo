@@ -676,7 +676,12 @@ export const zhCN = {
         done: '已完成',
         blockedDependency: '等待 {{tasks}}',
         blockedApproval: '等待批准',
-        interrupted: '已中断——应用曾重启。点击重试恢复。'
+        interrupted: '已中断——应用曾重启。点击重试恢复。',
+        cancelTask: '停止子代理',
+        retryTask: '重试子代理',
+        steerTask: '发送指引',
+        steerPlaceholder: '补充指引，回车发送…',
+        steerSend: '发送'
       },
       goal: {
         pause: '暂停目标',

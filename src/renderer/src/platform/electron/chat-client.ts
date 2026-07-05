@@ -16,6 +16,7 @@ import type {
   WorkspaceSummary
 } from '@shared/chat'
 import type {
+  SteerTaskOutcome,
   SubagentTask,
   SubagentTaskApprovalResponse,
   SubagentTaskApprovalView
@@ -162,6 +163,9 @@ export const chatClient = {
   },
   cancelTask(rootChatId: string, taskId: string): Promise<void> {
     return requireChatApi().cancelTask(rootChatId, taskId)
+  },
+  steerTask(rootChatId: string, taskId: string, instruction: string): Promise<SteerTaskOutcome> {
+    return requireChatApi().steerTask(rootChatId, taskId, instruction)
   },
   onEvent(chatId: string, callback: (event: ChatEvent) => void): () => void {
     return requireChatApi().onEvent(chatId, callback)

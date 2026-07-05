@@ -6,8 +6,10 @@ import {
   CircleDashed,
   GitBranch,
   ListTree,
+  MessageSquareShare,
   Pause,
-  PowerOff
+  PowerOff,
+  RotateCcw
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { SubagentTask, SubagentTaskResult } from '@shared/subagent-task'
@@ -15,6 +17,7 @@ import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import { useChatSession, useSidecarState } from '../model/conversation/use-chat-session'
+import type { ChatSession } from '../model/conversation/session-manager'
 
 const ACTIVE_STATUSES = new Set<SubagentTask['status']>(['pending', 'running', 'blocked'])
 
@@ -97,7 +100,7 @@ export function TaskOverviewPill({ chatId }: { chatId: string }): React.JSX.Elem
         align="end"
         side="bottom"
         sideOffset={6}
-        className="w-[320px] gap-0 overflow-hidden rounded-[min(var(--radius-lg),14px)] border border-border/35 bg-background/96 p-0 shadow-xl backdrop-blur-md"
+        className="w-[340px] gap-0 overflow-hidden rounded-[min(var(--radius-lg),14px)] border border-border/35 bg-background/96 p-0 shadow-xl backdrop-blur-md"
       >
         <header className="flex items-center gap-1.5 border-b border-border/25 px-2.5 py-1.5">
           <ListTree className="size-3 shrink-0 text-muted-foreground/65" strokeWidth={2} />
@@ -109,8 +112,8 @@ export function TaskOverviewPill({ chatId }: { chatId: string }): React.JSX.Elem
           </span>
         </header>
         <div className="max-h-[60vh] overflow-y-auto p-1">
-          <TaskGroup label={t('chat.taskPanel.running')} tasks={active} />
-          <TaskGroup label={t('chat.taskPanel.done')} tasks={settled} />
+          <TaskGroup label={t('chat.taskPanel.running')} tasks={active} session={session} />
+          <TaskGroup label={t('chat.taskPanel.done')} tasks={settled} session={session} />
         </div>
       </PopoverContent>
     </Popover>
@@ -119,10 +122,12 @@ export function TaskOverviewPill({ chatId }: { chatId: string }): React.JSX.Elem
 
 function TaskGroup({
   label,
-  tasks
+  tasks,
+  session
 }: {
   label: string
   tasks: SubagentTask[]
+  session: ChatSession
 }): React.JSX.Element | null {
   if (tasks.length === 0) return null
   return (
@@ -136,62 +141,166 @@ function TaskGroup({
         </span>
       </div>
       {tasks.map((task) => (
-        <TaskRow key={task.id} task={task} />
+        <TaskRow key={task.id} task={task} session={session} />
       ))}
     </section>
   )
 }
 
-function TaskRow({ task }: { task: SubagentTask }): React.JSX.Element {
+function TaskRow({
+  task,
+  session
+}: {
+  task: SubagentTask
+  session: ChatSession
+}): React.JSX.Element {
   const { t } = useTranslation()
+  const [busy, setBusy] = useState(false)
+  const [steering, setSteering] = useState(false)
+  const [instruction, setInstruction] = useState('')
   const { Icon, spin, overrideTone } = statusIcon(task.status, task.result?.failureKind)
   const detail = blockDetail(task, t)
   const isInterrupted = task.result?.failureKind === 'app-restart'
   const settled = task.status === 'done' || task.status === 'cancelled'
+  const isActive = ACTIVE_STATUSES.has(task.status)
+  const canRetry = task.status === 'failed' || task.status === 'cancelled'
+  // Steering a dependency-blocked task is rejected by the service; only offer
+  // it for tasks that actually run.
+  const canSteer = task.status === 'running' || task.status === 'blocked'
+
+  function run(action: () => Promise<void>): void {
+    setBusy(true)
+    // State transitions come back over data-task; busy only bridges the IPC gap.
+    void action()
+      .catch(() => {
+        // Already reported via reportError in the session; keep the row usable.
+      })
+      .finally(() => setBusy(false))
+  }
+
+  function submitSteer(): void {
+    const text = instruction.trim()
+    if (!text) return
+    setSteering(false)
+    setInstruction('')
+    run(() => session.steerTask(task.id, text))
+  }
+
   return (
     <div
       className={cn(
-        'flex items-center gap-1.5 rounded-[var(--radius-sm)] px-1.5 py-1 transition-colors',
+        'group rounded-[var(--radius-sm)] px-1.5 py-1 transition-colors',
         'hover:bg-foreground/[0.045]'
       )}
       title={isInterrupted ? t('chat.taskPanel.interrupted') : undefined}
     >
-      <Icon
-        className={cn(
-          'size-3 shrink-0',
-          overrideTone ?? STATUS_ICON_TONE[task.status],
-          spin && 'animate-spin'
-        )}
-        aria-hidden="true"
-      />
-      <span
-        className={cn(
-          'shrink-0 font-mono text-[0.5625rem] tabular-nums',
-          settled ? 'text-muted-foreground/45' : 'text-primary/80'
-        )}
-      >
-        {task.id}
-      </span>
-      <span
-        className={cn(
-          'min-w-0 flex-1 truncate text-[0.6875rem] leading-tight',
-          settled ? 'text-foreground/50' : 'text-foreground/80'
-        )}
-        title={task.objective}
-      >
-        {task.objective}
-      </span>
-      {detail ? (
+      <div className="flex items-center gap-1.5">
+        <Icon
+          className={cn(
+            'size-3 shrink-0',
+            overrideTone ?? STATUS_ICON_TONE[task.status],
+            spin && 'animate-spin'
+          )}
+          aria-hidden="true"
+        />
         <span
-          className="flex shrink-0 items-center gap-0.5 text-[0.5625rem] text-amber-600/90 dark:text-amber-400/90"
-          title={detail.text}
+          className={cn(
+            'shrink-0 font-mono text-[0.5625rem] tabular-nums',
+            settled ? 'text-muted-foreground/45' : 'text-primary/80'
+          )}
         >
-          <detail.Icon className="size-2.5 shrink-0" aria-hidden="true" />
+          {task.id}
         </span>
-      ) : task.phase ? (
-        <span className="max-w-[6rem] shrink-0 truncate text-[0.5625rem] text-muted-foreground/45">
-          {task.phase}
+        <span
+          className={cn(
+            'min-w-0 flex-1 truncate text-[0.6875rem] leading-tight',
+            settled ? 'text-foreground/50' : 'text-foreground/80'
+          )}
+          title={task.objective}
+        >
+          {task.objective}
         </span>
+        {detail ? (
+          <span
+            className="flex shrink-0 items-center gap-0.5 text-[0.5625rem] text-amber-600/90 dark:text-amber-400/90"
+            title={detail.text}
+          >
+            <detail.Icon className="size-2.5 shrink-0" aria-hidden="true" />
+          </span>
+        ) : task.phase ? (
+          <span className="max-w-[6rem] shrink-0 truncate text-[0.5625rem] text-muted-foreground/45">
+            {task.phase}
+          </span>
+        ) : null}
+        <span
+          className={cn(
+            'flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity',
+            'group-focus-within:opacity-100 group-hover:opacity-100',
+            busy && 'opacity-100'
+          )}
+        >
+          {canSteer ? (
+            <button
+              type="button"
+              disabled={busy}
+              aria-label={t('chat.taskPanel.steerTask')}
+              title={t('chat.taskPanel.steerTask')}
+              onClick={() => setSteering((s) => !s)}
+              className="rounded p-0.5 text-muted-foreground/55 hover:bg-foreground/[0.07] hover:text-foreground disabled:opacity-40"
+            >
+              <MessageSquareShare className="size-3" aria-hidden="true" />
+            </button>
+          ) : null}
+          {isActive ? (
+            <button
+              type="button"
+              disabled={busy}
+              aria-label={t('chat.taskPanel.cancelTask')}
+              title={t('chat.taskPanel.cancelTask')}
+              onClick={() => run(() => session.cancelTask(task.id))}
+              className="rounded p-0.5 text-muted-foreground/55 hover:bg-red-500/10 hover:text-red-600 disabled:opacity-40 dark:hover:text-red-400"
+            >
+              <Ban className="size-3" aria-hidden="true" />
+            </button>
+          ) : null}
+          {canRetry ? (
+            <button
+              type="button"
+              disabled={busy}
+              aria-label={t('chat.taskPanel.retryTask')}
+              title={t('chat.taskPanel.retryTask')}
+              onClick={() => run(() => session.retryTask(task.id))}
+              className="rounded p-0.5 text-muted-foreground/55 hover:bg-foreground/[0.07] hover:text-foreground disabled:opacity-40"
+            >
+              <RotateCcw className="size-3" aria-hidden="true" />
+            </button>
+          ) : null}
+        </span>
+      </div>
+      {steering ? (
+        <div className="mt-1 flex items-center gap-1 pl-[1.125rem]">
+          <input
+            type="text"
+            autoFocus
+            value={instruction}
+            disabled={busy}
+            placeholder={t('chat.taskPanel.steerPlaceholder')}
+            onChange={(e) => setInstruction(e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') submitSteer()
+              if (e.key === 'Escape') setSteering(false)
+            }}
+            className="h-6 min-w-0 flex-1 rounded border border-border/30 bg-background/60 px-1.5 text-[0.625rem] text-foreground outline-none focus:border-border/60"
+          />
+          <button
+            type="button"
+            disabled={busy || instruction.trim().length === 0}
+            onClick={submitSteer}
+            className="shrink-0 rounded px-1.5 py-0.5 text-[0.5625rem] font-medium text-foreground/70 hover:bg-foreground/[0.07] hover:text-foreground disabled:opacity-40"
+          >
+            {t('chat.taskPanel.steerSend')}
+          </button>
+        </div>
       ) : null}
     </div>
   )

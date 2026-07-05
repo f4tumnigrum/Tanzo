@@ -73,6 +73,9 @@ export interface ChatSession {
   refresh(): Promise<TanzoUIMessage[]>
   clearRunNotice(): void
   respondTaskApproval(response: SubagentTaskApprovalResponse): Promise<void>
+  cancelTask(taskId: string): Promise<void>
+  retryTask(taskId: string): Promise<void>
+  steerTask(taskId: string, instruction: string): Promise<void>
   goalCommand(args: string): Promise<string>
 }
 
@@ -656,6 +659,42 @@ function createChatSession(chatId: string): ChatSession & {
             (pending) => pending.approval.approvalId !== response.approvalId
           )
         }))
+      } catch (error) {
+        reportError(error)
+        throw error
+      }
+    },
+    // Task-row actions: no optimistic state — every transition is pushed back
+    // over data-task by the task service's broadcastTasks, so the row updates
+    // as soon as the main process settles the operation.
+    async cancelTask(taskId) {
+      try {
+        await chatClient.cancelTask(chatId, taskId)
+      } catch (error) {
+        reportError(error)
+        throw error
+      }
+    },
+    async retryTask(taskId) {
+      try {
+        await chatClient.retryTask(chatId, taskId)
+      } catch (error) {
+        reportError(error)
+        throw error
+      }
+    },
+    async steerTask(taskId, instruction) {
+      try {
+        const outcome = await chatClient.steerTask(chatId, taskId, instruction)
+        if (!outcome.ok) {
+          throw new Error(
+            outcome.reason === 'terminal'
+              ? 'Task already settled.'
+              : outcome.reason === 'dependency-blocked'
+                ? 'Task is waiting on its dependencies.'
+                : 'Task not found.'
+          )
+        }
       } catch (error) {
         reportError(error)
         throw error

@@ -679,7 +679,12 @@ export const en = {
         done: 'Done',
         blockedDependency: 'Waiting on {{tasks}}',
         blockedApproval: 'Waiting for approval',
-        interrupted: 'Interrupted — app restarted. Use retry to restart.'
+        interrupted: 'Interrupted — app restarted. Use retry to restart.',
+        cancelTask: 'Stop subagent',
+        retryTask: 'Retry subagent',
+        steerTask: 'Send guidance',
+        steerPlaceholder: 'Add guidance, Enter to send…',
+        steerSend: 'Send'
       },
       goal: {
         pause: 'Pause goal',
