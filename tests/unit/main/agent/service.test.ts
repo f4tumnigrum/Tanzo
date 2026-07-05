@@ -498,7 +498,7 @@ function createDeps() {
   return {
     providerService: {
       resolveLanguageModel: vi.fn(() => ({ model: 'language' })),
-      getCallSettings: vi.fn(() => ({ temperature: 0.2, unknown: true })),
+      getCallSettings: vi.fn(() => ({ temperature: 0.2 })),
       getProviderOptions: vi.fn(() => ({ openai: { reasoningEffort: 'high' } }))
     },
     buildTools: vi.fn(async () => ({
@@ -683,7 +683,8 @@ describe('agent/service', () => {
       chatId: 'chat-1',
       depth: 0,
       mode: 'default',
-      messages: [userMessage]
+      messages: [userMessage],
+      runId: expect.any(String)
     })
     expect(mocks.streamText).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1130,7 +1131,12 @@ describe('agent/service', () => {
         })
       ])
     )
-    expect(deps.goal.evaluate).not.toHaveBeenCalled()
+    // Goal v2 (invariant I3): aborted turns are still accounted — evaluate runs
+    // with outcomeEligible: false — but nothing is dispatched.
+    expect(deps.goal.evaluate).toHaveBeenCalledWith(
+      'chat-1',
+      expect.objectContaining({ outcomeEligible: false })
+    )
   })
 
   it('does not auto-continue an aborted tool-call turn', async () => {
