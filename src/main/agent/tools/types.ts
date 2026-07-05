@@ -23,7 +23,14 @@ export interface BrowserOpener {
 
 export interface GoalToolAccess {
   get(chatId: string): ThreadGoal | null
-  markOutcome(chatId: string, status: 'complete' | 'blocked'): boolean
+  markOutcome(
+    chatId: string,
+    status: 'complete' | 'blocked',
+    opts?: { runId?: string }
+  ):
+    | { kind: 'applied' }
+    | { kind: 'rejected'; attempts: number; required: number }
+    | { kind: 'no-goal' }
 }
 
 export interface ToolDeps {

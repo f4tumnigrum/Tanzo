@@ -63,8 +63,13 @@ export function normalizeMcpToolPattern(pattern: string): string {
   })}`
 }
 
-function mapAnnotations(annotations: Record<string, unknown> | undefined): { kind: McpKind } {
-  if (!annotations) return { kind: 'edit' }
+function mapAnnotations(
+  annotations: Record<string, unknown> | undefined
+): { kind: McpKind; workSignal?: boolean } {
+  // No annotations: stay conservative for approval (kind='edit') but do NOT
+  // count the call as work evidence — an unannotated read-only search tool
+  // must not reset the goal idle streak (Goal v2, invariant I5).
+  if (!annotations) return { kind: 'edit', workSignal: false }
   if (annotations.readOnlyHint === true && annotations.destructiveHint !== true) {
     return { kind: 'read' }
   }

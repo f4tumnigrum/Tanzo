@@ -321,6 +321,7 @@ CREATE TABLE conversation_goals (
   time_used_seconds    INTEGER NOT NULL DEFAULT 0,
   idle_streak          INTEGER NOT NULL DEFAULT 0,
   blocker_streak       INTEGER NOT NULL DEFAULT 0,
+  blocker_last_run_id  TEXT,
   pending_injection    TEXT CHECK (
     pending_injection IS NULL OR
     pending_injection IN ('continuation', 'budget_limit', 'objective_updated')
@@ -574,6 +575,19 @@ export const tanzoMigrations: ModuleMigrations = {
         }>
         if (columns.some((column) => column.name === 'reasoning_effort')) return
         db.exec("ALTER TABLE conversations ADD COLUMN reasoning_effort TEXT NOT NULL DEFAULT ''")
+      }
+    },
+    {
+      // Goal v2: same-run dedupe for rejected block attempts (blocker streak
+      // gate). See docs/design/goal-v2.md §3.2.
+      version: 25,
+      name: 'goal_blocker_last_run_id',
+      up: (db) => {
+        const columns = db.prepare('PRAGMA table_info(conversation_goals)').all() as Array<{
+          name: string
+        }>
+        if (columns.some((column) => column.name === 'blocker_last_run_id')) return
+        db.exec('ALTER TABLE conversation_goals ADD COLUMN blocker_last_run_id TEXT')
       }
     }
   ]

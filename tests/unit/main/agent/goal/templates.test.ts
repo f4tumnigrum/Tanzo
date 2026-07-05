@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ThreadGoal } from '@shared/goal'
-import {
-  budgetLimitPrompt,
-  continuationPrompt,
-  objectiveUpdatedPrompt
-} from '@main/agent/goal/templates'
+import { charterText, pulseText } from '@main/agent/goal/templates'
+import { BLOCK_ATTEMPTS_REQUIRED } from '@main/agent/goal/goal.machine'
 
 function goal(overrides: Partial<ThreadGoal> = {}): ThreadGoal {
   return {
@@ -19,6 +16,7 @@ function goal(overrides: Partial<ThreadGoal> = {}): ThreadGoal {
     timeUsedSeconds: 0,
     idleStreak: 0,
     blockerStreak: 0,
+    blockerLastRunId: null,
     pendingInjection: 'continuation',
     createdAt: 1,
     updatedAt: 1,
@@ -27,53 +25,71 @@ function goal(overrides: Partial<ThreadGoal> = {}): ThreadGoal {
 }
 
 describe('agent/goal/templates', () => {
-  it('wraps the objective and budget in every prompt', () => {
-    const prompt = continuationPrompt(goal({ tokenBudget: 1000, tokensUsed: 250 }))
-    expect(prompt).toContain('<goal_context>')
-    expect(prompt).toContain('<objective>\nWrite 5 joke files\n</objective>')
-    expect(prompt).toContain('Tokens used: 250')
-    expect(prompt).toContain('Tokens remaining: 750')
+  describe('charterText', () => {
+    it('carries the objective and the full decision procedure', () => {
+      const text = charterText(goal())
+      expect(text).toContain('<goal_charter>')
+      expect(text).toContain('<objective>\nWrite 5 joke files\n</objective>')
+      expect(text).toContain('Work —')
+      expect(text).toContain('Finish —')
+      expect(text).toContain('Block —')
+      expect(text).toContain(`${BLOCK_ATTEMPTS_REQUIRED} recorded attempts`)
+    })
+
+    it('is byte-identical across renders while the goal is unchanged (cache prefix)', () => {
+      const a = charterText(goal({ tokensUsed: 100 }))
+      const b = charterText(goal({ tokensUsed: 900, idleStreak: 2, updatedAt: 99 }))
+      // Budget numbers and streaks must NOT leak into the charter.
+      expect(a).toBe(b)
+    })
+
+    it('references the registered updateGoal tool, never a snake_case name', () => {
+      expect(charterText(goal())).not.toContain('update_goal')
+      expect(charterText(goal())).toContain('updateGoal(status="complete")')
+    })
   })
 
-  it('uses the steady prompt when no idle streak', () => {
-    const prompt = continuationPrompt(goal({ idleStreak: 0 }))
-    expect(prompt).toContain('do exactly one')
-    expect(prompt).not.toContain('Your previous turn changed nothing')
-  })
+  describe('pulseText', () => {
+    it('continuation pulse is small and never repeats the rules', () => {
+      const text = pulseText(goal({ tokenBudget: 1000, tokensUsed: 250 }), 'continuation')
+      expect(text).toContain('<goal_pulse>')
+      expect(text).toContain('750 of 1000 budget tokens remaining')
+      expect(text).not.toContain('Work —') // rules live in the charter
+      expect(text.length).toBeLessThan(600)
+    })
 
-  it('escalates to the stalled prompt once a turn made no changes', () => {
-    const prompt = continuationPrompt(goal({ idleStreak: 1 }))
-    expect(prompt).toContain('Your previous turn changed nothing')
-    expect(prompt).toContain('re-reading the same files is not progress')
-    expect(prompt).toContain('not a valid turn')
-  })
+    it('omits the budget line when no budget is set', () => {
+      const text = pulseText(goal(), 'continuation')
+      expect(text).not.toContain('Budget:')
+    })
 
-  it('keeps escalating while the streak persists', () => {
-    expect(continuationPrompt(goal({ idleStreak: 3 }))).toContain('Decide now')
-  })
+    it('escalates with a stalled warning once a turn made no progress', () => {
+      const steady = pulseText(goal({ idleStreak: 0 }), 'continuation')
+      const stalled = pulseText(goal({ idleStreak: 1 }), 'continuation')
+      expect(steady).not.toContain('Warning')
+      expect(stalled).toContain('no detectable progress')
+      expect(stalled).toContain('not a valid turn')
+    })
 
-  it('budget-limit prompt tells the model to wrap up', () => {
-    const prompt = budgetLimitPrompt(goal({ tokenBudget: 100, tokensUsed: 120 }))
-    expect(prompt).toContain('budget_limited')
-    expect(prompt).toContain("Don't start new substantive work")
-  })
+    it('budget_limit pulse tells the model to wrap up', () => {
+      const text = pulseText(goal({ tokenBudget: 100, tokensUsed: 120 }), 'budget_limit')
+      expect(text).toContain('budget_limited')
+      expect(text).toContain("Don't start new substantive work")
+      expect(text).toContain('0 of 100 budget tokens remaining')
+    })
 
-  it('objective-updated prompt supersedes the old objective', () => {
-    const prompt = objectiveUpdatedPrompt(goal({ objective: 'New objective' }))
-    expect(prompt).toContain('replaces any earlier objective')
-    expect(prompt).toContain('<objective>\nNew objective\n</objective>')
-  })
+    it('objective_updated pulse defers to the charter for the new objective', () => {
+      const text = pulseText(goal({ objective: 'New objective' }), 'objective_updated')
+      expect(text).toContain('replaces any earlier objective')
+      expect(text).toContain('goal charter')
+      // The objective itself lives in the charter, not the pulse.
+      expect(text).not.toContain('<objective>')
+    })
 
-  it('references the registered updateGoal tool, never a snake_case name', () => {
-    const prompts = [
-      continuationPrompt(goal({ idleStreak: 0 })),
-      continuationPrompt(goal({ idleStreak: 1 })),
-      budgetLimitPrompt(goal()),
-      objectiveUpdatedPrompt(goal())
-    ]
-    for (const prompt of prompts) {
-      expect(prompt).not.toContain('update_goal')
-    }
-    expect(continuationPrompt(goal({ idleStreak: 0 }))).toContain('updateGoal(status="complete")')
+    it('never references a snake_case tool name', () => {
+      for (const injection of ['continuation', 'budget_limit', 'objective_updated'] as const) {
+        expect(pulseText(goal(), injection)).not.toContain('update_goal')
+      }
+    })
   })
 })

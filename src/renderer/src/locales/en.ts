@@ -502,7 +502,8 @@ export const en = {
           label: 'Goal',
           status: {
             complete: 'complete',
-            blocked: 'blocked'
+            blocked: 'blocked',
+            recorded: 'blocker {{attempts}}/{{required}}'
           },
           errors: {
             updateFailed: 'Goal update failed.'

@@ -14,7 +14,7 @@ import type {
 } from '@shared/subagent-task'
 import type { QueuedMessage, TanzoDataParts, TanzoUIMessage } from '@shared/agent-message'
 import type { AskQuestionAnswer } from '@shared/agent-message'
-import type { ThreadGoal } from '@shared/goal'
+import type { GoalDecision, ThreadGoal } from '@shared/goal'
 import type { PermissionMode } from '@shared/policy'
 import type { ProviderService } from '../../provider/service'
 import type { AgentDefinition, AgentIdentity } from '../agents/types'
@@ -38,6 +38,8 @@ export interface BuildToolsContext {
   depth: number
   mode: PermissionMode
   messages?: readonly TanzoUIMessage[]
+  /** Run id of the stream this tool set is built for (block-attempt dedupe). */
+  runId?: string
 }
 
 export type BuildTools = (context: BuildToolsContext) => Promise<ToolSet>
@@ -84,13 +86,15 @@ export interface GoalRuntime {
     chatId: string,
     input: {
       isGoalContinuation: boolean
+      worktreeChanged: boolean | null
       producedWorkToolCall: boolean
       turnTokens: number
       turnSeconds: number
       isPlanMode: boolean
       suppressContinuation: boolean
+      outcomeEligible: boolean
     }
-  ): { continue: boolean }
+  ): GoalDecision
   markUsageLimited(chatId: string): void
 }
 

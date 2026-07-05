@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto'
 import type { QueuedMessage } from '@shared/agent-message'
+import { effectiveTokens } from '../goal/accounting'
 import type { ChatKeyedQueue } from './chat-keyed-queue'
 import type { AgentRuntimeDeps, GoalRuntime, Logger } from './types'
 import type { AgentStreamFinalState } from './stream-runner'
@@ -58,7 +59,6 @@ export function createTurnFinalizer(
     },
 
     async dispatch({ chatId, broadcast, state }) {
-      if (state.aborted) return
       if (!broadcast || callbacks.isInflight(chatId) || !deps.store.getConversation(chatId)) {
         return
       }
@@ -66,24 +66,39 @@ export function createTurnFinalizer(
       const hasQueuedMessage = queues.messageQueue.list(chatId).length > 0
       let goalWantsContinuation = false
 
-      if (deps.goal && !state.streamFailed) {
+      // Accounting runs for every turn — including failed and aborted ones
+      // (invariant I3: burned tokens always land in the ledger). Only healthy
+      // turns are outcome-eligible; the machine returns continue=false for the
+      // rest.
+      if (deps.goal) {
         const conversation = deps.store.getConversation(chatId)
         const isMainAgent = !conversation?.parentConversationId
         if (isMainAgent && deps.goal.get(chatId)) {
-          const turnTokens = state.latestUsage?.totalTokens ?? 0
+          const turnTokens = effectiveTokens(state.latestUsage)
           const turnSeconds = Math.round((Date.now() - state.turnStartedAt) / 1000)
           const isPlanMode = deps.policy.getMode(deps.store.rootOf(chatId)) === 'plan'
+          const outcomeEligible = !state.aborted && !state.streamFailed
           const decision = deps.goal.evaluate(chatId, {
             isGoalContinuation: state.isGoalContinuation,
+            worktreeChanged: state.worktreeChanged ?? null,
             producedWorkToolCall: state.producedWorkToolCall,
             turnTokens,
             turnSeconds,
             isPlanMode,
-            suppressContinuation: hasQueuedMessage
+            suppressContinuation: hasQueuedMessage,
+            outcomeEligible
           })
-          goalWantsContinuation = decision.continue
+          goalWantsContinuation = decision.continue && outcomeEligible
+          if (!decision.continue && decision.reason !== 'not-active') {
+            deps.logger?.info('goal continuation stopped', {
+              chatId,
+              reason: decision.reason
+            })
+          }
         }
       }
+
+      if (state.aborted) return
 
       const next = queues.messageQueue.shift(chatId)
       if (next !== undefined) {

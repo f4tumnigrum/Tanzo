@@ -500,7 +500,8 @@ export const zhCN = {
           label: '目标',
           status: {
             complete: '完成',
-            blocked: '受阻'
+            blocked: '受阻',
+            recorded: '受阻记录 {{attempts}}/{{required}}'
           },
           errors: {
             updateFailed: '目标更新失败。'

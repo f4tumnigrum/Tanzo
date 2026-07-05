@@ -13,6 +13,7 @@ interface GoalRow {
   time_used_seconds: number
   idle_streak: number
   blocker_streak: number
+  blocker_last_run_id: string | null
   pending_injection: string | null
   created_at: number
   updated_at: number
@@ -31,6 +32,7 @@ function rowToGoal(row: GoalRow): ThreadGoal {
     timeUsedSeconds: row.time_used_seconds,
     idleStreak: row.idle_streak,
     blockerStreak: row.blocker_streak,
+    blockerLastRunId: row.blocker_last_run_id ?? null,
     pendingInjection: (row.pending_injection as GoalInjection | null) ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at
@@ -48,12 +50,12 @@ export function createGoalStore(db: SqlDatabase): GoalStore {
   const upsertStmt = db.prepare(`
     INSERT INTO conversation_goals (
       conversation_id, objective, user_state, outcome, goal_limit, token_budget, tokens_used,
-      time_budget_seconds, time_used_seconds, idle_streak, blocker_streak, pending_injection,
-      created_at, updated_at
+      time_budget_seconds, time_used_seconds, idle_streak, blocker_streak, blocker_last_run_id,
+      pending_injection, created_at, updated_at
     ) VALUES (
       @conversation_id, @objective, @user_state, @outcome, @goal_limit, @token_budget, @tokens_used,
-      @time_budget_seconds, @time_used_seconds, @idle_streak, @blocker_streak, @pending_injection,
-      @created_at, @updated_at
+      @time_budget_seconds, @time_used_seconds, @idle_streak, @blocker_streak, @blocker_last_run_id,
+      @pending_injection, @created_at, @updated_at
     )
     ON CONFLICT(conversation_id) DO UPDATE SET
       objective = excluded.objective,
@@ -66,6 +68,7 @@ export function createGoalStore(db: SqlDatabase): GoalStore {
       time_used_seconds = excluded.time_used_seconds,
       idle_streak = excluded.idle_streak,
       blocker_streak = excluded.blocker_streak,
+      blocker_last_run_id = excluded.blocker_last_run_id,
       pending_injection = excluded.pending_injection,
       updated_at = excluded.updated_at
   `)
@@ -90,6 +93,7 @@ export function createGoalStore(db: SqlDatabase): GoalStore {
       time_used_seconds: goal.timeUsedSeconds,
       idle_streak: goal.idleStreak,
       blocker_streak: goal.blockerStreak,
+      blocker_last_run_id: goal.blockerLastRunId,
       pending_injection: goal.pendingInjection,
       created_at: goal.createdAt,
       updated_at: goal.updatedAt

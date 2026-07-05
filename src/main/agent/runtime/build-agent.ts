@@ -11,7 +11,8 @@ import type { AgentDefinition } from '../agents/types'
 import type { PermissionMode } from '@shared/policy'
 import type { ProviderService } from '../../provider/service'
 import type { PolicyEngine, ToolPolicyKind } from '../policy/types'
-import { hasProviderOptions, resolveLanguageModelConfig } from './model-config'
+import { effectiveTokens } from '../goal/accounting'
+import { hasProviderOptions, resolveLanguageModelConfig, type CallSettings } from './model-config'
 
 function toolPolicyMeta(
   tools: ToolSet | undefined,
@@ -41,6 +42,13 @@ export interface AgentCallInput {
   shouldStop?: () => boolean
   telemetry?: TelemetryOptions
   toolChoice?: ToolChoice<ToolSet>
+  /** Per-conversation reasoning-effort override (see ModelConfigOverrides). */
+  reasoningEffort?: string
+  /** Goal budget snapshot (v2, invariant I4): stops the tool loop mid-run once
+   *  the steps' effective tokens exhaust the remaining budget. The state
+   *  machine's end-of-turn evaluation stays the single source of truth — this
+   *  only prevents unbounded overshoot within one turn. */
+  goalBudget?: { remainingTokens?: number; remainingSeconds?: number }
 }
 
 export interface AgentCall {
@@ -57,20 +65,36 @@ export interface AgentCall {
     runtimeContext: unknown
   }) => ReturnType<PolicyEngine['decide']>
   stopWhen: StopCondition<ToolSet>[]
-  callSettings: Record<string, unknown>
+  callSettings: CallSettings
   providerOptions?: ProviderOptions
   telemetry?: TelemetryOptions
   toolChoice?: ToolChoice<ToolSet>
 }
 
 export function buildAgentCall(input: AgentCallInput): AgentCall {
-  const modelConfig = resolveLanguageModelConfig(input.providerService, input.def.modelRef)
+  const modelConfig = resolveLanguageModelConfig(
+    input.providerService,
+    input.def.modelRef,
+    input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : undefined
+  )
   // v2: compaction happens inline in prepareStep; no compaction stop condition.
   const stopWhen: StopCondition<ToolSet>[] = []
   if (input.def.maxSteps !== undefined) stopWhen.push(isStepCount(input.def.maxSteps))
   if (input.shouldStop) {
     const shouldStop = input.shouldStop
     stopWhen.push(() => shouldStop())
+  }
+  if (input.goalBudget?.remainingTokens !== undefined) {
+    const remaining = input.goalBudget.remainingTokens
+    stopWhen.push(({ steps }) => {
+      let spent = 0
+      for (const step of steps) spent += effectiveTokens(step.usage)
+      return spent >= remaining
+    })
+  }
+  if (input.goalBudget?.remainingSeconds !== undefined) {
+    const deadline = Date.now() + input.goalBudget.remainingSeconds * 1000
+    stopWhen.push(() => Date.now() >= deadline)
   }
   return {
     model: modelConfig.model,
@@ -90,7 +114,7 @@ export function buildAgentCall(input: AgentCallInput): AgentCall {
       })
     },
     stopWhen,
-    callSettings: modelConfig.callSettings as Record<string, unknown>,
+    callSettings: modelConfig.callSettings,
     ...(hasProviderOptions(modelConfig.providerOptions)
       ? { providerOptions: modelConfig.providerOptions }
       : {}),

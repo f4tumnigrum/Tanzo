@@ -111,7 +111,7 @@ export function createBuildTools(deps: ToolDeps): BuildTools {
       ...shellBackgroundTools(deps, chatId),
       ...(canDelegate ? subagentTools(deps, chatId, subAgentTypes) : {}),
       ...(isSubagent ? subagentReportTools(deps, chatId) : {}),
-      ...(isMainAgent ? goalTools(deps, chatId) : {}),
+      ...(isMainAgent ? goalTools(deps, chatId, context.runId) : {}),
       ...(shouldIncludeExitPlanMode ? { exitPlanMode: exitPlanModeTool() } : {})
     }
     // Drop tools the user disabled in settings. This applies before the agent's

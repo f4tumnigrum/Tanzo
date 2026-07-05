@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { goalTransition } from '@main/agent/goal/goal.machine'
+import { BLOCK_ATTEMPTS_REQUIRED, goalTransition } from '@main/agent/goal/goal.machine'
 import type { ThreadGoal } from '@shared/goal'
 
 function goal(overrides: Partial<ThreadGoal> = {}): ThreadGoal {
@@ -15,6 +15,7 @@ function goal(overrides: Partial<ThreadGoal> = {}): ThreadGoal {
     timeUsedSeconds: 0,
     idleStreak: 0,
     blockerStreak: 0,
+    blockerLastRunId: null,
     pendingInjection: null,
     createdAt: 0,
     updatedAt: 0,
@@ -24,11 +25,13 @@ function goal(overrides: Partial<ThreadGoal> = {}): ThreadGoal {
 
 const TURN = {
   isGoalContinuation: false,
+  worktreeChanged: null,
   producedWorkToolCall: true,
   turnTokens: 10,
   turnSeconds: 1,
   isPlanMode: false,
-  suppressContinuation: false
+  suppressContinuation: false,
+  outcomeEligible: true
 }
 
 describe('agent/goal/goal.machine', () => {
@@ -42,7 +45,11 @@ describe('agent/goal/goal.machine', () => {
   it('continues an active goal and arms a continuation injection', () => {
     const result = goalTransition(goal(), { kind: 'turn-evaluated', turn: TURN })
     expect(result.state.pendingInjection).toBe('continuation')
-    expect(result.effects).toContainEqual({ kind: 'decision', continue: true })
+    expect(result.effects).toContainEqual({
+      kind: 'decision',
+      continue: true,
+      reason: 'continue'
+    })
   })
 
   it('flips to budget_limited and still wraps up when not suppressed', () => {
@@ -52,15 +59,45 @@ describe('agent/goal/goal.machine', () => {
     })
     expect(result.state.limit).toBe('budget')
     expect(result.state.pendingInjection).toBe('budget_limit')
-    expect(result.effects).toContainEqual({ kind: 'decision', continue: true })
+    expect(result.effects).toContainEqual({ kind: 'decision', continue: true, reason: 'wrap-up' })
   })
 
   it('accounts but never continues a non-active goal (illegal continuation)', () => {
     const paused = goal({ userState: 'paused' })
     const result = goalTransition(paused, { kind: 'turn-evaluated', turn: TURN })
     expect(result.state.tokensUsed).toBe(10) // accounting still applied
-    expect(result.effects).toContainEqual({ kind: 'decision', continue: false })
+    expect(result.effects).toContainEqual({
+      kind: 'decision',
+      continue: false,
+      reason: 'not-active'
+    })
     expect(result.state.pendingInjection).toBeNull()
+  })
+
+  it('accounts but never continues a failed/aborted turn', () => {
+    const result = goalTransition(goal(), {
+      kind: 'turn-evaluated',
+      turn: { ...TURN, outcomeEligible: false }
+    })
+    expect(result.state.tokensUsed).toBe(10)
+    expect(result.effects).toContainEqual({
+      kind: 'decision',
+      continue: false,
+      reason: 'not-active'
+    })
+  })
+
+  it('treats a verified-unchanged worktree as idle despite exec tool calls', () => {
+    const result = goalTransition(goal({ idleStreak: 0 }), {
+      kind: 'turn-evaluated',
+      turn: {
+        ...TURN,
+        isGoalContinuation: true,
+        worktreeChanged: false,
+        producedWorkToolCall: true
+      }
+    })
+    expect(result.state.idleStreak).toBe(1)
   })
 
   it('treats usage-limited on a completed goal as a no-op', () => {
@@ -79,12 +116,49 @@ describe('agent/goal/goal.machine', () => {
     expect(result.state.pendingInjection).toBe('continuation')
   })
 
-  it('increments blockerStreak when marked blocked', () => {
-    const result = goalTransition(goal({ blockerStreak: 1 }), {
+  it('rejects blocked below the attempt threshold and records the attempt', () => {
+    const result = goalTransition(goal(), {
       kind: 'outcome-marked',
-      outcome: 'blocked'
+      outcome: 'blocked',
+      runId: 'run-1'
     })
+    expect(result.state.outcome).toBeNull()
+    expect(result.state.blockerStreak).toBe(1)
+    expect(result.state.blockerLastRunId).toBe('run-1')
+    expect(result.effects).toContainEqual({
+      kind: 'reject',
+      code: 'blocked-too-early',
+      attempts: 1,
+      required: BLOCK_ATTEMPTS_REQUIRED
+    })
+  })
+
+  it('does not double-count blocked attempts within one run', () => {
+    const once = goalTransition(goal({ blockerStreak: 1, blockerLastRunId: 'run-1' }), {
+      kind: 'outcome-marked',
+      outcome: 'blocked',
+      runId: 'run-1'
+    })
+    expect(once.state.blockerStreak).toBe(1)
+    expect(once.state.outcome).toBeNull()
+  })
+
+  it('applies blocked once the attempt threshold is reached', () => {
+    const result = goalTransition(
+      goal({ blockerStreak: BLOCK_ATTEMPTS_REQUIRED - 1, blockerLastRunId: 'run-2' }),
+      { kind: 'outcome-marked', outcome: 'blocked', runId: 'run-3' }
+    )
     expect(result.state.outcome).toBe('blocked')
-    expect(result.state.blockerStreak).toBe(2)
+    expect(result.state.blockerStreak).toBe(BLOCK_ATTEMPTS_REQUIRED)
+  })
+
+  it('complete clears the blocker streak and applies immediately', () => {
+    const result = goalTransition(goal({ blockerStreak: 2, blockerLastRunId: 'run-1' }), {
+      kind: 'outcome-marked',
+      outcome: 'complete'
+    })
+    expect(result.state.outcome).toBe('complete')
+    expect(result.state.blockerStreak).toBe(0)
+    expect(result.state.blockerLastRunId).toBeNull()
   })
 })

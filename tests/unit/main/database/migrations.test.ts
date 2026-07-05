@@ -13,9 +13,20 @@ describe('database/migrations on real sqlite', () => {
           .all(['tanzo']) as Array<{ version: number }>
       ).map((row) => row.version)
 
-    expect(versions()).toEqual([1, 19, 20, 21, 22])
+    expect(versions()).toEqual([1, 19, 20, 21, 22, 23, 24, 25])
     expect(() => runMigrations(db, [tanzoMigrations])).not.toThrow()
-    expect(versions()).toEqual([1, 19, 20, 21, 22])
+    expect(versions()).toEqual([1, 19, 20, 21, 22, 23, 24, 25])
+  })
+
+  it('adds reasoning_effort to conversations created by the initial schema (v24)', () => {
+    const db = createRealDb()
+    const columns = db.prepare('PRAGMA table_info(conversations)').all() as Array<{
+      name: string
+    }>
+    expect(columns.some((column) => column.name === 'reasoning_effort')).toBe(true)
+    // Idempotent: re-running against a schema that already has the column is a no-op.
+    expect(() => runMigrations(db, [tanzoMigrations])).not.toThrow()
+    db.close()
   })
 
   it('applies plugin_states for databases that already used earlier migration versions', () => {

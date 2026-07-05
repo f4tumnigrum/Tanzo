@@ -1,12 +1,19 @@
-import type { CreateGoalInput, GoalInjection, GoalUserStatusChange, ThreadGoal } from '@shared/goal'
+import type {
+  CreateGoalInput,
+  GoalDecision,
+  GoalInjection,
+  GoalUserStatusChange,
+  ThreadGoal
+} from '@shared/goal'
 import type { GoalStore } from './store'
 import { goalTransition, type GoalEffect, type GoalEvent, type GoalTurnInput } from './goal.machine'
 
 export type { GoalTurnInput } from './goal.machine'
 
-export interface GoalDecision {
-  continue: boolean
-}
+export type MarkOutcomeResult =
+  | { kind: 'applied'; goal: ThreadGoal }
+  | { kind: 'rejected'; code: 'blocked-too-early'; attempts: number; required: number }
+  | { kind: 'no-goal' }
 
 export interface GoalServiceDeps {
   store: GoalStore
@@ -19,7 +26,11 @@ export interface GoalService {
   updateObjective(chatId: string, objective: string): ThreadGoal
   setUserState(chatId: string, status: GoalUserStatusChange): ThreadGoal
   clear(chatId: string): void
-  markOutcome(chatId: string, outcome: 'complete' | 'blocked'): ThreadGoal | null
+  markOutcome(
+    chatId: string,
+    outcome: 'complete' | 'blocked',
+    opts?: { runId?: string }
+  ): MarkOutcomeResult
   markUsageLimited(chatId: string): void
   evaluate(chatId: string, input: GoalTurnInput): GoalDecision
   peekInjection(chatId: string): GoalInjection | null
@@ -32,6 +43,12 @@ function normalizeObjective(objective: string): string {
   return trimmed
 }
 
+interface DispatchResult {
+  goal: ThreadGoal | null
+  decision: GoalDecision
+  reject: Extract<GoalEffect, { kind: 'reject' }> | null
+}
+
 export function createGoalService(deps: GoalServiceDeps): GoalService {
   function emit(chatId: string, goal: ThreadGoal | null): void {
     deps.broadcast(chatId, goal)
@@ -40,22 +57,25 @@ export function createGoalService(deps: GoalServiceDeps): GoalService {
   /**
    * Interpreter shell: run the pure transition for an existing goal, then apply
    * its effects (persist with a fresh updatedAt, broadcast). Returns the
-   * resulting goal and the continuation decision, if any.
+   * resulting goal, the continuation decision, and any rejection.
    */
-  function dispatch(
-    chatId: string,
-    event: GoalEvent
-  ): { goal: ThreadGoal | null; decision: GoalDecision } {
+  function dispatch(chatId: string, event: GoalEvent): DispatchResult {
     const existing = deps.store.get(chatId)
-    if (!existing) return { goal: null, decision: { continue: false } }
+    if (!existing) {
+      return { goal: null, decision: { continue: false, reason: 'not-active' }, reject: null }
+    }
     const result = goalTransition(existing, event)
     let goal: ThreadGoal | null = existing
-    let decision: GoalDecision = { continue: false }
+    let decision: GoalDecision = { continue: false, reason: 'not-active' }
+    let reject: DispatchResult['reject'] = null
     for (const effect of result.effects) {
       goal = applyEffect(chatId, result.state, effect, goal)
-      if (effect.kind === 'decision') decision = { continue: effect.continue }
+      if (effect.kind === 'decision') {
+        decision = { continue: effect.continue, reason: effect.reason }
+      }
+      if (effect.kind === 'reject') reject = effect
     }
-    return { goal, decision }
+    return { goal, decision, reject }
   }
 
   function applyEffect(
@@ -69,8 +89,6 @@ export function createGoalService(deps: GoalServiceDeps): GoalService {
         return deps.store.upsert({ ...nextState, updatedAt: Date.now() })
       case 'broadcast':
         emit(chatId, current)
-        return current
-      case 'decision':
         return current
       default:
         return current
@@ -92,6 +110,7 @@ export function createGoalService(deps: GoalServiceDeps): GoalService {
       timeUsedSeconds: 0,
       idleStreak: 0,
       blockerStreak: 0,
+      blockerLastRunId: null,
       pendingInjection: 'continuation',
       createdAt: now,
       updatedAt: now
@@ -126,10 +145,27 @@ export function createGoalService(deps: GoalServiceDeps): GoalService {
     emit(chatId, null)
   }
 
-  function markOutcome(chatId: string, outcome: 'complete' | 'blocked'): ThreadGoal | null {
-    if (!deps.store.get(chatId)) return null
-    const { goal } = dispatch(chatId, { kind: 'outcome-marked', outcome })
-    return goal
+  function markOutcome(
+    chatId: string,
+    outcome: 'complete' | 'blocked',
+    opts?: { runId?: string }
+  ): MarkOutcomeResult {
+    if (!deps.store.get(chatId)) return { kind: 'no-goal' }
+    const { goal, reject } = dispatch(chatId, {
+      kind: 'outcome-marked',
+      outcome,
+      ...(opts?.runId !== undefined ? { runId: opts.runId } : {})
+    })
+    if (reject) {
+      return {
+        kind: 'rejected',
+        code: reject.code,
+        attempts: reject.attempts,
+        required: reject.required
+      }
+    }
+    if (!goal) return { kind: 'no-goal' }
+    return { kind: 'applied', goal }
   }
 
   function markUsageLimited(chatId: string): void {

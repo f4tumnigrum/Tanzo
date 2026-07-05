@@ -9,6 +9,20 @@ export type GoalLimit = 'budget' | 'usage'
 
 export type GoalInjection = 'continuation' | 'budget_limit' | 'objective_updated'
 
+export type GoalDecisionReason =
+  | 'continue'
+  | 'wrap-up'
+  | 'idle-limit'
+  | 'budget-exhausted'
+  | 'plan-mode'
+  | 'queued-message'
+  | 'not-active'
+
+export interface GoalDecision {
+  continue: boolean
+  reason: GoalDecisionReason
+}
+
 export interface ThreadGoal {
   chatId: string
   objective: string
@@ -23,6 +37,9 @@ export interface ThreadGoal {
   idleStreak: number
 
   blockerStreak: number
+
+  /** Run id of the last rejected/recorded block attempt — same-run dedupe. */
+  blockerLastRunId: string | null
 
   pendingInjection: GoalInjection | null
   createdAt: number
