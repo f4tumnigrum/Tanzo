@@ -178,6 +178,21 @@ export interface ChatRunFrame {
   chunk: InferUIMessageChunk<TanzoUIMessage>
 }
 
+/**
+ * Tick-batched run frames. The main process accumulates frames per chat for a
+ * short tick window and delivers one batch event, which puts a hard upper
+ * bound on the IPC event rate regardless of how fast the model streams.
+ * Frames inside a batch keep their individual monotonically increasing `seq`
+ * numbers and are ordered — a batch is semantically identical to delivering
+ * the contained frames one by one.
+ */
+export interface ChatRunFrameBatch {
+  kind: 'run-frame-batch'
+  chatId: string
+  runId: string
+  frames: ChatRunFrame[]
+}
+
 export interface ChatRunStateEvent {
   kind: 'run-state'
   chatId: string
@@ -197,7 +212,7 @@ export interface ChatNotificationEvent {
   chunk: ChatNotificationChunk
 }
 
-export type ChatEvent = ChatRunFrame | ChatRunStateEvent | ChatNotificationEvent
+export type ChatEvent = ChatRunFrame | ChatRunFrameBatch | ChatRunStateEvent | ChatNotificationEvent
 
 export interface ChatRunSnapshot {
   chatId: string

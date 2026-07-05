@@ -1,4 +1,4 @@
-import { memo, type CSSProperties, type ReactNode } from 'react'
+import { memo, useRef, type CSSProperties, type ReactNode } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
@@ -9,7 +9,13 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils'
 import { CodeBlock, CodeBlockCopyButton } from './code-block'
 import { isCitationHref, isSafeExternalHref, isSafeImageSrc } from './href-safety'
-import { splitMarkdownBlocks } from './markdown-blocks'
+import {
+  createIncrementalSplitter,
+  normalizeMathDelimiters,
+  splitSegments,
+  type IncrementalSplitter,
+  type MarkdownSegment
+} from './incremental-blocks'
 import { XmlTag } from './xml-tag'
 
 export interface MarkdownProps {
@@ -34,43 +40,6 @@ function parseCitationLink(children: string, href: string): CitationParse | null
     if (indices.length > 0) return { indices, citation: href }
   }
   return null
-}
-
-const STANDALONE_MATH_HINT = /\\[a-zA-Z]+|[_^{}]|[=±]|\\frac|\\int|\\oint|\\sum|\\prod/
-
-function looksLikeStandaloneMath(content: string): boolean {
-  return STANDALONE_MATH_HINT.test(content)
-}
-
-function normalizeMathDelimiters(content: string): string {
-  if (!content) return content
-  const segments = content.split(/(```[\s\S]*?```|~~~[\s\S]*?~~~)/g)
-  return segments
-    .map((segment, index) => {
-      if (index % 2 === 1) return segment
-      let next = segment
-      next = next.replace(/\\\[\s*([\s\S]*?)\s*\\\]/g, (full, expr: string) => {
-        const body = expr.trim()
-        return body ? `\n$$\n${body}\n$$\n` : full
-      })
-      next = next.replace(/\\\((.+?)\\\)/g, (full, expr: string) => {
-        const body = expr.trim()
-        return body ? `$${body}$` : full
-      })
-      next = next
-        .split('\n')
-        .map((line) => {
-          const match = /^(\s*)\[\s*(.+?)\s*\]\s*$/.exec(line)
-          if (!match) return line
-          const indent = match[1] ?? ''
-          const body = (match[2] ?? '').trim()
-          if (!body || !looksLikeStandaloneMath(body)) return line
-          return `${indent}$$\n${indent}${body}\n${indent}$$`
-        })
-        .join('\n')
-      return next
-    })
-    .join('')
 }
 
 const MARKDOWN_COMPONENTS: Components = {
@@ -138,7 +107,12 @@ const MARKDOWN_COMPONENTS: Components = {
     </ol>
   ),
   li: ({ children, className }) => (
-    <li className={cn('text-[0.8125rem] leading-[var(--content-line-height)] text-foreground/88', className)}>
+    <li
+      className={cn(
+        'text-[0.8125rem] leading-[var(--content-line-height)] text-foreground/88',
+        className
+      )}
+    >
       {children}
     </li>
   ),
@@ -357,9 +331,6 @@ const MARKDOWN_COMPONENTS: Components = {
   response: ({ children }: { children?: ReactNode }) => <XmlTag tag="response">{children}</XmlTag>
 } as Components
 
-const XML_TAG_PATTERN =
-  /<\s*(thinking|reasoning|toolplan|observation|reflection|response)\s*>([\s\S]*?)<\s*\/\s*\1\s*>/gi
-
 const MarkdownBlock = memo(
   function MarkdownBlock({ content }: { content: string }): React.JSX.Element {
     return (
@@ -376,39 +347,37 @@ const MarkdownBlock = memo(
   (prev, next) => prev.content === next.content
 )
 
-function renderMarkdownSegments(content: string): ReactNode[] {
-  const nodes: ReactNode[] = []
-  let cursor = 0
-  let match: RegExpExecArray | null
-
-  const pushMarkdown = (text: string, at: number): void => {
-    splitMarkdownBlocks(text).forEach((block, blockIndex) => {
-      nodes.push(<MarkdownBlock key={`md-${at}-${blockIndex}`} content={block} />)
-    })
-  }
-
-  XML_TAG_PATTERN.lastIndex = 0
-  while ((match = XML_TAG_PATTERN.exec(content)) !== null) {
-    const [full, tag, body] = match
-    const start = match.index
-    if (start > cursor) pushMarkdown(content.slice(cursor, start), cursor)
-    nodes.push(
-      <XmlTag key={`xml-${start}`} tag={tag ?? 'reasoning'}>
-        {body ?? ''}
+function renderSegment(segment: MarkdownSegment, key: string): ReactNode {
+  if (segment.kind === 'xml') {
+    return (
+      <XmlTag key={key} tag={segment.tag}>
+        {segment.body}
       </XmlTag>
     )
-    cursor = start + full.length
   }
-
-  if (cursor < content.length) pushMarkdown(content.slice(cursor), cursor)
-
-  return nodes
+  return <MarkdownBlock key={key} content={segment.content} />
 }
 
+/**
+ * Streaming-aware markdown renderer.
+ *
+ * Completed regions of the text are frozen into segments whose content — and
+ * therefore whose memoized React elements — never change again; each delta
+ * only re-normalizes and re-parses the short unfrozen tail. This turns the
+ * per-delta rendering cost from O(total text) into O(tail), which is what
+ * keeps long streamed replies smooth.
+ *
+ * The splitter lives on a ref keyed by the component instance, so a static
+ * (non-streaming) message pays the same one-shot cost as before.
+ */
 export const Markdown = memo(
   function Markdown({ content, className }: MarkdownProps): React.JSX.Element | null {
+    const splitterRef = useRef<IncrementalSplitter | null>(null)
     if (!content) return null
-    const normalized = normalizeMathDelimiters(content)
+
+    splitterRef.current ??= createIncrementalSplitter()
+    const { frozen, tail } = splitterRef.current.update(content)
+    const tailSegments = tail ? splitSegments(normalizeMathDelimiters(tail)) : []
 
     return (
       <div
@@ -417,7 +386,8 @@ export const Markdown = memo(
           className
         )}
       >
-        {renderMarkdownSegments(normalized)}
+        {frozen.map((segment, index) => renderSegment(segment, `f-${index}`))}
+        {tailSegments.map((segment, index) => renderSegment(segment, `t-${index}`))}
       </div>
     )
   },

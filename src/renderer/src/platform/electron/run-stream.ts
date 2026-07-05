@@ -245,13 +245,20 @@ export async function connectRun(
       }
       return
     }
-    if (event.kind !== 'run-frame') return
+    // The main process delivers frames tick-batched (`run-frame-batch`); a
+    // batch is semantically identical to its frames delivered one by one, and
+    // each contained frame passes the same seq gate. Single `run-frame`
+    // events are still accepted for compatibility.
+    if (event.kind !== 'run-frame' && event.kind !== 'run-frame-batch') return
+    const frames = event.kind === 'run-frame' ? [event] : event.frames
     if (live) {
-      push(event)
+      for (const frame of frames) push(frame)
       return
     }
-    liveFrames.push(event)
-    if (liveFrames.length > MAX_LIVE_FRAMES) liveFrames.shift()
+    for (const frame of frames) {
+      liveFrames.push(frame)
+      if (liveFrames.length > MAX_LIVE_FRAMES) liveFrames.shift()
+    }
     if (handlers.persistent && shouldAttachExisting) void attach()
   })
 

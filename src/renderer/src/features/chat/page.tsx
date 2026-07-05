@@ -1,11 +1,10 @@
-import { useEffect, useMemo, useState, useTransition } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Globe } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { usePanelRef } from 'react-resizable-panels'
 import { AppHeaderContent } from '@/components/layout/app-header'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { Spinner } from '@/components/ui/spinner'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { BrowserPanel, useBrowserUiStore, useBrowserOpenRequests } from '@/features/browser'
@@ -26,8 +25,6 @@ export default function ChatPage(): React.JSX.Element {
   const chatPaneRef = usePanelRef()
   const navigation = useChatNavigation()
   const { activeChatId, activeConversation, currentWorkspace, defaultWorkspace } = navigation
-  const [displayedChatId, setDisplayedChatId] = useState<string | null>(activeChatId)
-  const [, startChatSwitchTransition] = useTransition()
 
   const headerTitle = currentWorkspace?.label || activeConversation?.title || t('chat.page.title')
 
@@ -35,21 +32,6 @@ export default function ChatPage(): React.JSX.Element {
   const gitTarget = useMemo(() => (gitCwd ? { cwd: gitCwd } : null), [gitCwd])
   const gitReview = useGitReviewController(gitTarget)
   const [gitReviewOpen, setGitReviewOpen] = useState(false)
-
-  useEffect(() => {
-    if (activeChatId === displayedChatId) return undefined
-
-    const frame = window.requestAnimationFrame(() => {
-      if (!activeChatId) {
-        setDisplayedChatId(null)
-        return
-      }
-      startChatSwitchTransition(() => setDisplayedChatId(activeChatId))
-    })
-    return () => window.cancelAnimationFrame(frame)
-  }, [activeChatId, displayedChatId, startChatSwitchTransition])
-
-  const isSwitchingChat = activeChatId !== displayedChatId
 
   useEffect(() => {
     if (!gitCwd) return undefined
@@ -70,16 +52,15 @@ export default function ChatPage(): React.JSX.Element {
     else panel.expand()
   }, [browserOpen, browserMaximized, chatPaneRef])
 
+  // Switches render synchronously: hot sessions (kept alive by the session
+  // manager) paint their first frame from memory, so no transition shell or
+  // deferred remount is needed.
   const chatContent = activeChatId ? (
-    isSwitchingChat || !displayedChatId ? (
-      <ChatSwitchShell />
-    ) : (
-      <ActiveChat
-        key={displayedChatId}
-        chatId={displayedChatId}
-        onForkMessage={navigation.handleForkMessage}
-      />
-    )
+    <ActiveChat
+      key={activeChatId}
+      chatId={activeChatId}
+      onForkMessage={navigation.handleForkMessage}
+    />
   ) : (
     <ChatEmpty>
       <StartComposer
@@ -95,7 +76,7 @@ export default function ChatPage(): React.JSX.Element {
         title={headerTitle}
         actions={
           <>
-            {displayedChatId ? <TaskOverviewPill chatId={displayedChatId} /> : null}
+            {activeChatId ? <TaskOverviewPill chatId={activeChatId} /> : null}
             {gitTarget ? (
               <WorkspaceGitPill
                 overview={gitReview.overview}
@@ -171,14 +152,6 @@ export default function ChatPage(): React.JSX.Element {
         onOpenChange={setGitReviewOpen}
         controller={gitReview}
       />
-    </div>
-  )
-}
-
-function ChatSwitchShell(): React.JSX.Element {
-  return (
-    <div className="flex h-full min-h-0 flex-1 items-center justify-center">
-      <Spinner className="size-5 text-foreground/35" />
     </div>
   )
 }

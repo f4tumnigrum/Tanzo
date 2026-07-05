@@ -1,5 +1,11 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
-import { useChatSession } from '../model/conversation/use-chat-session'
+import {
+  useChatSession,
+  useMessageOrder,
+  useRunState,
+  useSidecarState,
+  useTranscriptSelector
+} from '../model/conversation/use-chat-session'
 import type { SubagentTaskApprovalResponse } from '@shared/subagent-task'
 import {
   ChatActionsProvider,
@@ -7,7 +13,7 @@ import {
   type QuestionDecision
 } from '../chat-actions-context'
 import { chatClient } from '@/platform/electron/chat-client'
-import { Spinner } from '@/components/ui/spinner'
+import { trailingUserMessageId } from '../model/conversation/message-utils'
 import { ChatEmpty } from './chat-empty'
 import { Composer } from './compose/composer'
 import { RunNotice } from './compose/run-notice'
@@ -23,16 +29,23 @@ export function ActiveChat({
   chatId: string
   onForkMessage: (messageId: string) => void
 }): React.JSX.Element {
-  const { session, state } = useChatSession(chatId)
+  const session = useChatSession(chatId)
+  const runState = useRunState(session)
+  const sidecar = useSidecarState(session)
+  const order = useMessageOrder(session)
 
   const streamingMessageId =
-    state.isStreaming && state.activeRunKind !== 'compaction'
-      ? (state.messages.at(-1)?.id ?? null)
-      : null
+    runState.isStreaming && runState.activeRunKind !== 'compaction' ? (order.at(-1) ?? null) : null
 
-  const lastMessage = state.messages.at(-1)
-  const editableMessageId =
-    !state.isStreaming && lastMessage?.role === 'user' ? lastMessage.id : null
+  // Derived subscription (id + role only) so streaming text deltas never
+  // re-render this component tree.
+  const editableUserId = useTranscriptSelector(session, trailingUserMessageId, Object.is)
+  const editableMessageId = !runState.isStreaming ? editableUserId : null
+
+  const handleEditMessage = useCallback(
+    (messageId: string, text: string) => session.editMessage(messageId, text),
+    [session]
+  )
 
   const observerRef = useRef<ResizeObserver | null>(null)
   const [composerOffset, setComposerOffset] = useState(168)
@@ -74,18 +87,16 @@ export function ActiveChat({
 
   const composer = <Composer chatId={chatId} />
 
-  if (state.isLoadingHistory && state.messages.length === 0 && !state.isStreaming) {
-    return <ChatLoadingShell />
-  }
-
   const streamFooter =
-    state.compactionInProgress || state.runNotice ? (
+    runState.compactionInProgress || runState.runNotice ? (
       <>
-        {state.compactionInProgress ? <CompactionMessage {...state.compactionInProgress} /> : null}
-        {state.runNotice ? (
+        {runState.compactionInProgress ? (
+          <CompactionMessage {...runState.compactionInProgress} />
+        ) : null}
+        {runState.runNotice ? (
           <RunNotice
-            notice={state.runNotice}
-            onRetry={state.isStreaming ? undefined : () => session.retryLastTurn()}
+            notice={runState.runNotice}
+            onRetry={runState.isStreaming ? undefined : () => session.retryLastTurn()}
             onDismiss={() => session.clearRunNotice()}
           />
         ) : null}
@@ -94,19 +105,19 @@ export function ActiveChat({
 
   return (
     <ChatActionsProvider value={actions}>
-      {state.messages.length > 0 ? (
+      {order.length > 0 ? (
         <div className="relative min-h-0 flex-1">
           <div className="absolute inset-0">
             <MessageList
-              messages={state.messages}
+              session={session}
               activeStreamingMessageId={streamingMessageId}
-              isStreaming={state.isStreaming}
+              isStreaming={runState.isStreaming}
               threadId={chatId}
               composerOffset={composerOffset}
               streamFooter={streamFooter}
               onForkMessage={onForkMessage}
               editableMessageId={editableMessageId}
-              onEditMessage={(messageId, text) => session.editMessage(messageId, text)}
+              onEditMessage={handleEditMessage}
             />
           </div>
           <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30">
@@ -114,15 +125,15 @@ export function ActiveChat({
               ref={measureComposer}
               className="pointer-events-auto mx-auto w-full max-w-3xl px-3 pb-4 @md/chat:px-5"
             >
-              {state.subagentApprovals.map((approval) => (
+              {sidecar.subagentApprovals.map((approval) => (
                 <SubagentApprovalCard
                   key={approval.approval.approvalId}
                   approval={approval}
                   onRespond={actions.respondToTaskApproval}
                 />
               ))}
-              {state.transientStatus ? (
-                <StreamingIndicator label={state.transientStatus} className="px-1 pb-1 pt-0" />
+              {runState.transientStatus ? (
+                <StreamingIndicator label={runState.transientStatus} className="px-1 pb-1 pt-0" />
               ) : null}
               {composer}
             </div>
@@ -132,13 +143,5 @@ export function ActiveChat({
         <ChatEmpty>{composer}</ChatEmpty>
       )}
     </ChatActionsProvider>
-  )
-}
-
-function ChatLoadingShell(): React.JSX.Element {
-  return (
-    <div className="flex h-full min-h-0 flex-1 items-center justify-center">
-      <Spinner className="size-5 text-foreground/35" />
-    </div>
   )
 }

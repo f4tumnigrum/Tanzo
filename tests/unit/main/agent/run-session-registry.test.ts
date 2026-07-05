@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { ChatEvent } from '@shared/chat'
 import type { TanzoUIMessage } from '@shared/agent-message'
 import { createChatRunSessionRegistry } from '@main/agent/runtime/run-session-registry'
@@ -108,7 +108,7 @@ describe('agent/runtime/run-session-registry', () => {
     expect(streams.snapshot('chat-1')).toBeNull()
   })
 
-  it('coalesces adjacent deltas in snapshots and live broadcasts', () => {
+  it('coalesces adjacent deltas and delivers one batch per flush', () => {
     const events: ChatEvent[] = []
     const streams = createChatRunSessionRegistry({
       deliver: (event) => events.push(event),
@@ -137,14 +137,94 @@ describe('agent/runtime/run-session-registry', () => {
       status: 'accepted',
       frame: { seq: 3, chunk: { type: 'text-delta', delta: 'lo' } }
     })
+    // Stored/broadcast frames merge adjacent deltas: seq advances to the
+    // merged tail, the delta text is concatenated.
     expect(streams.snapshot('chat-1')?.frames).toMatchObject([
       { seq: 1, chunk: { type: 'text-start', id: 'text-1' } },
       { seq: 3, chunk: { type: 'text-delta', id: 'text-1', delta: 'hello' } }
     ])
     expect(events).toMatchObject([
       { kind: 'run-state', status: 'running' },
-      { kind: 'run-frame', seq: 1, chunk: { type: 'text-start', id: 'text-1' } },
-      { kind: 'run-frame', seq: 3, chunk: { type: 'text-delta', delta: 'hello' } }
+      {
+        kind: 'run-frame-batch',
+        chatId: 'chat-1',
+        runId: 'run-1',
+        frames: [
+          { seq: 1, chunk: { type: 'text-start', id: 'text-1' } },
+          { seq: 3, chunk: { type: 'text-delta', delta: 'hello' } }
+        ]
+      }
+    ])
+  })
+
+  it('delivers pending frames on the tick timer without an explicit flush', () => {
+    vi.useFakeTimers()
+    try {
+      const events: ChatEvent[] = []
+      const streams = createChatRunSessionRegistry({
+        deliver: (event) => events.push(event),
+        batchMs: 33
+      })
+      streams.start('chat-1', 'run-1', baseMessages)
+      streams.publish('chat-1', { type: 'text-start', id: 't1' }, { runId: 'run-1' })
+      streams.publish('chat-1', { type: 'text-delta', id: 't1', delta: 'hi' }, { runId: 'run-1' })
+
+      expect(events.filter((event) => event.kind === 'run-frame-batch')).toHaveLength(0)
+      vi.advanceTimersByTime(40)
+
+      const batches = events.filter((event) => event.kind === 'run-frame-batch')
+      expect(batches).toHaveLength(1)
+      expect(batches[0]).toMatchObject({
+        frames: [
+          { seq: 1, chunk: { type: 'text-start' } },
+          { seq: 2, chunk: { type: 'text-delta', delta: 'hi' } }
+        ]
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('never extends a frame that was already delivered in a batch', () => {
+    const events: ChatEvent[] = []
+    const streams = createChatRunSessionRegistry({
+      deliver: (event) => events.push(event),
+      batchMs: 1000
+    })
+    streams.start('chat-1', 'run-1', baseMessages)
+
+    streams.publish('chat-1', { type: 'text-delta', id: 't1', delta: 'AB' }, { runId: 'run-1' })
+    streams.flush('chat-1')
+    streams.publish('chat-1', { type: 'text-delta', id: 't1', delta: 'CD' }, { runId: 'run-1' })
+    streams.flush('chat-1')
+
+    const batches = events.filter((event) => event.kind === 'run-frame-batch')
+    expect(batches).toMatchObject([
+      { frames: [{ seq: 1, chunk: { delta: 'AB' } }] },
+      { frames: [{ seq: 2, chunk: { delta: 'CD' } }] }
+    ])
+    // Delivered frames are immutable history: the buffer keeps both.
+    expect(streams.snapshot('chat-1')?.frames).toMatchObject([
+      { seq: 1, chunk: { delta: 'AB' } },
+      { seq: 2, chunk: { delta: 'CD' } }
+    ])
+  })
+
+  it('never extends a frame captured by a snapshot (merge barrier)', () => {
+    const streams = createChatRunSessionRegistry({ batchMs: 1000 })
+    streams.start('chat-1', 'run-1', baseMessages)
+
+    streams.publish('chat-1', { type: 'text-delta', id: 't1', delta: 'AB' }, { runId: 'run-1' })
+    const captured = streams.snapshot('chat-1')
+    streams.publish('chat-1', { type: 'text-delta', id: 't1', delta: 'CD' }, { runId: 'run-1' })
+
+    // The captured snapshot must not be retroactively polluted...
+    expect(captured?.frames).toMatchObject([{ seq: 1, chunk: { delta: 'AB' } }])
+    // ...and the live buffer keeps the post-snapshot delta as a separate frame
+    // so an attached renderer (which replayed seq 1) receives only 'CD'.
+    expect(streams.snapshot('chat-1')?.frames).toMatchObject([
+      { seq: 1, chunk: { delta: 'AB' } },
+      { seq: 2, chunk: { delta: 'CD' } }
     ])
   })
 
@@ -168,6 +248,19 @@ describe('agent/runtime/run-session-registry', () => {
     })
     expect(events.at(-1)).toEqual(terminal)
     expect(streams.finish('chat-1', 'run-1', 'finished')).toBeNull()
+  })
+
+  it('flushes buffered frames before the terminal run-state event', () => {
+    const events: ChatEvent[] = []
+    const streams = createChatRunSessionRegistry({
+      deliver: (event) => events.push(event),
+      batchMs: 1000
+    })
+    streams.start('chat-1', 'run-1', baseMessages)
+    streams.publish('chat-1', { type: 'text-delta', id: 't1', delta: 'tail' }, { runId: 'run-1' })
+    streams.finish('chat-1', 'run-1', 'finished')
+
+    expect(events.map((event) => event.kind)).toEqual(['run-state', 'run-frame-batch', 'run-state'])
   })
 
   it('threads runKind through start, snapshot, and terminal events for compaction runs', () => {

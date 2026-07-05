@@ -5,7 +5,12 @@ import { toast } from 'sonner'
 import { expandTemplate, parseSlashInput } from '@shared/slash-command'
 import type { PermissionMode } from '@shared/policy'
 import { useAgents, usePolicyMode, useConversations } from '../../model/queries'
-import { useChatSession } from '../../model'
+import {
+  useChatSession,
+  useRunState,
+  useSidecarState,
+  useTranscriptSelector
+} from '../../model/conversation/use-chat-session'
 import { useChatUiStore } from '../../model/store'
 import { useSlashCommands } from '../../model/slash/use-slash-commands'
 import { usePluginMentions } from '../../model/conversation/use-plugin-mentions'
@@ -19,7 +24,7 @@ import { ComposerPanel } from './composer-panel'
 import { QueuedMessages } from './queued-messages'
 import { ContextUsageBadge } from './context-usage-badge'
 import { ModelSelector } from './model-selector'
-import { selectLatestTodos } from './todo-panel-utils'
+import { selectLatestTodos, type TodoPanelTask } from './todo-panel-utils'
 import { agentQueryFromInsertText, agentSlashCommands, resolveAgent } from './agent-slash'
 import { useComposerModel } from './use-composer-model'
 import { chatClient } from '@/platform/electron/chat-client'
@@ -28,9 +33,22 @@ export interface ComposerProps {
   chatId: string
 }
 
+function todosEqual(previous: TodoPanelTask[], next: TodoPanelTask[]): boolean {
+  if (previous === next) return true
+  if (previous.length !== next.length) return false
+  for (let i = 0; i < previous.length; i += 1) {
+    if (previous[i].content !== next[i].content || previous[i].status !== next[i].status) {
+      return false
+    }
+  }
+  return true
+}
+
 export function Composer({ chatId }: ComposerProps): React.JSX.Element {
   const { t } = useTranslation()
-  const { session, state } = useChatSession(chatId)
+  const session = useChatSession(chatId)
+  const runState = useRunState(session)
+  const sidecar = useSidecarState(session)
   const draft = useChatUiStore((uiState) => uiState.draftByChatId[chatId] ?? '')
   const setDraft = useChatUiStore((uiState) => uiState.setDraft)
   const mode = usePolicyMode(chatId)
@@ -41,11 +59,14 @@ export function Composer({ chatId }: ComposerProps): React.JSX.Element {
   const agents = useAgents('main')
   const [isCompacting, setIsCompacting] = useState(false)
 
-  const isStreaming = state.isStreaming
-  const isCompactionRun = state.activeRunKind === 'compaction'
+  const isStreaming = runState.isStreaming
+  const isCompactionRun = runState.activeRunKind === 'compaction'
   const handleStop = useCallback(() => session.stop(), [session])
 
-  const todos = useMemo(() => selectLatestTodos(state.messages), [state.messages])
+  // Derived transcript subscription: recomputes on transcript commits but
+  // notifies only when the todo list itself changes, so streamed text deltas
+  // never re-render the composer.
+  const todos = useTranscriptSelector(session, selectLatestTodos, todosEqual)
 
   const activeConversation = useMemo(
     () => (conversations.data ?? []).find((c) => c.id === chatId) ?? null,
@@ -61,7 +82,8 @@ export function Composer({ chatId }: ComposerProps): React.JSX.Element {
 
   const {
     modelRef,
-    effectiveReasoningEffort,
+    reasoningEffort,
+    reasoningEffortOptions,
     handleSelectModel,
     handleReasoningEffortChange,
     subagentModelRef,
@@ -81,7 +103,7 @@ export function Composer({ chatId }: ComposerProps): React.JSX.Element {
       toast.info(t('chat.errors.compactDuringRun'))
       return
     }
-    if (state.messages.length === 0) {
+    if (session.transcript.getOrder().length === 0) {
       toast.info(t('chat.errors.compactRequiresConversation'))
       return
     }
@@ -108,7 +130,7 @@ export function Composer({ chatId }: ComposerProps): React.JSX.Element {
     } finally {
       setIsCompacting(false)
     }
-  }, [chatId, isCompacting, isStreaming, session, state.messages, t])
+  }, [chatId, isCompacting, isStreaming, session, t])
 
   const handleSubmit = useCallback(
     async (text: string, files?: FileUIPart[]) => {
@@ -197,12 +219,12 @@ export function Composer({ chatId }: ComposerProps): React.JSX.Element {
     ]
   )
 
-  const compactionTriggerTokens = state.contextStatus?.compactionTriggerTokens
+  const compactionTriggerTokens = runState.contextStatus?.compactionTriggerTokens
   const contextBadge = compactionTriggerTokens ? (
     <ContextUsageBadge
-      contextUsed={state.contextStatus?.usedTokens}
+      contextUsed={runState.contextStatus?.usedTokens}
       compactionTriggerTokens={compactionTriggerTokens}
-      recentCompaction={state.recentCompaction ?? undefined}
+      recentCompaction={runState.recentCompaction ?? undefined}
     />
   ) : null
 
@@ -210,7 +232,8 @@ export function Composer({ chatId }: ComposerProps): React.JSX.Element {
     <ModelSelector
       selectedId={modelRef}
       onSelect={handleSelectModel}
-      reasoningEffort={effectiveReasoningEffort}
+      reasoningEffort={reasoningEffort}
+      reasoningEffortOptions={reasoningEffortOptions}
       onReasoningEffortChange={handleReasoningEffortChange}
       subagent={{ selectedId: subagentModelRef, onSelect: handleSelectSubagentModel }}
       disabled={isStreaming}
@@ -220,16 +243,16 @@ export function Composer({ chatId }: ComposerProps): React.JSX.Element {
   return (
     <div className="flex w-full flex-col gap-1.5">
       <QueuedMessages
-        items={state.queuedMessages}
+        items={sidecar.queuedMessages}
         onRemove={session.removeQueued}
         onSteer={session.steer}
       />
       <div className="relative">
-        <ComposerPanel goal={state.goal} todos={todos} onGoalCommand={session.goalCommand} />
+        <ComposerPanel goal={sidecar.goal} todos={todos} onGoalCommand={session.goalCommand} />
         <ChatInput
           state={{
             isStreaming,
-            isStopping: state.isStopping,
+            isStopping: runState.isStopping,
             permissionMode: mode.data ?? 'default',
             contextBadge,
             canSubmitOverride: Boolean(modelRef)

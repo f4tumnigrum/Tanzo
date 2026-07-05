@@ -13,13 +13,18 @@ export function latestCompaction(
   return null
 }
 
-export function upsertMessage(
-  messages: readonly TanzoUIMessage[],
-  message: TanzoUIMessage
-): TanzoUIMessage[] {
-  const idx = messages.findIndex((item) => item.id === message.id)
-  if (idx === -1) return [...messages, message]
-  const next = messages.slice()
-  next[idx] = message
-  return next
+/**
+ * Id of the trailing editable user message, else null. Synthetic context
+ * injections (persisted at turn start, hidden in the UI) can trail the real
+ * prompt after a failed run; skip them so edit eligibility lands on the
+ * message the user actually sees. Mirrors the main-side check in
+ * chat-inbox.editMessage.
+ */
+export function trailingUserMessageId(messages: readonly TanzoUIMessage[]): string | null {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i]
+    if (message.parts.some((part) => part.type === 'data-contextInjection')) continue
+    return message.role === 'user' ? message.id : null
+  }
+  return null
 }

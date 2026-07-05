@@ -14,7 +14,7 @@ import type { SubagentTask } from '@shared/subagent-task'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
-import { useChatSession } from '../model/conversation/use-chat-session'
+import { useChatSession, useSidecarState } from '../model/conversation/use-chat-session'
 
 const ACTIVE_STATUSES = new Set<SubagentTask['status']>(['pending', 'running', 'blocked'])
 
@@ -55,9 +55,9 @@ function statusIcon(
 
 export function TaskOverviewPill({ chatId }: { chatId: string }): React.JSX.Element | null {
   const { t } = useTranslation()
-  const { state } = useChatSession(chatId)
+  const session = useChatSession(chatId)
+  const { tasks } = useSidecarState(session)
   const [open, setOpen] = useState(false)
-  const tasks = state.tasks
 
   if (tasks.length === 0) return null
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { TanzoUIMessage } from '@shared/agent-message'
 import {
   latestCompaction,
-  upsertMessage
+  trailingUserMessageId
 } from '@renderer/features/chat/model/conversation/message-utils'
 
 function textMessage(id: string, text: string): TanzoUIMessage {
@@ -40,18 +40,36 @@ describe('chat/conversation/message-utils latestCompaction', () => {
   })
 })
 
-describe('chat/conversation/message-utils upsertMessage', () => {
-  it('appends a new message', () => {
-    const first = textMessage('m1', 'one')
-    const second = textMessage('m2', 'two')
-
-    expect(upsertMessage([first], second)).toEqual([first, second])
+describe('chat/conversation/message-utils trailingUserMessageId', () => {
+  const injection = (id: string): TanzoUIMessage => ({
+    id,
+    role: 'user',
+    parts: [{ type: 'data-contextInjection', data: { text: 'datetime: now' } } as never]
+  })
+  const assistant = (id: string): TanzoUIMessage => ({
+    id,
+    role: 'assistant',
+    parts: [{ type: 'text', text: 'reply' }]
   })
 
-  it('replaces an existing message by id', () => {
-    const first = textMessage('m1', 'one')
-    const updated = textMessage('m1', 'updated')
+  it('returns the id when the last message is a user prompt', () => {
+    expect(trailingUserMessageId([assistant('a1'), textMessage('u1', 'hi')])).toBe('u1')
+  })
 
-    expect(upsertMessage([first], updated)).toEqual([updated])
+  it('skips trailing synthetic context injections after a failed run', () => {
+    expect(trailingUserMessageId([textMessage('u1', 'hi'), injection('inj-1')])).toBe('u1')
+    expect(
+      trailingUserMessageId([textMessage('u1', 'hi'), injection('inj-1'), injection('inj-2')])
+    ).toBe('u1')
+  })
+
+  it('returns null when the last real message is an assistant reply', () => {
+    expect(
+      trailingUserMessageId([textMessage('u1', 'hi'), assistant('a1'), injection('inj-1')])
+    ).toBeNull()
+  })
+
+  it('returns null for an empty transcript', () => {
+    expect(trailingUserMessageId([])).toBeNull()
   })
 })

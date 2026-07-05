@@ -412,7 +412,13 @@ export function createAgentModule(options: AgentModuleOptions): AgentModule {
         requireService(serviceRef).submitTaskResult(chatId, result),
       goal: {
         get: (chatId) => goalService.get(chatId),
-        markOutcome: (chatId, status) => goalService.markOutcome(chatId, status) !== null
+        markOutcome: (chatId, status, opts) => {
+          const result = goalService.markOutcome(chatId, status, opts)
+          if (result.kind === 'rejected') {
+            return { kind: 'rejected', attempts: result.attempts, required: result.required }
+          }
+          return { kind: result.kind }
+        }
       },
       browser,
       disabledTools: () => options.disabledTools?.() ?? [],

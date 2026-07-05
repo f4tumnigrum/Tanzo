@@ -9,7 +9,7 @@ export {
   useRevokeDecision,
   useSetConversationModel,
   useSetConversationTitle,
-  useSaveLanguageDefaults
+  useSetConversationReasoningEffort
 } from './mutations'
 export { useChatUiStore } from './store'
 export {
@@ -19,11 +19,20 @@ export {
   type WorkspaceRecord,
   type WorkspaceState
 } from './workspace-store'
-export { useChatSession } from './conversation/use-chat-session'
+export {
+  useChatSession,
+  useMessage,
+  useMessageOrder,
+  useRunState,
+  useSidecarState,
+  useTranscriptSelector
+} from './conversation/use-chat-session'
 export {
   getChatSession,
+  discardChatSession,
   type ChatSession,
-  type ChatSessionState
-} from './conversation/chat-session'
+  type RunState,
+  type SidecarState
+} from './conversation/session-manager'
 export { type RunNotice } from './conversation/use-run-notice'
 export { useRunningConversations } from './use-running-conversations'

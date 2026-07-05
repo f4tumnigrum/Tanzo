@@ -22,13 +22,19 @@ import { queryClient } from '@/common/query-client'
 import { chatKeys } from '../query-keys'
 import { routeDataPart } from './data-part-router'
 import { errorKindFromCode, reduceRunNotice, type RunNotice } from './use-run-notice'
-import { latestCompaction, upsertMessage } from './message-utils'
+import { latestCompaction, trailingUserMessageId } from './message-utils'
+import { createTranscriptStore, type TranscriptStore } from './transcript-store'
+import { createStateStore, type StateStore } from './state-store'
 
 type Goal = TanzoDataParts['goal']['goal']
 type QueuedMessage = TanzoDataParts['queued']['items'][number]
 
-export interface ChatSessionState {
-  messages: TanzoUIMessage[]
+/**
+ * Low-frequency run-control plane: streaming lifecycle, notices, context and
+ * compaction status. Subscribed by the composer and chat chrome — never
+ * notified on transcript deltas.
+ */
+export interface RunState {
   isLoadingHistory: boolean
   isStreaming: boolean
   /** True between the user pressing Stop and the run reaching a terminal state. */
@@ -39,6 +45,10 @@ export interface ChatSessionState {
   compactionInProgress: TanzoDataParts['compaction'] | null
   activeRunKind: ChatRunKind | null
   runNotice: RunNotice | null
+}
+
+/** Low-frequency sidecar plane: queued messages, sub-agent tasks, goal. */
+export interface SidecarState {
   queuedMessages: QueuedMessage[]
   goal: Goal
   subagentApprovals: SubagentTaskApprovalView[]
@@ -47,8 +57,10 @@ export interface ChatSessionState {
 
 export interface ChatSession {
   chatId: string
-  subscribe(listener: () => void): () => void
-  getState(): ChatSessionState
+  transcript: TranscriptStore
+  runState: StateStore<RunState>
+  sidecar: StateStore<SidecarState>
+  /** Mark the session as actively viewed; returns a release function. */
   retain(): () => void
   sendMessage(input: { text: string; files?: FileUIPart[] }): void
   editMessage(messageId: string, text: string): void
@@ -64,10 +76,7 @@ export interface ChatSession {
   goalCommand(args: string): Promise<string>
 }
 
-const TEARDOWN_DELAY_MS = 1000
-
-const INITIAL_STATE: ChatSessionState = {
-  messages: [],
+const INITIAL_RUN_STATE: RunState = {
   isLoadingHistory: true,
   isStreaming: false,
   isStopping: false,
@@ -76,7 +85,10 @@ const INITIAL_STATE: ChatSessionState = {
   recentCompaction: null,
   compactionInProgress: null,
   activeRunKind: null,
-  runNotice: null,
+  runNotice: null
+}
+
+const INITIAL_SIDECAR_STATE: SidecarState = {
   queuedMessages: [],
   goal: null,
   subagentApprovals: [],
@@ -132,14 +144,6 @@ function persistedSummaryPresent(
   })
 }
 
-function reconcileCompactionInProgress(
-  messages: readonly TanzoUIMessage[],
-  inProgress: TanzoDataParts['compaction'] | null
-): TanzoDataParts['compaction'] | null {
-  if (!inProgress) return null
-  return persistedSummaryPresent(messages, inProgress.summaryId) ? null : inProgress
-}
-
 function mergeRunBaseMessages(
   displayMessages: readonly TanzoUIMessage[],
   baseMessages: readonly TanzoUIMessage[]
@@ -154,45 +158,62 @@ function mergeRunBaseMessages(
   return merged
 }
 
-function createChatSession(chatId: string, onDispose: () => void): ChatSession {
+function createChatSession(chatId: string): ChatSession & {
+  open(): void
+  dispose(): void
+  isRunning(): boolean
+  isRetained(): boolean
+  lastReleasedAt(): number
+} {
   const cachedMessages = queryClient.getQueryData<TanzoUIMessage[]>(chatKeys.messages(chatId))
-  let state: ChatSessionState =
-    cachedMessages && cachedMessages.length > 0
+  const hasCache = Boolean(cachedMessages && cachedMessages.length > 0)
+
+  const transcript = createTranscriptStore(hasCache ? cachedMessages : [])
+  const runState = createStateStore<RunState>(
+    hasCache
       ? {
-          ...INITIAL_STATE,
-          messages: cachedMessages,
+          ...INITIAL_RUN_STATE,
           isLoadingHistory: false,
-          recentCompaction: latestCompaction(cachedMessages)
+          recentCompaction: latestCompaction(cachedMessages ?? [])
         }
-      : INITIAL_STATE
-  const listeners = new Set<() => void>()
+      : INITIAL_RUN_STATE
+  )
+  const sidecar = createStateStore<SidecarState>(INITIAL_SIDECAR_STATE)
+
   let connection: RunConnection | null = null
   let sink: MessageSink | null = null
   let unsubscribeNotifications: () => void = () => {}
+  let unsubscribeChanges: () => void = () => {}
   let runActive = false
   let settleRefreshRevision = 0
   let refCount = 0
-  let teardownTimer: ReturnType<typeof setTimeout> | null = null
+  let releasedAt = Date.now()
   let opened = false
   let disposed = false
 
-  const setState = (patch: Partial<ChatSessionState>): void => {
-    const next = { ...state, ...patch }
-    if ('messages' in patch) {
-      next.compactionInProgress = reconcileCompactionInProgress(
-        next.messages,
-        next.compactionInProgress
-      )
+  // ---------------------------------------------------------------------
+  // Compaction reconciliation: whenever the transcript changes, clear the
+  // in-progress indicator once its persisted summary appears. Runs on the
+  // transcript commit feed — timing-equivalent to the old setState hook.
+  // ---------------------------------------------------------------------
+  const reconcileCompaction = (): void => {
+    const inProgress = runState.getState().compactionInProgress
+    if (!inProgress) return
+    if (persistedSummaryPresent(transcript.getMessages(), inProgress.summaryId)) {
+      runState.setState({ compactionInProgress: null })
     }
-    state = next
-    for (const listener of listeners) listener()
+  }
+
+  const setTranscript = (messages: readonly TanzoUIMessage[]): void => {
+    transcript.replaceAll(messages)
+    transcript.flushSync()
   }
 
   const reportError = (error: unknown): void => {
     if (disposed) return
     const code = error instanceof TanzoError ? error.code : undefined
     const message = error instanceof Error ? error.message : String(error)
-    setState({
+    runState.update((state) => ({
       transientStatus: null,
       ...(runActive ? {} : { isStreaming: false, isStopping: false }),
       runNotice:
@@ -204,7 +225,7 @@ function createChatSession(chatId: string, onDispose: () => void): ChatSession {
               // degraded (non-telemetry) path still shows an accurate heading.
               error: { kind: errorKindFromCode(code), message, ...(code ? { name: code } : {}) }
             }
-    })
+    }))
   }
 
   /**
@@ -216,11 +237,11 @@ function createChatSession(chatId: string, onDispose: () => void): ChatSession {
   const restoreLastRunOutcome = async (): Promise<void> => {
     try {
       const outcome = await chatClient.lastRunOutcome(chatId)
-      if (disposed || runActive || state.runNotice) return
+      if (disposed || runActive || runState.getState().runNotice) return
       if (!outcome || outcome.status !== 'failed' || !outcome.error) return
       if (outcome.error.kind === 'aborted') return
       const detail = outcome.error.detail
-      setState({
+      runState.setState({
         runNotice: {
           kind: 'error',
           stale: true,
@@ -238,19 +259,19 @@ function createChatSession(chatId: string, onDispose: () => void): ChatSession {
 
   const handleDataPart = (dataPart: { type: string; id?: string; data?: unknown }): void =>
     routeDataPart(dataPart, {
-      setTransientStatus: (label) => setState({ transientStatus: label }),
-      setContextStatus: (context) => setState({ contextStatus: context }),
+      setTransientStatus: (label) => runState.setState({ transientStatus: label }),
+      setContextStatus: (context) => runState.setState({ contextStatus: context }),
       onCompaction: (data) => {
         if (data.stage === 'start') {
-          setState({ compactionInProgress: data })
+          runState.setState({ compactionInProgress: data })
           return
         }
         if (data.stage === 'failed') {
-          setState({ compactionInProgress: null, recentCompaction: data })
+          runState.setState({ compactionInProgress: null, recentCompaction: data })
           return
         }
-        setState({
-          compactionInProgress: persistedSummaryPresent(state.messages, data.summaryId)
+        runState.setState({
+          compactionInProgress: persistedSummaryPresent(transcript.getMessages(), data.summaryId)
             ? null
             : data,
           recentCompaction: data
@@ -260,11 +281,12 @@ function createChatSession(chatId: string, onDispose: () => void): ChatSession {
           void refresh()
         }
       },
-      setTasks: (tasks) => setState({ tasks }),
-      setTaskApprovals: (approvals) => setState({ subagentApprovals: approvals }),
-      setQueued: (items) => setState({ queuedMessages: items }),
-      setGoal: (goal) => setState({ goal }),
-      handleTelemetry: (event) => setState({ runNotice: reduceRunNotice(state.runNotice, event) })
+      setTasks: (tasks) => sidecar.setState({ tasks }),
+      setTaskApprovals: (approvals) => sidecar.setState({ subagentApprovals: approvals }),
+      setQueued: (items) => sidecar.setState({ queuedMessages: items }),
+      setGoal: (goal) => sidecar.setState({ goal }),
+      handleTelemetry: (event) =>
+        runState.update((state) => ({ runNotice: reduceRunNotice(state.runNotice, event) }))
     })
 
   const startSink = (seedMessage?: TanzoUIMessage): MessageSink => {
@@ -272,7 +294,7 @@ function createChatSession(chatId: string, onDispose: () => void): ChatSession {
     const inner = createMessageSink({
       onMessage: (message) => {
         if (!active) return
-        setState({ messages: upsertMessage(state.messages, message) })
+        transcript.upsert(message)
       },
       onError: reportError,
       ...(seedMessage ? { seedMessage } : {})
@@ -303,13 +325,11 @@ function createChatSession(chatId: string, onDispose: () => void): ChatSession {
         patchConversationSummary(list, conversation)
       )
       cacheMessages(messages)
-      setState({
-        messages,
-        recentCompaction: latestCompaction(messages)
-      })
+      setTranscript(messages)
+      runState.setState({ recentCompaction: latestCompaction(messages) })
       return messages
     } catch {
-      return state.messages
+      return [...transcript.getMessages()]
     }
   }
 
@@ -324,9 +344,12 @@ function createChatSession(chatId: string, onDispose: () => void): ChatSession {
         sink?.close()
         sink = null
         if (snapshot.runKind === 'compaction') {
-          const displayBaseMessages = mergeRunBaseMessages(state.messages, snapshot.baseMessages)
-          setState({
-            messages: displayBaseMessages,
+          const displayBaseMessages = mergeRunBaseMessages(
+            transcript.getMessages(),
+            snapshot.baseMessages
+          )
+          setTranscript(displayBaseMessages)
+          runState.setState({
             isStreaming: true,
             isStopping: false,
             activeRunKind: 'compaction',
@@ -336,9 +359,12 @@ function createChatSession(chatId: string, onDispose: () => void): ChatSession {
         }
         const lastBase = snapshot.baseMessages.at(-1)
         sink = startSink(lastBase?.role === 'assistant' ? lastBase : undefined)
-        const displayBaseMessages = mergeRunBaseMessages(state.messages, snapshot.baseMessages)
-        setState({
-          messages: displayBaseMessages,
+        const displayBaseMessages = mergeRunBaseMessages(
+          transcript.getMessages(),
+          snapshot.baseMessages
+        )
+        setTranscript(displayBaseMessages)
+        runState.setState({
           isStreaming: true,
           isStopping: false,
           activeRunKind: 'chat',
@@ -353,10 +379,11 @@ function createChatSession(chatId: string, onDispose: () => void): ChatSession {
         runActive = false
         sink?.close()
         sink = null
+        transcript.flushSync()
         const settledRefreshRevision = settleRefreshRevision
         await refresh({ ifSettleRefreshRevision: settledRefreshRevision })
         if (!disposed && !runActive) {
-          setState({
+          runState.update((state) => ({
             isStreaming: false,
             isStopping: false,
             transientStatus: null,
@@ -371,7 +398,7 @@ function createChatSession(chatId: string, onDispose: () => void): ChatSession {
             state.runNotice?.kind !== 'error'
               ? { runNotice: { kind: 'aborted' as const } }
               : {})
-          })
+          }))
         }
       },
       onError: reportError
@@ -380,7 +407,7 @@ function createChatSession(chatId: string, onDispose: () => void): ChatSession {
     else connection = nextConnection
   }
 
-  const cacheMessages = (messages: TanzoUIMessage[]): void => {
+  const cacheMessages = (messages: readonly TanzoUIMessage[]): void => {
     queryClient.setQueryData(chatKeys.messages(chatId), messages)
   }
 
@@ -389,15 +416,17 @@ function createChatSession(chatId: string, onDispose: () => void): ChatSession {
       const messages = await chatClient.listMessages(chatId)
       if (!disposed) cacheMessages(messages)
       if (!disposed && !runActive) {
-        setState({ messages, recentCompaction: latestCompaction(messages) })
+        setTranscript(messages)
+        runState.setState({ recentCompaction: latestCompaction(messages) })
       } else if (!disposed) {
-        const displayMessages = mergeRunBaseMessages(messages, state.messages)
-        setState({ messages: displayMessages, recentCompaction: latestCompaction(displayMessages) })
+        const displayMessages = mergeRunBaseMessages(messages, transcript.getMessages())
+        setTranscript(displayMessages)
+        runState.setState({ recentCompaction: latestCompaction(displayMessages) })
       }
     } catch {
       // The conversation may have been deleted while opening.
     } finally {
-      if (!disposed) setState({ isLoadingHistory: false })
+      if (!disposed) runState.setState({ isLoadingHistory: false })
     }
   }
 
@@ -409,21 +438,21 @@ function createChatSession(chatId: string, onDispose: () => void): ChatSession {
       chatClient.listTasks(chatId)
     ])
     if (disposed) return
-    const patch: Partial<ChatSessionState> = {}
+    const patch: Partial<SidecarState> = {}
     if (queued.status === 'fulfilled') patch.queuedMessages = queued.value
     if (approvals.status === 'fulfilled') patch.subagentApprovals = approvals.value
     if (goal.status === 'fulfilled') patch.goal = toGoalView(goal.value)
     // Load historical sub-agent tasks so the header pill stays resident for any
     // conversation that has spawned sub-agents, even when none are running.
     if (tasks.status === 'fulfilled') patch.tasks = tasks.value
-    setState(patch)
+    sidecar.setState(patch)
   }
 
   const loadContextSnapshot = async (): Promise<void> => {
     try {
       const context = await chatClient.contextSnapshot(chatId)
-      if (disposed || !context || runActive || state.contextStatus !== null) return
-      setState({ contextStatus: context })
+      if (disposed || !context || runActive || runState.getState().contextStatus !== null) return
+      runState.setState({ contextStatus: context })
     } catch {
       // The conversation may have been deleted while opening.
     }
@@ -432,6 +461,7 @@ function createChatSession(chatId: string, onDispose: () => void): ChatSession {
   const open = (): void => {
     if (opened || disposed) return
     opened = true
+    unsubscribeChanges = transcript.subscribeChanges(() => reconcileCompaction())
     unsubscribeNotifications = chatClient.onEvent(chatId, (event) => {
       if (event.kind === 'notification') handleDataPart(event.chunk)
     })
@@ -456,8 +486,10 @@ function createChatSession(chatId: string, onDispose: () => void): ChatSession {
     connection?.close()
     connection = null
     unsubscribeNotifications()
-    listeners.clear()
-    onDispose()
+    unsubscribeChanges()
+    transcript.dispose()
+    runState.dispose()
+    sidecar.dispose()
   }
 
   const goalCommand = async (args: string): Promise<string> => {
@@ -474,50 +506,46 @@ function createChatSession(chatId: string, onDispose: () => void): ChatSession {
     }
     if (lower === 'clear') {
       await goalClient.clear(chatId)
-      setState({ goal: null })
+      sidecar.setState({ goal: null })
       return i18n.t('chat.goal.command.cleared')
     }
     if (lower === 'pause') {
-      setState({ goal: toGoalView(await goalClient.setStatus(chatId, 'paused')) })
+      sidecar.setState({ goal: toGoalView(await goalClient.setStatus(chatId, 'paused')) })
       return i18n.t('chat.goal.command.paused')
     }
     if (lower === 'resume') {
-      setState({ goal: toGoalView(await goalClient.setStatus(chatId, 'active')) })
+      sidecar.setState({ goal: toGoalView(await goalClient.setStatus(chatId, 'active')) })
       return i18n.t('chat.goal.command.resumed')
     }
     const existing = await goalClient.get(chatId)
     if (existing) {
-      setState({ goal: toGoalView(await goalClient.updateObjective(chatId, trimmed)) })
+      sidecar.setState({ goal: toGoalView(await goalClient.updateObjective(chatId, trimmed)) })
       return i18n.t('chat.goal.command.objectiveUpdated')
     }
-    setState({ goal: toGoalView(await goalClient.create(chatId, { objective: trimmed })) })
+    sidecar.setState({ goal: toGoalView(await goalClient.create(chatId, { objective: trimmed })) })
     return i18n.t('chat.goal.command.set')
   }
 
-  teardownTimer = setTimeout(dispose, TEARDOWN_DELAY_MS)
-
   return {
     chatId,
-    subscribe(listener) {
-      listeners.add(listener)
-      return () => listeners.delete(listener)
-    },
-    getState: () => state,
+    transcript,
+    runState,
+    sidecar,
+    open,
+    dispose,
+    isRunning: () => runActive,
+    isRetained: () => refCount > 0,
+    lastReleasedAt: () => releasedAt,
     retain() {
       if (disposed) return () => {}
       refCount += 1
-      if (teardownTimer) {
-        clearTimeout(teardownTimer)
-        teardownTimer = null
-      }
       open()
       let released = false
       return () => {
         if (released) return
         released = true
         refCount -= 1
-        if (refCount > 0) return
-        teardownTimer = setTimeout(dispose, TEARDOWN_DELAY_MS)
+        if (refCount <= 0) releasedAt = Date.now()
       }
     },
     sendMessage(input) {
@@ -529,56 +557,55 @@ function createChatSession(chatId: string, onDispose: () => void): ChatSession {
         role: 'user',
         parts: [...files, ...(text ? [{ type: 'text' as const, text }] : [])]
       }
-      const previousMessages = state.messages
-      setState({
-        messages: [...state.messages, message],
-        isStreaming: true,
-        isStopping: false,
-        runNotice: null
-      })
+      const previousMessages = [...transcript.getMessages()]
+      setTranscript([...previousMessages, message])
+      runState.setState({ isStreaming: true, isStopping: false, runNotice: null })
       void chatClient.submit(chatId, message).catch((error) => {
-        setState({ messages: previousMessages })
+        setTranscript(previousMessages)
         reportError(error)
       })
     },
     editMessage(messageId, text) {
       const trimmed = text.trim()
       if (!trimmed) return
-      const targetIndex = state.messages.findIndex((message) => message.id === messageId)
+      const messages = transcript.getMessages()
+      const targetIndex = messages.findIndex((message) => message.id === messageId)
       if (targetIndex === -1) return
-      const target = state.messages[targetIndex]
-      if (target.role !== 'user' || targetIndex !== state.messages.length - 1) return
+      const target = messages[targetIndex]
+      // Eligibility must mirror the UI (active-chat) and the main process
+      // (chat-inbox.editMessage): trailing synthetic context injections after
+      // a failed run don't count as replies below the prompt.
+      if (target.role !== 'user' || trailingUserMessageId(messages) !== messageId) return
 
       const nonTextParts = target.parts.filter((part) => part.type !== 'text')
       const edited: TanzoUIMessage = {
         ...target,
         parts: [...nonTextParts, { type: 'text' as const, text: trimmed }]
       }
-      const previousMessages = state.messages
-      setState({
-        messages: [...state.messages.slice(0, targetIndex), edited],
-        isStreaming: true,
-        isStopping: false,
-        runNotice: null
-      })
+      const previousMessages = [...messages]
+      // The optimistic transcript also drops the trailing injections — the
+      // main side replays from the edited prompt, so they're gone there too.
+      setTranscript([...messages.slice(0, targetIndex), edited])
+      runState.setState({ isStreaming: true, isStopping: false, runNotice: null })
       void chatClient.editMessage(chatId, messageId, trimmed).catch((error) => {
-        setState({ messages: previousMessages })
+        setTranscript(previousMessages)
         reportError(error)
       })
     },
     async respondApprovals(responses) {
       if (responses.length === 0) return
-      const previousMessages = state.messages
-      const { messages } = applyApprovalResponses(state.messages, responses)
-      setState({ messages, isStreaming: true, isStopping: false, runNotice: null })
+      const previousMessages = [...transcript.getMessages()]
+      const { messages } = applyApprovalResponses(previousMessages, responses)
+      setTranscript(messages)
+      runState.setState({ isStreaming: true, isStopping: false, runNotice: null })
       try {
         const { started } = await chatClient.respondApprovals(chatId, responses)
         // No run was launched — either approvals are still pending in this turn
         // or the responses were stale. Clear the optimistic streaming flag so the
         // UI never sticks waiting for a stream that will never start.
-        if (!started && !runActive) setState({ isStreaming: false })
+        if (!started && !runActive) runState.setState({ isStreaming: false })
       } catch (error) {
-        setState({ messages: previousMessages })
+        setTranscript(previousMessages)
         reportError(error)
         throw error
       }
@@ -587,9 +614,10 @@ function createChatSession(chatId: string, onDispose: () => void): ChatSession {
       // Reflect the in-flight cancel immediately; the terminal run-state event
       // clears it. If the cancel IPC itself fails, roll back and surface the
       // failure instead of silently leaving a phantom "stopping" state.
-      if (state.isStreaming && !state.isStopping) setState({ isStopping: true })
+      const state = runState.getState()
+      if (state.isStreaming && !state.isStopping) runState.setState({ isStopping: true })
       void chatClient.cancel(chatId).catch((error) => {
-        if (!disposed) setState({ isStopping: false })
+        if (!disposed) runState.setState({ isStopping: false })
         reportError(error)
       })
     },
@@ -606,29 +634,28 @@ function createChatSession(chatId: string, onDispose: () => void): ChatSession {
       void chatClient.removeQueued(chatId, id).catch(() => undefined)
     },
     retryLastTurn() {
-      if (state.isStreaming) return
-      setState({ isStreaming: true, runNotice: null })
+      if (runState.getState().isStreaming) return
+      runState.setState({ isStreaming: true, runNotice: null })
       void chatClient.retryTurn(chatId).catch((error) => {
         reportError(error)
       })
     },
     refresh,
     clearRunNotice() {
-      if (state.runNotice) setState({ runNotice: null })
+      if (runState.getState().runNotice) runState.setState({ runNotice: null })
     },
     async respondTaskApproval(response) {
       const rootChatId = chatId
       // Confirm the approval with the main process BEFORE removing the card.
-      // Previously the card was removed optimistically first; if the IPC call
-      // failed, the card was already unmounted and the task was permanently stuck
-      // in blocked state with no way to re-respond.
+      // If the IPC call failed after an optimistic removal, the task would be
+      // permanently stuck in blocked state with no way to re-respond.
       try {
         await chatClient.approveTask(rootChatId, response)
-        setState({
+        sidecar.update((state) => ({
           subagentApprovals: state.subagentApprovals.filter(
             (pending) => pending.approval.approvalId !== response.approvalId
           )
-        })
+        }))
       } catch (error) {
         reportError(error)
         throw error
@@ -638,14 +665,55 @@ function createChatSession(chatId: string, onDispose: () => void): ChatSession {
   }
 }
 
-const sessions = new Map<string, ChatSession>()
+// ---------------------------------------------------------------------------
+// Session manager: hot sessions stay resident (LRU) so switching back to a
+// recent conversation renders its first frame from memory with zero IPC.
+// Running sessions are never evicted — their frame subscription must persist.
+// ---------------------------------------------------------------------------
+
+type ManagedSession = ReturnType<typeof createChatSession>
+
+/** Retained beyond the active one: most recent N released, non-running chats. */
+const MAX_IDLE_SESSIONS = 4
+
+const sessions = new Map<string, ManagedSession>()
+
+function evictIdleSessions(activeChatId: string): void {
+  const idle: ManagedSession[] = []
+  for (const session of sessions.values()) {
+    // Never evict the session being acquired, one still retained by a mounted
+    // component (mid-switch, the outgoing tree releases only on unmount), or
+    // one with a live run (its frame subscription must persist).
+    if (session.chatId === activeChatId || session.isRetained() || session.isRunning()) continue
+    idle.push(session)
+  }
+  if (idle.length <= MAX_IDLE_SESSIONS) return
+  idle.sort((a, b) => a.lastReleasedAt() - b.lastReleasedAt())
+  for (const session of idle.slice(0, idle.length - MAX_IDLE_SESSIONS)) {
+    session.dispose()
+    sessions.delete(session.chatId)
+  }
+}
 
 export function getChatSession(chatId: string): ChatSession {
   const existing = sessions.get(chatId)
   if (existing) return existing
-  const session = createChatSession(chatId, () => {
-    if (sessions.get(chatId) === session) sessions.delete(chatId)
-  })
+  const session = createChatSession(chatId)
   sessions.set(chatId, session)
+  evictIdleSessions(chatId)
   return session
+}
+
+/** Drop a session immediately (conversation deleted). */
+export function discardChatSession(chatId: string): void {
+  const session = sessions.get(chatId)
+  if (!session) return
+  session.dispose()
+  sessions.delete(chatId)
+}
+
+/** Test-only: dispose every session and clear the registry. */
+export function resetChatSessions(): void {
+  for (const session of sessions.values()) session.dispose()
+  sessions.clear()
 }
