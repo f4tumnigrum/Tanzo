@@ -127,9 +127,68 @@ describe('agent/subagent/task-service', () => {
     // B never had a driver; only the settle-edge reevaluation can fail it.
     expect(tasks.get(b.id)?.status).toBe('failed')
     expect(tasks.get(b.id)?.result?.errorMessage).toContain(`'${a.id}'`)
+    // Dependency failures are recorded structurally, not just in prose.
+    expect(tasks.get(b.id)?.result?.failedDependencyId).toBe(a.id)
     // An await on B must resolve instead of hanging forever.
     const result = await service.await('root-chat', b.id)
     expect(result.failed).toBe(true)
+  })
+
+  it('cascade-retries dependents that failed because of the retried dependency', async () => {
+    const { service, tasks } = createHarness()
+
+    const a = service.spawn({ parentChatId: 'root-chat', objective: 'a', agentType: 'explore' })
+    const b = service.spawn({
+      parentChatId: 'root-chat',
+      objective: 'b',
+      agentType: 'explore',
+      dependsOn: [a.id]
+    })
+    // An independently failed task that also depends on A but for its own reason.
+    const c = service.spawn({ parentChatId: 'root-chat', objective: 'c', agentType: 'explore' })
+    tasks.set(c.id, {
+      ...tasks.get(c.id)!,
+      status: 'failed',
+      dependsOn: [a.id],
+      result: { summary: '', failed: true, errorMessage: 'model refused' }
+    })
+
+    service.cancel('root-chat', a.id)
+    expect(tasks.get(b.id)?.status).toBe('failed')
+    expect(tasks.get(b.id)?.result?.failedDependencyId).toBe(a.id)
+
+    service.retry('root-chat', a.id)
+
+    // B (failed because of A) resets to pending-blocked on A.
+    expect(tasks.get(b.id)?.status).toBe('pending')
+    expect(tasks.get(b.id)?.block).toEqual({ kind: 'dependency', taskIds: [a.id] })
+    expect(tasks.get(b.id)?.result).toBeUndefined()
+    // C failed for its own reason: untouched.
+    expect(tasks.get(c.id)?.status).toBe('failed')
+    expect(tasks.get(c.id)?.result?.errorMessage).toBe('model refused')
+    // A itself restarted.
+    expect(tasks.get(a.id)?.status).toBe('running')
+  })
+
+  it('cascade-retry falls back to the legacy quoted-id error format for old rows', () => {
+    const { service, tasks } = createHarness()
+
+    const a = service.spawn({ parentChatId: 'root-chat', objective: 'a', agentType: 'explore' })
+    const b = service.spawn({ parentChatId: 'root-chat', objective: 'b', agentType: 'explore' })
+    // Simulate a pre-v2 persisted failure: message references the dep, no
+    // structured field.
+    tasks.set(a.id, { ...tasks.get(a.id)!, status: 'failed', result: { summary: '', failed: true } })
+    tasks.set(b.id, {
+      ...tasks.get(b.id)!,
+      status: 'failed',
+      dependsOn: [a.id],
+      result: { summary: '', failed: true, errorMessage: `Dependency '${a.id}' failed: boom` }
+    })
+
+    service.retry('root-chat', a.id)
+
+    expect(tasks.get(b.id)?.status).toBe('pending')
+    expect(tasks.get(b.id)?.block).toEqual({ kind: 'dependency', taskIds: [a.id] })
   })
 
   it('reevaluates dependents after cancelTree settles pending tasks', async () => {

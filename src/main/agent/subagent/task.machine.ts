@@ -33,7 +33,15 @@ export function isTaskTerminal(status: SubagentTask['status']): boolean {
 
 export type TaskEvent =
   | { kind: 'start'; now: number }
-  | { kind: 'fail'; message: string; failureKind?: 'app-restart' | 'logic-error'; now: number }
+  | {
+      kind: 'fail'
+      message: string
+      failureKind?: 'app-restart' | 'logic-error'
+      /** Structured root cause when the failure came from a dependency (see
+       *  SubagentTaskResult.failedDependencyId). */
+      failedDependencyId?: string
+      now: number
+    }
   | { kind: 'complete'; summary: string; resultSource: 'explicit' | 'inferred'; now: number }
   | { kind: 'surface-approvals'; approvals: SubagentTaskApproval[] }
   | { kind: 'clear-approval-block' }
@@ -77,7 +85,8 @@ export function taskTransition(
             summary: '',
             failed: true,
             errorMessage: event.message,
-            ...(event.failureKind ? { failureKind: event.failureKind } : {})
+            ...(event.failureKind ? { failureKind: event.failureKind } : {}),
+            ...(event.failedDependencyId ? { failedDependencyId: event.failedDependencyId } : {})
           }
         },
         PERSIST_AND_SETTLE

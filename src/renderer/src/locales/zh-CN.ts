@@ -18,7 +18,10 @@ export const zhCN = {
     update: {
       available: '新版本 {{version}} 可用 — 点击下载',
       downloading: '正在下载更新… {{percent}}%',
-      ready: '更新已就绪 — 点击重启并安装'
+      ready: '更新已就绪 — 点击重启并安装',
+      progress: {
+        size: '{{transferred}} / {{total}}'
+      }
     },
     browser: {
       toggle: '切换浏览器',

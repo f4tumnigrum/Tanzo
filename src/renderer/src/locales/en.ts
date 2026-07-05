@@ -18,7 +18,10 @@ export const en = {
     update: {
       available: 'Version {{version}} available — click to download',
       downloading: 'Downloading update… {{percent}}%',
-      ready: 'Update ready — click to restart and install'
+      ready: 'Update ready — click to restart and install',
+      progress: {
+        size: '{{transferred}} / {{total}}'
+      }
     },
     browser: {
       toggle: 'Toggle browser',

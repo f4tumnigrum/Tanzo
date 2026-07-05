@@ -28,6 +28,9 @@ export interface SubagentTaskResult {
   /** Distinguishes app-restart interruptions from genuine logic failures so the UI
    *  can offer targeted recovery actions (e.g. "retry interrupted tasks"). */
   failureKind?: 'app-restart' | 'logic-error'
+  /** When the failure was caused by a dependency failing/cancelling, the id of that
+   *  dependency. Structured so cascade-retry does not have to parse error messages. */
+  failedDependencyId?: string
 }
 
 export interface SubagentTask {

@@ -257,11 +257,10 @@ export function createTaskService(
         const blocker = dependencyUnsatisfiable(task)
         if (blocker) {
           const dep = deps.store.tasks.get(rootChatId, blocker)
-          // Quote the dependency id so cascadeRetryDependents can trace this
-          // failure back to the dep (it matches on `'${depId}'`).
-          failTask(
+          failDependency(
             rootChatId,
             task.id,
+            blocker,
             dep
               ? `Dependency '${blocker}' failed: ${dep.result?.errorMessage ?? 'did not complete successfully'}`
               : `Dependency '${blocker}' not found; dependsOn must reference already-spawned task ids.`
@@ -320,7 +319,7 @@ export function createTaskService(
         // without needing to inspect the dependency task separately.
         const blockerTask = deps.store.tasks.get(rootChatId, blocker)
         const reason = blockerTask?.result?.errorMessage ?? 'did not complete successfully'
-        failTask(rootChatId, candidate.id, `Dependency '${blocker}' failed: ${reason}`)
+        failDependency(rootChatId, candidate.id, blocker, `Dependency '${blocker}' failed: ${reason}`)
         continue
       }
       if (!dependenciesSatisfied(candidate)) continue
@@ -331,6 +330,17 @@ export function createTaskService(
 
   function failTask(rootChatId: string, taskId: string, message: string): void {
     dispatch(rootChatId, taskId, { kind: 'fail', message, now: Date.now() })
+  }
+
+  /** Fail a task because one of its dependencies failed/cancelled/vanished,
+   *  recording the dep id structurally for cascadeRetryDependents. */
+  function failDependency(
+    rootChatId: string,
+    taskId: string,
+    failedDependencyId: string,
+    message: string
+  ): void {
+    dispatch(rootChatId, taskId, { kind: 'fail', message, failedDependencyId, now: Date.now() })
   }
 
   function setPhase(rootChatId: string, taskId: string, phase: string): void {
@@ -781,15 +791,19 @@ export function createTaskService(
   /**
    * When a dependency is retried, find all tasks that failed because of it and
    * reset them back to pending-blocked so they auto-start once the dep finishes.
-   * Only tasks whose errorMessage references the retried dep are touched; failures
-   * with independent root causes are left alone.
+   * Matches on the structured failedDependencyId; falls back to the legacy
+   * quoted-id error-message format for rows persisted before that field existed.
+   * Failures with independent root causes are left alone.
    */
   function cascadeRetryDependents(rootChatId: string, retriedTaskId: string): void {
     for (const candidate of deps.store.tasks.listByRoot(rootChatId)) {
       if (candidate.status !== 'failed') continue
       if (!candidate.dependsOn.includes(retriedTaskId)) continue
-      // Guard: only cascade if the failure message traces back to this specific dep.
-      if (!candidate.result?.errorMessage?.includes(`'${retriedTaskId}'`)) continue
+      const causedByDep =
+        candidate.result?.failedDependencyId === retriedTaskId ||
+        (candidate.result?.failedDependencyId === undefined &&
+          (candidate.result?.errorMessage?.includes(`'${retriedTaskId}'`) ?? false))
+      if (!causedByDep) continue
       dispatch(rootChatId, candidate.id, {
         kind: 'reset-dependency',
         taskIds: candidate.dependsOn,
