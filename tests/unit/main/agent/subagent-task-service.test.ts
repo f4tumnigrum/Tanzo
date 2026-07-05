@@ -31,6 +31,8 @@ describe('agent/subagent/task-service', () => {
       startChatRun?: ReturnType<typeof vi.fn>
       load?: ReturnType<typeof vi.fn>
       save?: ReturnType<typeof vi.fn>
+      hasAdvancedSince?: ReturnType<typeof vi.fn>
+      limits?: { global?: number; perRoot?: number }
     } = {}
   ): {
     service: ReturnType<typeof createTaskService>
@@ -52,7 +54,7 @@ describe('agent/subagent/task-service', () => {
       abortRun: vi.fn(),
       clearTransientChatState: vi.fn(),
       currentRunEpoch: vi.fn(() => 0),
-      hasAdvancedSince: vi.fn(() => false),
+      hasAdvancedSince: overrides.hasAdvancedSince ?? vi.fn(() => false),
       isInflight: vi.fn(() => false),
       // Hang forever: the task stays 'running' until cancelled.
       startChatRun: overrides.startChatRun ?? vi.fn(() => new Promise(() => {}))
@@ -104,7 +106,8 @@ describe('agent/subagent/task-service', () => {
         compaction: { prepareMessages: vi.fn(async () => []) } as never,
         policy: { remember: policyRemember } as never
       },
-      callbacks
+      callbacks,
+      overrides.limits ?? {}
     )
     return { service, tasks, policyRemember, callbacks }
   }
@@ -331,6 +334,124 @@ describe('agent/subagent/task-service', () => {
     })
     expect(tasks.get(spawned.id)?.result?.summary).toBe('verified: all green')
     expect(tasks.get(spawned.id)?.result?.resultSource).toBe('inferred')
+  })
+
+  it('respects the per-root concurrency cap and starts queued work as slots free up', async () => {
+    // perRoot=1: the second task must wait for the first driver's slot.
+    const running = new Set<string>()
+    let peakConcurrency = 0
+    const resolvers = new Map<string, () => void>()
+    const startChatRun = vi.fn((opts: { chatId: string }) => {
+      running.add(opts.chatId)
+      peakConcurrency = Math.max(peakConcurrency, running.size)
+      return new Promise<{ aborted: boolean; streamFailed: boolean }>((resolve) => {
+        resolvers.set(opts.chatId, () => {
+          running.delete(opts.chatId)
+          resolve({ aborted: false, streamFailed: false })
+        })
+      })
+    })
+    // Transcript always ends with assistant text so completion succeeds.
+    const load = vi.fn(async () => [
+      { id: 'a', role: 'assistant', parts: [{ type: 'text', text: 'done' }] }
+    ])
+    const { service, tasks } = createHarness({
+      startChatRun: startChatRun as never,
+      load,
+      limits: { perRoot: 1 }
+    })
+
+    const t1 = service.spawn({ parentChatId: 'root-chat', objective: '1', agentType: 'explore' })
+    const t2 = service.spawn({ parentChatId: 'root-chat', objective: '2', agentType: 'explore' })
+
+    await vi.waitFor(() => {
+      expect(startChatRun).toHaveBeenCalledTimes(1)
+    })
+    // Only one stream may run; the second is queued on the semaphore.
+    expect(peakConcurrency).toBe(1)
+
+    // Release the first; the second must now start.
+    resolvers.get(tasks.get(t1.id)!.chatId)!()
+    await vi.waitFor(() => {
+      expect(startChatRun).toHaveBeenCalledTimes(2)
+    })
+    expect(peakConcurrency).toBe(1)
+
+    resolvers.get(tasks.get(t2.id)!.chatId)!()
+    await vi.waitFor(() => {
+      expect(tasks.get(t2.id)?.status).toBe('done')
+    })
+  })
+
+  it('rolls back the slot when a queued task is cancelled while waiting', async () => {
+    const resolvers = new Map<string, () => void>()
+    const startChatRun = vi.fn((opts: { chatId: string }) => {
+      return new Promise<{ aborted: boolean; streamFailed: boolean }>((resolve) => {
+        resolvers.set(opts.chatId, () => resolve({ aborted: false, streamFailed: false }))
+      })
+    })
+    const load = vi.fn(async () => [
+      { id: 'a', role: 'assistant', parts: [{ type: 'text', text: 'done' }] }
+    ])
+    const { service, tasks } = createHarness({
+      startChatRun: startChatRun as never,
+      load,
+      limits: { perRoot: 1 }
+    })
+
+    const t1 = service.spawn({ parentChatId: 'root-chat', objective: '1', agentType: 'explore' })
+    const t2 = service.spawn({ parentChatId: 'root-chat', objective: '2', agentType: 'explore' })
+    const t3 = service.spawn({ parentChatId: 'root-chat', objective: '3', agentType: 'explore' })
+    await vi.waitFor(() => {
+      expect(startChatRun).toHaveBeenCalledTimes(1)
+    })
+
+    // Cancel the queued t2 while it waits on the semaphore: its acquire must
+    // unwind without leaking the slot, so t3 can still start after t1 frees it.
+    service.cancel('root-chat', t2.id)
+    expect(tasks.get(t2.id)?.status).toBe('cancelled')
+
+    resolvers.get(tasks.get(t1.id)!.chatId)!()
+    await vi.waitFor(() => {
+      expect(startChatRun).toHaveBeenCalledTimes(2)
+    })
+    expect((startChatRun.mock.calls[1][0] as { chatId: string }).chatId).toBe(
+      tasks.get(t3.id)!.chatId
+    )
+  })
+
+  it('silently unwinds a superseded run without failing the task', async () => {
+    // hasAdvancedSince flips to true after the stream pass: another writer
+    // (e.g. a direct user message into the executor chat) took the epoch.
+    let advanced = false
+    const hasAdvancedSince = vi.fn(() => advanced)
+    const startChatRun = vi.fn(async () => {
+      advanced = true
+      return { aborted: false, streamFailed: false }
+    })
+    const load = vi.fn(async () => [
+      { id: 'a', role: 'assistant', parts: [{ type: 'text', text: 'partial' }] }
+    ])
+    const { service, tasks } = createHarness({
+      startChatRun: startChatRun as never,
+      load,
+      hasAdvancedSince
+    })
+
+    const spawned = service.spawn({
+      parentChatId: 'root-chat',
+      objective: 'superseded work',
+      agentType: 'explore'
+    })
+
+    // The driver unwinds via TaskInterrupted('superseded'): the task is NOT
+    // failed — the newer run owns the chat now.
+    await vi.waitFor(() => {
+      expect(startChatRun).toHaveBeenCalledTimes(1)
+    })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(tasks.get(spawned.id)?.status).toBe('running')
+    expect(tasks.get(spawned.id)?.result).toBeUndefined()
   })
 
   it('fails a task that finishes with an empty inferred deliverable', async () => {

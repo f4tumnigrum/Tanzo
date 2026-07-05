@@ -248,6 +248,42 @@ describe('main/agent/tools/registry', () => {
     expect(Object.keys(tools).sort()).toEqual(['grep', 'mcp__server__readThing'])
   })
 
+  it('withholds the delegation surface at or beyond the max sub-agent depth', async () => {
+    const buildTools = createBuildTools(deps())
+
+    // Below the default cutoff (3): full delegation surface.
+    const below = await buildTools({ def: def(), chatId: 'c1', depth: 2, mode: 'default' })
+    expect(Object.keys(below)).toEqual(
+      expect.arrayContaining(['spawn', 'await', 'tasks', 'steer', 'cancel'])
+    )
+
+    // At the cutoff: no delegation tools at all — the recursion fuse.
+    const atCutoff = await buildTools({ def: def(), chatId: 'c1', depth: 3, mode: 'default' })
+    for (const name of ['spawn', 'await', 'tasks', 'steer', 'cancel']) {
+      expect(atCutoff).not.toHaveProperty(name)
+    }
+  })
+
+  it('honors a per-agent maxSubagentDepth override', async () => {
+    const buildTools = createBuildTools(deps())
+
+    const shallow = await buildTools({
+      def: def({ maxSubagentDepth: 1 }),
+      chatId: 'c1',
+      depth: 1,
+      mode: 'default'
+    })
+    expect(shallow).not.toHaveProperty('spawn')
+
+    const deep = await buildTools({
+      def: def({ maxSubagentDepth: 5 }),
+      chatId: 'c1',
+      depth: 4,
+      mode: 'default'
+    })
+    expect(deep).toHaveProperty('spawn')
+  })
+
   it('registers askQuestion for main agents in every mode but not subagents', async () => {
     const buildTools = createBuildTools(planDeps())
     const modes = ['default', 'plan', 'yolo', 'dangerous'] as const

@@ -86,13 +86,21 @@ interface TaskRuntimeCallbacks {
   ): Promise<AgentStreamFinalState>
 }
 
+export interface TaskServiceLimits {
+  /** Global ceiling across all conversations. Default: 100. */
+  global?: number
+  /** Per-root-conversation cap. Default: 20. */
+  perRoot?: number
+}
+
 export function createTaskService(
   deps: AgentRuntimeDeps & { logger?: Logger },
   collaborators: { compaction: CompactionCoordinator; policy: PolicyEngine },
-  callbacks: TaskRuntimeCallbacks
+  callbacks: TaskRuntimeCallbacks,
+  limits: TaskServiceLimits = {}
 ): TaskService {
-  const backgroundSlots = createSemaphore(MAX_CONCURRENT_BACKGROUND)
-  const rootSlots = createKeyedSemaphores(MAX_CONCURRENT_PER_ROOT)
+  const backgroundSlots = createSemaphore(limits.global ?? MAX_CONCURRENT_BACKGROUND)
+  const rootSlots = createKeyedSemaphores(limits.perRoot ?? MAX_CONCURRENT_PER_ROOT)
   const controllers = new Map<string, AbortController>()
   // Tracks the Promise for each running driver so instruct/redefine can await
   // the old driver's full teardown before starting a new one, preventing two
