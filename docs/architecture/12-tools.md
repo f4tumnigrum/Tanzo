@@ -147,15 +147,24 @@ head 50, max 500.
 
 - `spawn` validates each `spec.agent` against the available types, calls `deps.spawnTask(...)` per task, and
   **returns immediately** with readable ids (e.g. `explore-1`) plus an `await(...)` hint. Multiple specs in one
-  call become **parallel/concurrent** background tasks. `kind: 'exec'`.
+  call become **parallel/concurrent** background tasks. Static dependency errors (self-dependency, unknown dep
+  id) are rejected before any writes, so a bad spawn leaves no orphaned executor conversation. If a later spec
+  in a batch fails, the error names the already-started ids. `kind: 'exec'`.
 - `await` blocks on `deps.awaitTask` with `settle: 'all' | 'first'` and an optional `timeoutMs` (tasks keep
-  running past a timeout). `kind: 'read'`.
-- `tasks` (read), `steer` (`instruction` appends via `instructTask`; `objective` restarts via `redefineTask`),
-  `cancel`.
+  running past a timeout). Unknown ids are returned in the `unknown` field rather than silently dropped;
+  results carry `failureKind` (`app-restart` | `logic-error` | `await-cancelled`) and `resultSource`
+  (`explicit` | `inferred`) so the parent can judge confidence. `kind: 'read'`.
+- `tasks` (read), `steer` (`instruction` appends via `instructTask`; `objective` restarts via `redefineTask` —
+  the input schema is a union so exactly one is required), `cancel`.
+
+Steering is rejected with an actionable error when the task is already settled (its result is final; spawn a
+new task instead) or dependency-blocked (the gate may not be bypassed).
 
 The sub-agent side reports back via the `report` tool (`tools/subagent-control.ts`): `phase → reportTaskPhase`,
-`result → submitTaskResult`; this tool is added only for sub-agents. Progress reaches the UI over
-`chat:task-event` (see [04 IPC & Contracts](./04-ipc-and-contracts.md)).
+`result → submitTaskResult`; this tool is added only for sub-agents. A sub-agent that finishes without calling
+`report(result)` gets its result inferred from the last assistant text (`resultSource: 'inferred'`); if that
+text is empty too, the task **fails** (`failureKind: 'logic-error'`) instead of completing with an empty
+summary. Progress reaches the UI over `chat:task-event` (see [04 IPC & Contracts](./04-ipc-and-contracts.md)).
 
 Foreground vs background: spawning is always background/async; "foreground" is simply the parent calling `await`
 to block on results. The actual scheduling is delegated to `AgentService` (`deps.spawnTask` / `awaitTask`), and
@@ -173,5 +182,43 @@ mode allows read-only sub-agents only".
 
 The four built-in agents (`tanzo`, `explore`, `verify`, `review`) are defined as markdown at
 `src/main/agent/agents/builtin/`. See [10 Agent Runtime](./10-agent-runtime.md).
+
+### 6.3 Concurrency model (`subagent/task-service.ts`)
+
+Two semaphore layers bound how many sub-agent streams run at once: a **global** ceiling (100) across every
+conversation and a **per-root** cap (20) so one conversation cannot starve the others. A driver acquires the
+per-root slot first, then the global one; aborting mid-acquire rolls back any slot already held. Both limits
+are injectable via `createTaskService(..., limits)` for tests. A freshly started task shows the phase
+`queued: waiting for capacity` until its first stream pass begins.
+
+### 6.4 Dependency scheduling and failure propagation
+
+`spawn` with `dependsOn` creates the task as `pending` with `block: { kind: 'dependency', taskIds }`. Every
+settle edge — a driver finishing, `cancel`, `cancelTree`, or a spawn fail-fast — reevaluates the graph
+(`maybeUnblockDependents`): tasks whose deps are all `done` start automatically; tasks with a failed/cancelled/
+missing dep fail fast with the root cause propagated in `errorMessage` **and** structurally in
+`result.failedDependencyId`. Retrying a dependency (`retry`) cascade-resets dependents that failed *because of
+it* (matched on `failedDependencyId`, with a legacy fallback that parses the quoted id from old error messages)
+back to pending-blocked so they auto-restart when the dep completes.
+
+Stopping a parent chat (`service.cancel`) deliberately does **not** cancel the task tree: spawned tasks keep
+running in the background, their results persist, and the user stops individual tasks from the task panel.
+Deleting the conversation still tears the whole tree down (`cancelTree`).
+
+### 6.5 Restart recovery
+
+In-memory drivers die with the process. On startup `reconcileOrphans()` marks every persisted
+pending/running/blocked task as `failed` with `failureKind: 'app-restart'`, so awaiters resolve instead of
+hanging and the UI can render the softer "interrupted" treatment with a retry affordance instead of a red
+failure.
+
+### 6.6 Approval bubbling
+
+When a sub-agent's stream pauses on a tool approval, the task enters `blocked` with
+`block: { kind: 'approval', approvals }` and the approvals are surfaced to the **root** conversation
+(`data-taskApproval` part + `chat:task-event`), where the user responds via the approval card. The driver
+registers its waiters **before** surfacing (a response can arrive the moment the block is broadcast; a waiter
+registered after the response would hang forever), applies the response to the executor transcript, optionally
+persists the decision via the policy engine (`session`/`forever` scope), and resumes the stream loop.
 
 Next → [13 Policy & Approval](./13-policy-and-approval.md)

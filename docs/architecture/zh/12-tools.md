@@ -95,11 +95,13 @@ MCP 工具 kind 由注解推导（`tools/mcp.ts`）：`readOnlyHint === true && 
 
 `subagentTools(deps, parentChatId, agentTypes)` 返回 `{ spawn, await, tasks, steer, cancel }`：
 
-- `spawn` 对每个 `spec.agent` 校验可用类型，逐个 `deps.spawnTask(...)`，并**立即返回**可读 id（如 `explore-1`）与一个 `await(...)` 提示。一次调用多个 spec 即成**并行/并发**后台任务。`kind: 'exec'`。
-- `await` 以 `settle: 'all' | 'first'` 与可选 `timeoutMs` 阻塞在 `deps.awaitTask`（超时后任务继续跑）。`kind: 'read'`。
-- `tasks`（read）、`steer`（`instruction` 经 `instructTask` 追加；`objective` 经 `redefineTask` 重启）、`cancel`。
+- `spawn` 对每个 `spec.agent` 校验可用类型，逐个 `deps.spawnTask(...)`，并**立即返回**可读 id（如 `explore-1`）与一个 `await(...)` 提示。一次调用多个 spec 即成**并行/并发**后台任务。静态依赖错误（自依赖、依赖 id 不存在）在任何写入前拒绝，坏 spawn 不会留下孤儿 executor 会话；批量中靠后的 spec 失败时，错误会列出已启动的 id。`kind: 'exec'`。
+- `await` 以 `settle: 'all' | 'first'` 与可选 `timeoutMs` 阻塞在 `deps.awaitTask`（超时后任务继续跑）。未知 id 在 `unknown` 字段显式返回而非静默丢弃；结果携带 `failureKind`（`app-restart` | `logic-error` | `await-cancelled`）与 `resultSource`（`explicit` | `inferred`）供父代理判断置信度。`kind: 'read'`。
+- `tasks`（read）、`steer`（`instruction` 经 `instructTask` 追加；`objective` 经 `redefineTask` 重启——入参 schema 为 union，二者必选其一）、`cancel`。
 
-子代理侧经 `report` 工具（`tools/subagent-control.ts`）回报：`phase → reportTaskPhase`、`result → submitTaskResult`；此工具仅为子代理加入。进度经 `chat:task-event` 到 UI（见 [04 跨进程契约](./04-ipc-and-contracts.md)）。
+steer 已结算任务（结果已定稿；应 spawn 新任务）或依赖阻塞任务（不可绕过门控）时会被拒绝并返回可操作的错误。
+
+子代理侧经 `report` 工具（`tools/subagent-control.ts`）回报：`phase → reportTaskPhase`、`result → submitTaskResult`；此工具仅为子代理加入。子代理未调用 `report(result)` 即结束时，结果从最后一条 assistant 文本推断（`resultSource: 'inferred'`）；若该文本也为空，任务**失败**（`failureKind: 'logic-error'`）而非以空 summary 完成。进度经 `chat:task-event` 到 UI（见 [04 跨进程契约](./04-ipc-and-contracts.md)）。
 
 前台 vs 后台：spawn 恒为后台/异步；"前台"只是父调 `await` 阻塞取结果。实际调度委托给 `AgentService`（`deps.spawnTask` / `awaitTask`），任务 id 以 `deps.rootOf(parentChatId)` 为根。
 
@@ -110,5 +112,23 @@ MCP 工具 kind 由注解推导（`tools/mcp.ts`）：`readOnlyHint === true && 
 **计划模式限制**：`plan` 模式下只提供只读子代理。子代理"安全只读"当且仅当其 `allowedTools` 全在 `READ_ONLY_SUBAGENT_TOOLS`（`fileRead`、`glob`、`grep`、`skill`、`await`、`tasks`、`report`、`shellPoll`、`shellList`、`web_search`）。不可用类型带原因「plan mode allows read-only sub-agents only」。
 
 四个内置 agent（`tanzo`、`explore`、`verify`、`review`）以 markdown 定义在 `src/main/agent/agents/builtin/`。详见 [10 Agent 运行时](./10-agent-runtime.md)。
+
+### 6.3 并发模型（`subagent/task-service.ts`）
+
+两层信号量限制同时运行的子代理流：**全局**上限（100）覆盖所有会话，**每根会话**上限（20）防止单个会话占满全局槽位。driver 先取根会话槽再取全局槽；获取途中被 abort 会回滚已持有的槽。两个上限均可经 `createTaskService(..., limits)` 注入（供测试）。任务刚启动时 phase 显示 `queued: waiting for capacity`，直到首个流开始。
+
+### 6.4 依赖调度与失败传播
+
+带 `dependsOn` 的 `spawn` 以 `pending` + `block: { kind: 'dependency', taskIds }` 创建。每条结算边——driver 结束、`cancel`、`cancelTree`、spawn 快速失败——都会重评估依赖图（`maybeUnblockDependents`）：依赖全部 `done` 的任务自动启动；依赖失败/取消/缺失的任务快速失败，根因同时写入 `errorMessage` 与结构化的 `result.failedDependencyId`。重试依赖（`retry`）会级联重置*因它而失败*的下游任务（按 `failedDependencyId` 匹配，对旧数据回退到解析错误消息中的引号 id）回 pending-blocked，依赖完成后自动重启。
+
+停止父会话（`service.cancel`）**刻意不**取消任务树：已 spawn 的任务继续后台运行，结果持久化，用户从任务面板逐个停止。删除会话仍会拆掉整棵树（`cancelTree`）。
+
+### 6.5 重启恢复
+
+内存中的 driver 随进程死亡。启动时 `reconcileOrphans()` 将所有持久化的 pending/running/blocked 任务标记为 `failed` + `failureKind: 'app-restart'`，使 awaiter 得以 resolve 而非永久挂起，UI 也能以柔和的「已中断」样式 + 重试入口呈现，而非红色失败。
+
+### 6.6 审批冒泡
+
+子代理的流暂停在工具审批时，任务进入 `blocked` + `block: { kind: 'approval', approvals }`，审批冒泡到**根**会话（`data-taskApproval` 部件 + `chat:task-event`），用户经审批卡响应。driver 在 surface **之前**注册 waiter（block 一广播响应就可能到达；晚于响应注册的 waiter 会永久挂起），将响应写回 executor 转录，按需经策略引擎持久化决定（`session`/`forever` 范围），然后恢复流循环。
 
 下一篇 → [13 策略与审批](./13-policy-and-approval.md)
