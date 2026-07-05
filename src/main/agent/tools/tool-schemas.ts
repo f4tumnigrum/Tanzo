@@ -447,35 +447,40 @@ export const tasksOutputSchema = z.union([
   toolErrorSchema
 ])
 
-export const steerInputSchema = z.union([
-  z
-    .object({
-      task: z.string().min(1).describe('Task id to steer.'),
-      instruction: z
-        .string()
-        .min(1)
-        .describe(
-          'Append guidance to the running task without restarting it. ' +
-            'The task continues and all existing progress is preserved. ' +
-            'Use for mid-course corrections, additional context, or clarifications.'
-        )
-    })
-    .strict(),
-  z
-    .object({
-      task: z.string().min(1).describe('Task id to steer.'),
-      objective: z
-        .string()
-        .min(1)
-        .describe(
-          'Replace the entire goal and restart the task from scratch. ' +
-            'ALL CURRENT PROGRESS IS LOST — phases, results, and history are cleared. ' +
-            'Use only when the current objective itself is fundamentally wrong, ' +
-            'not just when you want to redirect or add constraints.'
-        )
-    })
-    .strict()
-])
+// Provide exactly one of instruction/objective. This is expressed as a single
+// object (not a union) because provider tool schemas — notably Anthropic — reject
+// a top-level anyOf/oneOf/allOf in input_schema. The XOR is enforced by refine
+// (surfaced to the model in the field descriptions) and, as a backstop, by the
+// tool's execute handler.
+export const steerInputSchema = z
+  .object({
+    task: z.string().min(1).describe('Task id to steer.'),
+    instruction: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        'Append guidance to the running task without restarting it. ' +
+          'The task continues and all existing progress is preserved. ' +
+          'Use for mid-course corrections, additional context, or clarifications. ' +
+          'Provide exactly one of instruction or objective.'
+      ),
+    objective: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        'Replace the entire goal and restart the task from scratch. ' +
+          'ALL CURRENT PROGRESS IS LOST — phases, results, and history are cleared. ' +
+          'Use only when the current objective itself is fundamentally wrong, ' +
+          'not just when you want to redirect or add constraints. ' +
+          'Provide exactly one of instruction or objective.'
+      )
+  })
+  .strict()
+  .refine((v) => Boolean(v.instruction) !== Boolean(v.objective), {
+    message: 'Provide exactly one of instruction or objective.'
+  })
 
 export const steerOutputSchema = z.union([
   z.object({ steered: z.literal(true), mode: z.enum(['instructed', 'redefined']) }),

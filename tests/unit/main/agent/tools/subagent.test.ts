@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { zodSchema } from 'ai'
 import type { SubagentTask } from '@shared/subagent-task'
 import type { ToolDeps } from '@main/agent/tools/types'
 import {
@@ -10,6 +11,13 @@ import {
   type SubagentType
 } from '@main/agent/tools/subagent'
 import { reportTool } from '@main/agent/tools/subagent-control'
+import {
+  awaitInputSchema,
+  cancelTaskInputSchema,
+  spawnInputSchema,
+  steerInputSchema,
+  tasksInputSchema
+} from '@main/agent/tools/tool-schemas'
 
 function task(
   id: string,
@@ -117,6 +125,25 @@ function deps(overrides: Partial<ToolDeps> = {}): ToolDeps {
 async function exec(toolValue: unknown, input: unknown): Promise<unknown> {
   return (toolValue as { execute: (i: unknown, o: unknown) => unknown }).execute(input, {})
 }
+
+describe('main/agent/tools/subagent (schemas)', () => {
+  // Anthropic (and some other providers) reject a top-level anyOf/oneOf/allOf
+  // in a tool's input_schema. Every sub-agent tool input must serialize to a
+  // plain object at the top level.
+  it.each([
+    ['spawn', spawnInputSchema],
+    ['await', awaitInputSchema],
+    ['tasks', tasksInputSchema],
+    ['steer', steerInputSchema],
+    ['cancel', cancelTaskInputSchema]
+  ])('%s input schema has no top-level anyOf/oneOf/allOf', (_name, schema) => {
+    const json = zodSchema(schema).jsonSchema as Record<string, unknown>
+    expect(json.anyOf).toBeUndefined()
+    expect(json.oneOf).toBeUndefined()
+    expect(json.allOf).toBeUndefined()
+    expect(json.type).toBe('object')
+  })
+})
 
 describe('main/agent/tools/subagent (tasks)', () => {
   it('spawns a single task and returns its readable id', async () => {
