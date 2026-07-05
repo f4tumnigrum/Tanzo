@@ -3,8 +3,7 @@ import type { ProviderOptionSchema } from '@shared/provider'
 import {
   DEFAULT_REASONING_EFFORT,
   reasoningEffortCycle,
-  reasoningEffortField,
-  reasoningEffortFromDefaults
+  reasoningEffortField
 } from '@renderer/features/chat/model/reasoning-effort'
 
 const openaiSchema: ProviderOptionSchema = {
@@ -44,7 +43,6 @@ describe('chat/model/reasoning-effort (schema-driven)', () => {
   it('locates the effort field via the role annotation', () => {
     expect(reasoningEffortField([openaiSchema])).toEqual({
       path: 'reasoningEffort',
-      providerKey: 'openai',
       choices: ['low', 'high']
     })
     expect(reasoningEffortField([googleSchema])?.path).toBe('thinkingConfig.thinkingLevel')
@@ -52,47 +50,26 @@ describe('chat/model/reasoning-effort (schema-driven)', () => {
     expect(reasoningEffortField(undefined)).toBeNull()
   })
 
-  it('cycles default first, then schema choices', () => {
+  it('cycles default first, then the full schema choices', () => {
     const field = reasoningEffortField([openaiSchema])!
     expect(reasoningEffortCycle(field)).toEqual([DEFAULT_REASONING_EFFORT, 'low', 'high'])
-  })
-
-  it('reads the provider-defaults effort from plain, scoped, and raw shapes', () => {
-    const field = reasoningEffortField([openaiSchema])!
-    const empty = { providerOptions: {}, rawProviderOptions: {} }
-    expect(reasoningEffortFromDefaults(field, empty)).toBeNull()
-    expect(
-      reasoningEffortFromDefaults(field, {
-        providerOptions: { reasoningEffort: 'low' },
-        rawProviderOptions: {}
-      })
-    ).toBe('low')
-    expect(
-      reasoningEffortFromDefaults(field, {
-        providerOptions: { openai: { reasoningEffort: 'high' } },
-        rawProviderOptions: {}
-      })
-    ).toBe('high')
-    // Scoped wins over plain, raw wins over both — matching the backend merge.
-    expect(
-      reasoningEffortFromDefaults(field, {
-        providerOptions: { reasoningEffort: 'low', openai: { reasoningEffort: 'high' } },
-        rawProviderOptions: {}
-      })
-    ).toBe('high')
-    expect(
-      reasoningEffortFromDefaults(field, {
-        providerOptions: { reasoningEffort: 'low' },
-        rawProviderOptions: { openai: { reasoningEffort: 'high' } }
-      })
-    ).toBe('high')
-
-    const nested = reasoningEffortField([googleSchema])!
-    expect(
-      reasoningEffortFromDefaults(nested, {
-        providerOptions: { thinkingConfig: { thinkingLevel: 'minimal' } },
-        rawProviderOptions: {}
-      })
-    ).toBe('minimal')
+    // The full set — no step is ever dropped, so the badge can reach every value.
+    const anthropic = reasoningEffortField([
+      {
+        ...openaiSchema,
+        fields: [
+          {
+            ...openaiSchema.fields[0],
+            choices: ['low', 'high', 'max'].map((v) => ({ value: v, label: v }))
+          }
+        ]
+      }
+    ])!
+    expect(reasoningEffortCycle(anthropic)).toEqual([
+      DEFAULT_REASONING_EFFORT,
+      'low',
+      'high',
+      'max'
+    ])
   })
 })

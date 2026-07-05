@@ -686,7 +686,8 @@ export const en = {
         steerPlaceholder: 'Add guidance, Enter to send…',
         steerSend: 'Send',
         openTranscript: 'Open transcript',
-        readOnlyView: 'Read-only view of the delegated sub-agent.',
+        backToChat: 'Back to chat',
+        readOnly: 'Read-only',
         emptyTranscript: 'No activity yet.'
       },
       goal: {

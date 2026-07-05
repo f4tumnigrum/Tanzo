@@ -9,8 +9,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { BrowserPanel, useBrowserUiStore, useBrowserOpenRequests } from '@/features/browser'
 import { useChatNavigation } from './model/use-chat-navigation'
+import { useChatUiStore } from './model/store'
 import { ChatEmpty } from './ui/chat-empty'
 import { ActiveChat } from './ui/active-chat'
+import { SubagentTranscriptView } from './ui/subagent-transcript-view'
 import { TaskOverviewPill } from './ui/task-overview-pill'
 import { StartComposer } from './ui/compose/start-composer'
 import { GitReviewDialog, WorkspaceGitPill } from '@/features/git/ui'
@@ -25,6 +27,8 @@ export default function ChatPage(): React.JSX.Element {
   const chatPaneRef = usePanelRef()
   const navigation = useChatNavigation()
   const { activeChatId, activeConversation, currentWorkspace, defaultWorkspace } = navigation
+  const viewedSubagentTask = useChatUiStore((s) => s.viewedSubagentTask)
+  const viewSubagentTask = useChatUiStore((s) => s.viewSubagentTask)
 
   const headerTitle = currentWorkspace?.label || activeConversation?.title || t('chat.page.title')
 
@@ -54,8 +58,15 @@ export default function ChatPage(): React.JSX.Element {
 
   // Switches render synchronously: hot sessions (kept alive by the session
   // manager) paint their first frame from memory, so no transition shell or
-  // deferred remount is needed.
-  const chatContent = activeChatId ? (
+  // deferred remount is needed. The sub-agent drill-down replaces the main
+  // conversation in place (same footprint) and returns via its back button.
+  const chatContent = viewedSubagentTask ? (
+    <SubagentTranscriptView
+      key={viewedSubagentTask.chatId}
+      task={viewedSubagentTask}
+      onBack={() => viewSubagentTask(null)}
+    />
+  ) : activeChatId ? (
     <ActiveChat
       key={activeChatId}
       chatId={activeChatId}

@@ -4,17 +4,18 @@ import type { LanguageModelOption } from './use-available-models'
 import {
   DEFAULT_REASONING_EFFORT,
   reasoningEffortCycle,
-  reasoningEffortField,
-  reasoningEffortFromDefaults
+  reasoningEffortField
 } from './reasoning-effort'
 
 export interface ReasoningEffortControl {
   /**
-   * Displayed value: conversation override when set, otherwise the value the
-   * provider defaults would apply, otherwise 'default'.
+   * The badge's current step: the conversation override, or 'default' when
+   * unset. Always a member of `options`, so the cycle positions correctly.
+   * Provider defaults do not appear here — the badge reflects only the
+   * conversation's own choice.
    */
   effort: string
-  /** Cycle options for the composer badge; null hides the control. */
+  /** Cycle options (schema-driven); null hides the control. */
   options: string[] | null
 }
 
@@ -27,12 +28,9 @@ export function useReasoningEffortControl(
   const schemasQuery = useProviderOptionSchemas(model?.providerId ?? null, 'language')
   const field = useMemo(() => reasoningEffortField(schemasQuery.data), [schemasQuery.data])
   if (!model || !field || model.capabilities?.reasoning === false) return HIDDEN
-  const fromDefaults = reasoningEffortFromDefaults(field, {
-    providerOptions: model.providerDefaults.providerOptions,
-    rawProviderOptions: model.providerDefaults.rawProviderOptions
-  })
-  return {
-    effort: override?.trim() || fromDefaults || DEFAULT_REASONING_EFFORT,
-    options: reasoningEffortCycle(field)
-  }
+  const options = reasoningEffortCycle(field)
+  const trimmed = override?.trim()
+  // A stale override outside this provider's choices falls back to 'default'.
+  const effort = trimmed && options.includes(trimmed) ? trimmed : DEFAULT_REASONING_EFFORT
+  return { effort, options }
 }
