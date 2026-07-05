@@ -75,7 +75,7 @@ jobs:
               dist/*.blockmap
               dist/latest-mac.yml
           - name: macOS (x64)
-            os: macos-13
+            os: macos-latest
             command: pnpm build && pnpm exec electron-builder --mac --x64 --publish never
             artifact-name: Tanzo-macOS-x64
             artifact-path: |
