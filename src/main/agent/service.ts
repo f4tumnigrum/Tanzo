@@ -155,15 +155,22 @@ export function createAgentService(deps: AgentServiceDeps): AgentService {
     // the active/preparing controllers (so in-flight runs and sub-agent tasks
     // observe the supersede/cancel). A plain abort() alone would NOT drop a
     // pending goal continuation — see the RunEngine clock contract.
+    //
+    // Deliberately does NOT cancel the sub-agent task tree: stopping the
+    // parent turn leaves spawned tasks running in the background. Their
+    // results persist and can be awaited in a later turn; the user stops
+    // individual tasks from the task panel instead.
     engine.bumpCancelGeneration(chatId)
     engine.abort(chatId)
     turnLoop.discardPendingChangeCapture(chatId)
     clearTransientChatState(chatId)
-    tasks.cancelTree(chatId)
   }
 
   function deleteConversation(chatId: string): void {
     cancel(chatId)
+    // Unlike a plain cancel, deletion must tear down the whole task tree:
+    // orphaned executor runs would otherwise keep writing to a deleted chat.
+    tasks.cancelTree(chatId)
     messageQueue.clear(chatId)
     deps.store.deleteConversation(chatId)
   }

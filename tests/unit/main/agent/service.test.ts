@@ -1263,7 +1263,7 @@ describe('agent/service', () => {
     expect(deps.contextEngine.snapshot).not.toHaveBeenCalled()
   })
 
-  it('sends user messages and cancels the task tree without error', async () => {
+  it('sends user messages and leaves spawned tasks running on cancel', async () => {
     const deps = createDeps()
     const service = createAgentService(deps as never)
 
@@ -1278,7 +1278,21 @@ describe('agent/service', () => {
       ])
     )
 
+    // Stopping the parent turn must NOT cascade into the task tree: a
+    // dependency-blocked task (which only a cascade could settle) stays pending.
+    const first = service.spawnTask({
+      parentChatId: 'parent',
+      objective: 'first',
+      agentType: 'research'
+    })
+    const second = service.spawnTask({
+      parentChatId: 'parent',
+      objective: 'second',
+      agentType: 'research',
+      dependsOn: [first.id]
+    })
     expect(() => service.cancel('parent')).not.toThrow()
+    expect(service.getTask('parent', second.id)?.status).toBe('pending')
   })
 
   it('submits a structured user message and persists it with the run', async () => {

@@ -21,6 +21,128 @@ function task(overrides: Partial<SubagentTask> = {}): SubagentTask {
 }
 
 describe('agent/subagent/task-service', () => {
+  /**
+   * Compact harness for scheduling tests: real semaphores/state machine, mocked
+   * store + runtime callbacks. `startChatRun` hangs by default so tasks stay
+   * running until explicitly cancelled.
+   */
+  function createHarness(): {
+    service: ReturnType<typeof createTaskService>
+    tasks: Map<string, SubagentTask>
+    callbacks: {
+      abortRun: ReturnType<typeof vi.fn>
+      clearTransientChatState: ReturnType<typeof vi.fn>
+      currentRunEpoch: ReturnType<typeof vi.fn>
+      hasAdvancedSince: ReturnType<typeof vi.fn>
+      isInflight: ReturnType<typeof vi.fn>
+      startChatRun: ReturnType<typeof vi.fn>
+    }
+  } {
+    const tasks = new Map<string, SubagentTask>()
+    let childSeq = 0
+    const callbacks = {
+      abortRun: vi.fn(),
+      clearTransientChatState: vi.fn(),
+      currentRunEpoch: vi.fn(() => 0),
+      hasAdvancedSince: vi.fn(() => false),
+      isInflight: vi.fn(() => false),
+      // Hang forever: the task stays 'running' until cancelled.
+      startChatRun: vi.fn(() => new Promise(() => {}))
+    }
+    const service = createTaskService(
+      {
+        store: {
+          rootOf: vi.fn(() => 'root-chat'),
+          transaction: vi.fn((fn: () => unknown) => fn()),
+          getConversation: vi.fn(() => ({ id: 'root-chat' })),
+          createConversation: vi.fn(() => ({ id: `child-${++childSeq}` })),
+          save: vi.fn(),
+          load: vi.fn(async () => []),
+          depthOf: vi.fn(() => 1),
+          resolveAgentDefinition: vi.fn(async () => ({
+            id: 'explore',
+            kind: 'subagent',
+            allowedTools: ['fileRead']
+          })),
+          tasks: {
+            get: vi.fn((_rootChatId: string, taskId: string) => tasks.get(taskId)),
+            getByChat: vi.fn(
+              (chatId: string) => [...tasks.values()].find((t) => t.chatId === chatId)
+            ),
+            listByRoot: vi.fn(() => [...tasks.values()]),
+            update: vi.fn((next: SubagentTask) => tasks.set(next.id, next)),
+            insert: vi.fn((t: SubagentTask) => tasks.set(t.id, t)),
+            nextSeq: vi.fn(() => tasks.size + 1),
+            countByAgent: vi.fn(
+              (_root: string, agentType: string) =>
+                [...tasks.values()].filter((t) => t.agentType === agentType).length
+            )
+          }
+        },
+        send: vi.fn(),
+        sendTo: vi.fn(),
+        identity: {
+          resolveAgentType: vi.fn(() => ({
+            id: 'explore',
+            kind: 'subagent',
+            allowedTools: ['fileRead']
+          }))
+        },
+        providerService: {},
+        buildTools: vi.fn(),
+        policy: {}
+      } as never,
+      {
+        compaction: { prepareMessages: vi.fn(async () => []) } as never,
+        policy: { remember: vi.fn() } as never
+      },
+      callbacks
+    )
+    return { service, tasks, callbacks }
+  }
+
+  it('fails dependents fast when a pending dependency is cancelled (no driver finally)', async () => {
+    const { service, tasks } = createHarness()
+
+    const a = service.spawn({ parentChatId: 'root-chat', objective: 'a', agentType: 'explore' })
+    const b = service.spawn({
+      parentChatId: 'root-chat',
+      objective: 'b',
+      agentType: 'explore',
+      dependsOn: [a.id]
+    })
+    expect(tasks.get(b.id)?.status).toBe('pending')
+
+    service.cancel('root-chat', a.id)
+
+    expect(tasks.get(a.id)?.status).toBe('cancelled')
+    // B never had a driver; only the settle-edge reevaluation can fail it.
+    expect(tasks.get(b.id)?.status).toBe('failed')
+    expect(tasks.get(b.id)?.result?.errorMessage).toContain(`'${a.id}'`)
+    // An await on B must resolve instead of hanging forever.
+    const result = await service.await('root-chat', b.id)
+    expect(result.failed).toBe(true)
+  })
+
+  it('reevaluates dependents after cancelTree settles pending tasks', async () => {
+    const { service, tasks } = createHarness()
+
+    const a = service.spawn({ parentChatId: 'root-chat', objective: 'a', agentType: 'explore' })
+    const b = service.spawn({
+      parentChatId: 'root-chat',
+      objective: 'b',
+      agentType: 'explore',
+      dependsOn: [a.id]
+    })
+
+    service.cancelTree(tasks.get(a.id)!.chatId)
+
+    expect(tasks.get(a.id)?.status).toBe('cancelled')
+    expect(tasks.get(b.id)?.status).toBe('failed')
+    const result = await service.await('root-chat', b.id)
+    expect(result.failed).toBe(true)
+  })
+
   it('cancels a task without recursively cancelling itself forever', () => {
     const tasks = new Map<string, SubagentTask>()
     tasks.set('explore-1', task())

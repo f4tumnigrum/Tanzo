@@ -267,6 +267,14 @@ export function createTaskService(
           )
         }
       }
+      // Every settle edge reevaluates the graph: if this spawn fail-fasted,
+      // anything already depending on it must fail fast too. Re-read from the
+      // store — failTask dispatches a new object; the local `task` is stale.
+      const fresh = deps.store.tasks.get(rootChatId, task.id)
+      if (fresh && isTerminal(fresh.status)) {
+        task = fresh
+        maybeUnblockDependents(rootChatId)
+      }
     }
     if (task.status === 'running') startDriver(task)
     return task
@@ -667,6 +675,8 @@ export function createTaskService(
     callbacks.abortRun(task.chatId)
     callbacks.clearTransientChatState(task.chatId)
     dispatch(rootChatId, taskId, { kind: 'cancel', now: Date.now() })
+    // cancelTree reevaluates the dependency graph at its root, so dependents
+    // of a cancelled pending task (which has no driver finally) fail fast.
     cancelTree(task.chatId)
   }
 
@@ -771,6 +781,7 @@ export function createTaskService(
   }
 
   function cancelTree(chatId: string, visited = new Set<string>()): void {
+    const isRoot = visited.size === 0
     if (visited.has(chatId)) return
     visited.add(chatId)
     const rootChatId = deps.store.rootOf(chatId)
@@ -783,7 +794,12 @@ export function createTaskService(
         cancelTree(task.chatId, visited)
       }
     }
-    broadcastTasks(rootChatId)
+    if (isRoot) {
+      // Cancelled pending tasks never had a driver; reevaluate once for the
+      // whole tree so their dependents fail fast instead of hanging.
+      maybeUnblockDependents(rootChatId)
+      broadcastTasks(rootChatId)
+    }
   }
 
   return {
