@@ -20,6 +20,7 @@ interface ConversationRow {
   agent_id: string
   model_ref: string
   subagent_model_ref: string
+  reasoning_effort: string
   workspace_id: string | null
   workspace_name: string | null
   cwd: string | null
@@ -44,6 +45,7 @@ export interface ConversationRepo {
   setTitle(chatId: string, title: string): void
   setModelRef(chatId: string, modelRef: string, updatedAt: number): void
   setSubagentModelRef(chatId: string, modelRef: string, updatedAt: number): void
+  setReasoningEffort(chatId: string, effort: string, updatedAt: number): void
   setAgentId(chatId: string, agentId: string, updatedAt: number): void
   depthOf(chatId: string): number
   rootOf(chatId: string): string
@@ -62,9 +64,9 @@ export function createConversationRepo(db: SqlDatabase, fallbackCwd: string): Co
   `)
   const insertConversation = db.prepare(`
     INSERT INTO conversations (
-      id, title, agent_id, model_ref, subagent_model_ref, workspace_id, cwd, parent_conversation_id, parent_relation, created_at, updated_at, archived_at
+      id, title, agent_id, model_ref, subagent_model_ref, reasoning_effort, workspace_id, cwd, parent_conversation_id, parent_relation, created_at, updated_at, archived_at
     ) VALUES (
-      @id, @title, @agent_id, @model_ref, @subagent_model_ref, @workspace_id, @cwd, @parent_conversation_id, @parent_relation, @created_at, @updated_at, @archived_at
+      @id, @title, @agent_id, @model_ref, @subagent_model_ref, @reasoning_effort, @workspace_id, @cwd, @parent_conversation_id, @parent_relation, @created_at, @updated_at, @archived_at
     )
   `)
   const conversationProjection = `
@@ -122,6 +124,9 @@ export function createConversationRepo(db: SqlDatabase, fallbackCwd: string): Co
   const setSubagentModelRefRow = db.prepare(
     'UPDATE conversations SET subagent_model_ref = @subagent_model_ref, updated_at = @t WHERE id = @id'
   )
+  const setReasoningEffortRow = db.prepare(
+    'UPDATE conversations SET reasoning_effort = @reasoning_effort, updated_at = @t WHERE id = @id'
+  )
   const setAgentIdRow = db.prepare(
     'UPDATE conversations SET agent_id = @agent_id, updated_at = @t WHERE id = @id'
   )
@@ -144,6 +149,7 @@ export function createConversationRepo(db: SqlDatabase, fallbackCwd: string): Co
       agentId: row.agent_id,
       modelRef: row.model_ref,
       subagentModelRef: row.subagent_model_ref,
+      reasoningEffort: row.reasoning_effort,
       workspaceId: row.workspace_id || 'workspace',
       workspaceName: row.workspace_name || undefined,
       cwd: row.cwd || fallbackCwd,
@@ -175,6 +181,7 @@ export function createConversationRepo(db: SqlDatabase, fallbackCwd: string): Co
           agent_id: summary.agentId,
           model_ref: summary.modelRef,
           subagent_model_ref: summary.subagentModelRef,
+          reasoning_effort: summary.reasoningEffort,
           workspace_id: summary.workspaceId,
           cwd: summary.cwd,
           parent_conversation_id: summary.parentConversationId,
@@ -221,6 +228,9 @@ export function createConversationRepo(db: SqlDatabase, fallbackCwd: string): Co
     },
     setSubagentModelRef(chatId, modelRef, updatedAt) {
       setSubagentModelRefRow.run({ id: chatId, subagent_model_ref: modelRef, t: updatedAt })
+    },
+    setReasoningEffort(chatId, effort, updatedAt) {
+      setReasoningEffortRow.run({ id: chatId, reasoning_effort: effort, t: updatedAt })
     },
     setAgentId(chatId, agentId, updatedAt) {
       setAgentIdRow.run({ id: chatId, agent_id: agentId, t: updatedAt })

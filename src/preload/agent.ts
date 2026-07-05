@@ -39,6 +39,9 @@ export const chatApi: ChatApi = {
   setConversationSubagentModel: invoke<ChatApi['setConversationSubagentModel']>(
     CHAT_CHANNELS.setConversationSubagentModel
   ),
+  setConversationReasoningEffort: invoke<ChatApi['setConversationReasoningEffort']>(
+    CHAT_CHANNELS.setConversationReasoningEffort
+  ),
   setConversationAgent: invoke<ChatApi['setConversationAgent']>(CHAT_CHANNELS.setConversationAgent),
   listAgents: invoke<ChatApi['listAgents']>(CHAT_CHANNELS.listAgents),
   compact: invoke<ChatApi['compact']>(CHAT_CHANNELS.compact),

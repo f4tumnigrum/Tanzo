@@ -1,157 +1,67 @@
-import type { ProviderDefaultsState, ProviderId } from '@/common/contracts'
+import type { ProviderOptionField, ProviderOptionSchema } from '@/common/contracts'
+import { getPathValue } from '@/features/providers/lib/json'
 
-export type ReasoningEffort =
-  'default' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+/**
+ * Reasoning effort is schema-driven: the provider option schemas (main
+ * process, `provider/options/*.ts`) mark their effort field with
+ * `role: 'reasoningEffort'`, and this module only reads that annotation.
+ * No per-provider knowledge lives in the renderer.
+ *
+ * 'default' means "no conversation override" — the provider defaults
+ * (and whatever is configured there) apply.
+ */
+export const DEFAULT_REASONING_EFFORT = 'default'
 
-const ANTHROPIC_EFFORTS: ReasoningEffort[] = ['default', 'low', 'medium', 'high', 'xhigh', 'max']
-const OPENAI_LIKE_EFFORTS: ReasoningEffort[] = [
-  'default',
-  'none',
-  'minimal',
-  'low',
-  'medium',
-  'high',
-  'xhigh'
-]
-const GOOGLE_EFFORTS: ReasoningEffort[] = ['default', 'minimal', 'low', 'medium', 'high']
-const DEEPSEEK_EFFORTS: ReasoningEffort[] = ['default']
-const EFFORT_VALUES = new Set<ReasoningEffort>([
-  'default',
-  'none',
-  'minimal',
-  'low',
-  'medium',
-  'high',
-  'xhigh',
-  'max'
-])
-
-export function reasoningEffortsForProvider(
-  providerId: ProviderId | string,
-  capabilityHint?: { reasoning?: boolean }
-): ReasoningEffort[] | null {
-  if (capabilityHint?.reasoning === false) return null
-  switch (providerId.toLowerCase()) {
-    case 'anthropic':
-      return ANTHROPIC_EFFORTS
-    case 'openai':
-    case 'openai-chat':
-    case 'openai-compatible':
-      return OPENAI_LIKE_EFFORTS
-    case 'google':
-      return GOOGLE_EFFORTS
-    case 'deepseek':
-      return DEEPSEEK_EFFORTS
-    default:
-      return null
-  }
+export interface ReasoningEffortField {
+  path: string
+  providerKey: string
+  choices: string[]
 }
 
-export function reasoningEffortFromDefaults(
-  providerId: ProviderId | string,
-  defaults: ProviderDefaultsState | undefined
-): ReasoningEffort {
-  const options = (defaults?.providerOptions ?? {}) as Record<string, unknown>
-  switch (providerId.toLowerCase()) {
-    case 'anthropic':
-      return normalizeEffort(options.effort)
-    case 'openai':
-    case 'openai-chat':
-    case 'openai-compatible':
-      return normalizeEffort(options.reasoningEffort)
-    case 'google': {
-      const thinkingConfig = options.thinkingConfig
-      if (!thinkingConfig || typeof thinkingConfig !== 'object' || Array.isArray(thinkingConfig)) {
-        return 'default'
-      }
-      return normalizeEffort((thinkingConfig as Record<string, unknown>).thinkingLevel)
-    }
-    default:
-      return 'default'
-  }
-}
-
-export function providerDefaultsWithReasoningEffort(
-  providerId: ProviderId | string,
-  defaults: ProviderDefaultsState,
-  effort: ReasoningEffort
-): ProviderDefaultsState {
-  return {
-    ...defaults,
-    providerOptions: providerOptionsWithReasoningEffort(
-      providerId,
-      defaults.providerOptions as Record<string, unknown>,
-      effort
+/** Locate the effort field and its choices in a provider's option schemas. */
+export function reasoningEffortField(
+  schemas: ProviderOptionSchema[] | undefined
+): ReasoningEffortField | null {
+  for (const schema of schemas ?? []) {
+    const field: ProviderOptionField | undefined = schema.fields.find(
+      (candidate) => candidate.role === 'reasoningEffort'
     )
+    if (!field) continue
+    const choices = (field.choices ?? [])
+      .map((choice) => String(choice.value))
+      .filter((value) => value.length > 0)
+    return { path: field.path, providerKey: schema.providerKey, choices }
   }
+  return null
 }
 
-function providerOptionsWithReasoningEffort(
-  providerId: ProviderId | string,
-  options: Record<string, unknown>,
-  effort: ReasoningEffort
-): Record<string, unknown> {
-  switch (providerId.toLowerCase()) {
-    case 'anthropic':
-      return setOrDelete(options, 'effort', effort)
-    case 'openai':
-    case 'openai-chat':
-    case 'openai-compatible':
-      return setOrDelete(options, 'reasoningEffort', effort)
-    case 'google':
-      return setNestedOrDelete(options, 'thinkingConfig', 'thinkingLevel', effort)
-    default:
-      return options
-  }
+/** Cycle order for the composer badge: default first, then schema choices. */
+export function reasoningEffortCycle(field: ReasoningEffortField): string[] {
+  return [DEFAULT_REASONING_EFFORT, ...field.choices]
 }
 
-function setOrDelete(
-  input: Record<string, unknown>,
-  key: string,
-  effort: ReasoningEffort
-): Record<string, unknown> {
-  const next = { ...input }
-  if (effort === 'default') {
-    delete next[key]
-  } else {
-    next[key] = effort
+/**
+ * The effort the provider defaults would apply when the conversation has no
+ * override — shown so the badge reflects reality before the user touches it.
+ * Provider defaults accept the field both un-scoped (`reasoningEffort`) and
+ * scoped (`openai.reasoningEffort`); the merge treats them the same, so read
+ * both. Scoped wins, matching the backend merge (raw/scoped over plain).
+ */
+export function reasoningEffortFromDefaults(
+  field: ReasoningEffortField,
+  defaults: {
+    providerOptions: Record<string, unknown>
+    rawProviderOptions: Record<string, unknown>
   }
-  return pruneEmptyObjects(next)
-}
-
-function setNestedOrDelete(
-  input: Record<string, unknown>,
-  parentKey: string,
-  childKey: string,
-  effort: ReasoningEffort
-): Record<string, unknown> {
-  const parent = input[parentKey]
-  const nextParent =
-    parent && typeof parent === 'object' && !Array.isArray(parent)
-      ? { ...(parent as Record<string, unknown>) }
-      : {}
-  if (effort === 'default') {
-    delete nextParent[childKey]
-  } else {
-    nextParent[childKey] = effort
+): string | null {
+  const scopedPath = `${field.providerKey}.${field.path}`
+  const candidates = [
+    getPathValue(defaults.rawProviderOptions, scopedPath),
+    getPathValue(defaults.providerOptions, scopedPath),
+    getPathValue(defaults.providerOptions, field.path)
+  ]
+  for (const value of candidates) {
+    if (typeof value === 'string' && value) return value
   }
-  return pruneEmptyObjects({ ...input, [parentKey]: nextParent })
-}
-
-function normalizeEffort(value: unknown): ReasoningEffort {
-  if (typeof value !== 'string') return 'default'
-  return EFFORT_VALUES.has(value as ReasoningEffort) ? (value as ReasoningEffort) : 'default'
-}
-
-function pruneEmptyObjects(value: Record<string, unknown>): Record<string, unknown> {
-  const next: Record<string, unknown> = {}
-  for (const [key, child] of Object.entries(value)) {
-    if (child && typeof child === 'object' && !Array.isArray(child)) {
-      const pruned = pruneEmptyObjects(child as Record<string, unknown>)
-      if (Object.keys(pruned).length > 0) next[key] = pruned
-      continue
-    }
-    if (child !== undefined && child !== '') next[key] = child
-  }
-  return next
+  return null
 }

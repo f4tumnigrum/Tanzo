@@ -42,6 +42,7 @@ export interface AgentStore {
   setConversationModel(chatId: string, modelRef: string): ConversationSummary
   setConversationTitle(chatId: string, title: string): ConversationSummary
   setConversationSubagentModel(chatId: string, modelRef: string): ConversationSummary
+  setConversationReasoningEffort(chatId: string, effort: string): ConversationSummary
   setConversationAgent(chatId: string, agentId: string): ConversationSummary
   save(chatId: string, messages: TanzoUIMessage[]): void
 

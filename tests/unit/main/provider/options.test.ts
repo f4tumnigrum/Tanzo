@@ -6,7 +6,8 @@ import {
   mergeProviderOptions,
   mergeProviderOptionsInto,
   normalizeDefaults,
-  normalizeStoredDefaults
+  normalizeStoredDefaults,
+  reasoningEffortOverlay
 } from '@main/provider/options'
 
 describe('main/provider/options', () => {
@@ -96,6 +97,35 @@ describe('main/provider/options', () => {
         textVerbosity: 'low',
         strictJsonSchema: false
       }
+    })
+  })
+
+  it('builds reasoning-effort overlays from the schema role annotation', () => {
+    // Flat path providers write into their own namespace.
+    expect(reasoningEffortOverlay('openai', 'high')).toEqual({
+      openai: { reasoningEffort: 'high' }
+    })
+    expect(reasoningEffortOverlay('anthropic', 'max')).toEqual({
+      anthropic: { effort: 'max' }
+    })
+    expect(reasoningEffortOverlay('deepseek', 'low')).toEqual({
+      deepseek: { reasoningEffort: 'low' }
+    })
+    // Nested path (google) expands into the object shape.
+    expect(reasoningEffortOverlay('google', 'medium')).toEqual({
+      google: { thinkingConfig: { thinkingLevel: 'medium' } }
+    })
+    // Canonicalized provider key.
+    expect(reasoningEffortOverlay('openai-compatible', 'minimal')).toEqual({
+      openaiCompatible: { reasoningEffort: 'minimal' }
+    })
+    // Strict select fields reject values outside their choices — an effort
+    // inherited across providers must be dropped, not sent to the API.
+    expect(reasoningEffortOverlay('openai', 'max')).toBeUndefined()
+    expect(reasoningEffortOverlay('google', 'xhigh')).toBeUndefined()
+    // Free-form (string control) fields accept vendor-specific values.
+    expect(reasoningEffortOverlay('openai-compatible', 'ultra-think')).toEqual({
+      openaiCompatible: { reasoningEffort: 'ultra-think' }
     })
   })
 

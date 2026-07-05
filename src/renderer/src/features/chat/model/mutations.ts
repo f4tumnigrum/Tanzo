@@ -8,18 +8,11 @@ import type {
   NewConversationInput
 } from '@shared/chat'
 import type { NewPolicyRuleInput, PermissionMode } from '@shared/policy'
-import type {
-  ProviderDefaultsState,
-  ProviderId,
-  ProviderSetupState,
-  ProviderWorkspace
-} from '@/common/contracts'
 import { chatClient } from '@/platform/electron/chat-client'
 import { policyClient } from '@/platform/electron/policy-client'
-import { providersClient } from '@/platform/electron/providers-client'
-import { providerKeys } from '@/features/providers/model/query-keys'
 import { errorMessage } from '@/common/lib/error-utils'
 import { chatKeys } from './query-keys'
+import { discardChatSession } from './conversation/session-manager'
 
 function invalidateChatCollections(queryClient: QueryClient): void {
   queryClient.invalidateQueries({ queryKey: chatKeys.conversations() })
@@ -55,6 +48,8 @@ export function useDeleteConversation() {
   return useMutation({
     mutationFn: (chatId: string) => chatClient.deleteConversation(chatId),
     onSuccess: (_result, chatId) => {
+      // Kept-alive sessions must not outlive their conversation.
+      discardChatSession(chatId)
       queryClient.setQueryData<ConversationSummary[]>(chatKeys.conversations(), (list) =>
         list ? list.filter((conversation) => conversation.id !== chatId) : list
       )
@@ -180,45 +175,17 @@ export function useSetConversationAgent() {
   })
 }
 
-function patchSetupLanguageDefaults(
-  setups: ProviderSetupState[] | undefined,
-  providerId: ProviderId,
-  defaults: ProviderDefaultsState
-): ProviderSetupState[] | undefined {
-  if (!setups) return setups
-  return setups.map((setup) => {
-    if (setup.providerId !== providerId) return setup
-    const language = setup.modalities.language
-    if (!language) return setup
-    return {
-      ...setup,
-      modalities: { ...setup.modalities, language: { ...language, defaults } }
-    }
-  })
-}
-
-export function useSaveLanguageDefaults() {
+export function useSetConversationReasoningEffort() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (input: { providerId: ProviderId; defaults: ProviderDefaultsState }) =>
-      providersClient.saveDefaults({
-        providerId: input.providerId,
-        byFamily: { language: input.defaults }
-      }),
-    onMutate: (input) => {
-      queryClient.setQueryData<ProviderSetupState[]>(providerKeys.setups(), (setups) =>
-        patchSetupLanguageDefaults(setups, input.providerId, input.defaults)
+    mutationFn: (input: { chatId: string; effort: string }) =>
+      chatClient.setConversationReasoningEffort(input.chatId, input.effort),
+    onSuccess: (updated) => {
+      queryClient.setQueryData<ConversationSummary[]>(chatKeys.conversations(), (list) =>
+        list ? list.map((c) => (c.id === updated.id ? updated : c)) : list
       )
     },
-    onSuccess: (workspace: ProviderWorkspace, input) => {
-      queryClient.setQueryData(providerKeys.workspace(input.providerId), workspace)
-      queryClient.invalidateQueries({ queryKey: providerKeys.setups() })
-    },
-    onError: (error, input) => {
-      queryClient.invalidateQueries({ queryKey: providerKeys.setups() })
-      queryClient.invalidateQueries({ queryKey: providerKeys.workspace(input.providerId) })
-      toast.error(errorMessage(error, t('chat.errors.setReasoningEffort')))
-    }
+    onError: (error) => toast.error(errorMessage(error, t('chat.errors.setReasoningEffort')))
   })
 }

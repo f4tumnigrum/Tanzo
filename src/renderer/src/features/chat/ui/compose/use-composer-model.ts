@@ -1,14 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import {
-  useSaveLanguageDefaults,
   useSetConversationModel,
+  useSetConversationReasoningEffort,
   useSetConversationSubagentModel
 } from '../../model/mutations'
-import {
-  providerDefaultsWithReasoningEffort,
-  reasoningEffortFromDefaults,
-  type ReasoningEffort
-} from '../../model/reasoning-effort'
+import { DEFAULT_REASONING_EFFORT } from '../../model/reasoning-effort'
+import { useReasoningEffortControl } from '../../model/use-reasoning-effort'
 import {
   findModelOption,
   getDefaultLanguageModel,
@@ -19,9 +16,10 @@ import {
 export interface UseComposerModelResult {
   modelRef: string | null
   activeModel: LanguageModelOption | undefined
-  effectiveReasoningEffort: ReasoningEffort
+  reasoningEffort: string
+  reasoningEffortOptions: string[] | null
   handleSelectModel: (nextModelRef: string) => void
-  handleReasoningEffortChange: (next: ReasoningEffort) => void
+  handleReasoningEffortChange: (next: string) => void
   subagentModelRef: string | null
   handleSelectSubagentModel: (nextModelRef: string) => void
 }
@@ -35,11 +33,12 @@ export function useComposerModel({
     id: string
     modelRef?: string | null
     subagentModelRef?: string | null
+    reasoningEffort?: string | null
   } | null
 }): UseComposerModelResult {
   const setModel = useSetConversationModel()
   const setSubagentModel = useSetConversationSubagentModel()
-  const saveLanguageDefaults = useSaveLanguageDefaults()
+  const setReasoningEffort = useSetConversationReasoningEffort()
   const { models } = useAvailableLanguageModels()
 
   const defaultModelRef = useMemo(() => getDefaultLanguageModel(models)?.id ?? null, [models])
@@ -52,9 +51,12 @@ export function useComposerModel({
   const modelRef = storedModel?.id ?? defaultModelRef
   const activeModel = useMemo(() => findModelOption(models, modelRef), [models, modelRef])
 
-  const effectiveReasoningEffort: ReasoningEffort = activeModel
-    ? reasoningEffortFromDefaults(activeModel.providerId, activeModel.providerDefaults)
-    : 'default'
+  // Reasoning effort is a per-conversation setting (same scope as modelRef);
+  // when unset the badge shows what the provider defaults would apply.
+  const effortControl = useReasoningEffortControl(
+    activeModel,
+    activeConversation?.reasoningEffort ?? null
+  )
 
   const defaultedFor = useRef<string | null>(null)
   useEffect(() => {
@@ -74,16 +76,13 @@ export function useComposerModel({
   )
 
   const handleReasoningEffortChange = useCallback(
-    (next: ReasoningEffort) => {
-      if (!activeModel) return
-      const nextDefaults = providerDefaultsWithReasoningEffort(
-        activeModel.providerId,
-        activeModel.providerDefaults,
-        next
-      )
-      saveLanguageDefaults.mutate({ providerId: activeModel.providerId, defaults: nextDefaults })
+    (next: string) => {
+      setReasoningEffort.mutate({
+        chatId,
+        effort: next === DEFAULT_REASONING_EFFORT ? '' : next
+      })
     },
-    [activeModel, saveLanguageDefaults]
+    [setReasoningEffort, chatId]
   )
 
   const storedSubagentModelRef = activeConversation?.subagentModelRef || null
@@ -102,7 +101,8 @@ export function useComposerModel({
   return {
     modelRef,
     activeModel,
-    effectiveReasoningEffort,
+    reasoningEffort: effortControl.effort,
+    reasoningEffortOptions: effortControl.options,
     handleSelectModel,
     handleReasoningEffortChange,
     subagentModelRef,

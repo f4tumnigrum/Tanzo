@@ -9,6 +9,7 @@ const openaiLanguageFields: ProviderOptionField[] = [
     path: 'reasoningEffort',
     label: 'Reasoning effort',
     control: 'select',
+    role: 'reasoningEffort',
     choices: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'].map((value) => ({
       value,
       label: value

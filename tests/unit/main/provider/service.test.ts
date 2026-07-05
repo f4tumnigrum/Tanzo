@@ -296,6 +296,34 @@ describe('main/provider/service', () => {
     expect(service.getProviderOptions('openai', 'language')).toEqual({
       openai: { reasoningEffort: 'high' }
     })
+
+    // Strict on write: unknown keys and mistyped values reject the save.
+    expect(() =>
+      service.saveDefaults({
+        providerId: 'openai',
+        byFamily: { language: { callDefaults: { temperatuer: 0.4 } } }
+      })
+    ).toThrowError(/temperatuer/)
+    expect(() =>
+      service.saveDefaults({
+        providerId: 'openai',
+        byFamily: { language: { callDefaults: { temperature: 'warm' } } }
+      })
+    ).toThrowError(/temperature/)
+    expect(service.getCallSettings('openai', 'language')).toEqual({ temperature: 0.2 })
+
+    // Lenient on read: pre-validation rows with junk are dropped field by field.
+    store.saveDefaults({
+      providerId: 'openai',
+      family: 'language',
+      defaults: {
+        callDefaults: { temperature: 0.3, unknown: true, maxOutputTokens: 'lots' },
+        providerOptions: {},
+        rawProviderOptions: {}
+      },
+      updatedAt: new Date().toISOString()
+    })
+    expect(service.getCallSettings('openai', 'language')).toEqual({ temperature: 0.3 })
   })
 
   it('handles disconnected and reset flows', async () => {

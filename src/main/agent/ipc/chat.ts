@@ -40,6 +40,7 @@ const newConversationSchema = z
     title: z.string().optional(),
     modelRef: z.string().optional(),
     subagentModelRef: z.string().optional(),
+    reasoningEffort: z.string().max(64).optional(),
     workspaceId: z.string().optional(),
     cwd: z.string().optional(),
     parentConversationId: z.string().optional(),
@@ -185,6 +186,14 @@ export function chatHandlers(deps: AgentIpcDeps): IpcRegistration[] {
         deps.store.setConversationSubagentModel(
           chatIdSchema.parse(chatId),
           z.string().trim().parse(modelRef)
+        )
+    ],
+    [
+      CHAT_CHANNELS.setConversationReasoningEffort,
+      (chatId, effort) =>
+        deps.store.setConversationReasoningEffort(
+          chatIdSchema.parse(chatId),
+          z.string().trim().max(64).parse(effort)
         )
     ],
     [

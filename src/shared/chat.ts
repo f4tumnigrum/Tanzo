@@ -45,6 +45,8 @@ export interface ConversationSummary {
   agentId: string
   modelRef: string
   subagentModelRef: string
+  /** Per-conversation reasoning-effort override; '' follows provider defaults. */
+  reasoningEffort: string
   workspaceId: string
   workspaceName?: string
   cwd: string
@@ -60,6 +62,7 @@ export interface NewConversationInput {
   title?: string
   modelRef?: string
   subagentModelRef?: string
+  reasoningEffort?: string
   workspaceId?: string
   cwd?: string
   parentConversationId?: string
@@ -114,6 +117,7 @@ export const CHAT_CHANNELS = {
   setConversationModel: 'chat:set-conversation-model',
   setConversationTitle: 'chat:set-conversation-title',
   setConversationSubagentModel: 'chat:set-conversation-subagent-model',
+  setConversationReasoningEffort: 'chat:set-conversation-reasoning-effort',
   setConversationAgent: 'chat:set-conversation-agent',
   listAgents: 'chat:list-agents',
   compact: 'chat:compact',
@@ -246,6 +250,7 @@ export interface ChatApi {
   setConversationModel(chatId: string, modelRef: string): Promise<ConversationSummary>
   setConversationTitle(chatId: string, title: string): Promise<ConversationSummary>
   setConversationSubagentModel(chatId: string, modelRef: string): Promise<ConversationSummary>
+  setConversationReasoningEffort(chatId: string, effort: string): Promise<ConversationSummary>
   setConversationAgent(chatId: string, agentId: string): Promise<ConversationSummary>
   listAgents(kind: AgentKind): Promise<AgentSummary[]>
   compact(chatId: string, options?: { instructions?: string }): Promise<CompactionOutcome>

@@ -8,7 +8,6 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import type { ProviderId } from '@/common/contracts'
-import { reasoningEffortsForProvider, type ReasoningEffort } from '../../model/reasoning-effort'
 import {
   findModelOption,
   type LanguageModelOption,
@@ -36,8 +35,11 @@ const PROVIDER_DISPLAY_NAME: Partial<Record<ProviderId, string>> = {
 export interface ModelSelectorProps {
   selectedId: string | null
   onSelect: (modelId: string) => void
-  reasoningEffort: ReasoningEffort
-  onReasoningEffortChange: (effort: ReasoningEffort) => void
+  /** Current reasoning effort shown on the badge. */
+  reasoningEffort: string
+  /** Cycle options (schema-driven); null hides the badge. */
+  reasoningEffortOptions: string[] | null
+  onReasoningEffortChange: (effort: string) => void
   subagent?: {
     selectedId: string | null
     onSelect: (modelId: string) => void
@@ -52,6 +54,7 @@ export function ModelSelector({
   selectedId,
   onSelect,
   reasoningEffort,
+  reasoningEffortOptions,
   onReasoningEffortChange,
   subagent,
   disabled,
@@ -101,9 +104,7 @@ export function ModelSelector({
     )
   }, [currentRail, query])
 
-  const efforts = selected
-    ? reasoningEffortsForProvider(selected.providerId, selected.capabilities)
-    : null
+  const efforts = reasoningEffortOptions
 
   const cycleEffort = (): void => {
     if (!efforts || efforts.length <= 1) return
@@ -170,7 +171,9 @@ export function ModelSelector({
                       }}
                       className="ml-0.5 shrink-0 cursor-pointer rounded-[var(--radius-4xl)] bg-primary/10 px-1 py-px text-[0.5625rem] font-medium text-primary transition-colors hover:bg-primary/20"
                     >
-                      {t(`chat.composer.reasoningEffort.${reasoningEffort}`)}
+                      {t(`chat.composer.reasoningEffort.${reasoningEffort}`, {
+                        defaultValue: reasoningEffort
+                      })}
                     </span>
                   ) : null}
                 </Button>

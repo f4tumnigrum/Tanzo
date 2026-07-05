@@ -169,6 +169,7 @@ CREATE TABLE conversations (
   agent_id               TEXT NOT NULL DEFAULT 'tanzo',
   model_ref              TEXT NOT NULL DEFAULT '',
   subagent_model_ref     TEXT NOT NULL DEFAULT '',
+  reasoning_effort       TEXT NOT NULL DEFAULT '',
   cwd                    TEXT NOT NULL DEFAULT '',
   created_at             INTEGER NOT NULL,
   updated_at             INTEGER NOT NULL,
@@ -561,6 +562,19 @@ export const tanzoMigrations: ModuleMigrations = {
       version: 23,
       name: 'merge_step_message_rows',
       up: (db) => mergeStepMessageRows(db)
+    },
+    {
+      // Reasoning effort becomes a per-conversation setting (same scope as
+      // model_ref) instead of a provider-wide default.
+      version: 24,
+      name: 'conversation_reasoning_effort',
+      up: (db) => {
+        const columns = db.prepare('PRAGMA table_info(conversations)').all() as Array<{
+          name: string
+        }>
+        if (columns.some((column) => column.name === 'reasoning_effort')) return
+        db.exec("ALTER TABLE conversations ADD COLUMN reasoning_effort TEXT NOT NULL DEFAULT ''")
+      }
     }
   ]
 }

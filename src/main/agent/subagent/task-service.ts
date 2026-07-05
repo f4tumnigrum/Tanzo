@@ -174,6 +174,9 @@ export function createTaskService(
     const child = deps.store.createConversation({
       agentId: def.id,
       ...(subagentModelRef ? { modelRef: subagentModelRef, subagentModelRef } : {}),
+      // Inherit the parent's reasoning effort; the runtime overlay validates
+      // it against the child model's provider schema and drops it if invalid.
+      ...(parent.reasoningEffort ? { reasoningEffort: parent.reasoningEffort } : {}),
       ...(parent.workspaceId ? { workspaceId: parent.workspaceId } : {}),
       ...(parent.cwd ? { cwd: parent.cwd } : {}),
       parentConversationId: parentChatId,

@@ -2,17 +2,14 @@ import { useCallback, useMemo, useState } from 'react'
 import type { FileUIPart } from 'ai'
 import type { TanzoUIMessage } from '@shared/agent-message'
 import type { PermissionMode } from '@shared/policy'
-import { usePolicyMode, useSetPolicyMode, useSaveLanguageDefaults } from '../../model'
+import { usePolicyMode, useSetPolicyMode } from '../../model'
 import {
   findModelOption,
   getDefaultLanguageModel,
   useAvailableLanguageModels
 } from '../../model/use-available-models'
-import {
-  providerDefaultsWithReasoningEffort,
-  reasoningEffortFromDefaults,
-  type ReasoningEffort
-} from '../../model/reasoning-effort'
+import { DEFAULT_REASONING_EFFORT } from '../../model/reasoning-effort'
+import { useReasoningEffortControl } from '../../model/use-reasoning-effort'
 import { ChatInput } from './chat-input'
 import { ModelSelector } from './model-selector'
 import { usePluginMentions } from '../../model/conversation/use-plugin-mentions'
@@ -20,6 +17,8 @@ import { usePluginMentions } from '../../model/conversation/use-plugin-mentions'
 export interface StartConversationDraft {
   message: TanzoUIMessage
   modelRef: string
+  /** Conversation-scoped reasoning effort chosen before the chat exists. */
+  reasoningEffort?: string
 }
 
 export interface StartComposerProps {
@@ -34,9 +33,10 @@ export function StartComposer({
   const mode = usePolicyMode()
   const setMode = useSetPolicyMode()
   const pluginMentions = usePluginMentions()
-  const saveLanguageDefaults = useSaveLanguageDefaults()
   const { models } = useAvailableLanguageModels()
   const [selectedModelRef, setSelectedModelRef] = useState<string | null>(null)
+  // Pre-conversation effort override; persisted onto the conversation at start.
+  const [selectedEffort, setSelectedEffort] = useState<string>('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const defaultModel = useMemo(() => getDefaultLanguageModel(models), [models])
@@ -46,9 +46,7 @@ export function StartComposer({
   )
   const activeModel = selectedModel ?? defaultModel
   const modelRef = activeModel?.id ?? null
-  const reasoningEffort: ReasoningEffort = activeModel
-    ? reasoningEffortFromDefaults(activeModel.providerId, activeModel.providerDefaults)
-    : 'default'
+  const effortControl = useReasoningEffortControl(activeModel, selectedEffort)
 
   const handlePermissionModeChange = useCallback(
     (next: PermissionMode) => {
@@ -57,20 +55,15 @@ export function StartComposer({
     [setMode]
   )
 
-  const handleReasoningEffortChange = useCallback(
-    (next: ReasoningEffort) => {
-      if (!activeModel) return
-      saveLanguageDefaults.mutate({
-        providerId: activeModel.providerId,
-        defaults: providerDefaultsWithReasoningEffort(
-          activeModel.providerId,
-          activeModel.providerDefaults,
-          next
-        )
-      })
-    },
-    [activeModel, saveLanguageDefaults]
-  )
+  const handleSelectModel = useCallback((nextModelRef: string) => {
+    setSelectedModelRef(nextModelRef)
+    // Effort overrides are provider-specific; reset when the model changes.
+    setSelectedEffort('')
+  }, [])
+
+  const handleReasoningEffortChange = useCallback((next: string) => {
+    setSelectedEffort(next === DEFAULT_REASONING_EFFORT ? '' : next)
+  }, [])
 
   const handleSubmit = useCallback(
     async (text: string, files?: FileUIPart[]) => {
@@ -89,20 +82,22 @@ export function StartComposer({
             role: 'user',
             parts
           },
-          modelRef
+          modelRef,
+          ...(selectedEffort ? { reasoningEffort: selectedEffort } : {})
         })
       } finally {
         setIsSubmitting(false)
       }
     },
-    [isSubmitting, modelRef, onStart]
+    [isSubmitting, modelRef, onStart, selectedEffort]
   )
 
   const trailing = (
     <ModelSelector
       selectedId={modelRef}
-      onSelect={setSelectedModelRef}
-      reasoningEffort={reasoningEffort}
+      onSelect={handleSelectModel}
+      reasoningEffort={effortControl.effort}
+      reasoningEffortOptions={effortControl.options}
       onReasoningEffortChange={handleReasoningEffortChange}
       disabled={isSubmitting}
     />

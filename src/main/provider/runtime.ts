@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto'
 import { wrapLanguageModel, type LanguageModel, type LanguageModelMiddleware } from 'ai'
-import { PROVIDER_IDS, type ProviderId } from '@shared/provider'
-import { TanzoValidationError } from '@shared/errors'
+import { requireModelRef, type ProviderId } from '@shared/provider'
 import { getAdapter, type Credentials } from './adapter'
 
 export interface ProviderRuntime {
@@ -22,23 +21,6 @@ function credentialFingerprint(credentials: Credentials): string {
     .sort()
     .map((key) => [key, credentials[key]] as const)
   return createHash('sha256').update(JSON.stringify(entries)).digest('hex')
-}
-
-function parseModelRef(modelRef: string): { providerId: ProviderId; modelId: string } {
-  const separator = modelRef.indexOf(':')
-  if (separator === -1) {
-    throw new TanzoValidationError('PROVIDER_MODEL_REF_INVALID', `Invalid model ref: ${modelRef}`, {
-      details: { modelRef }
-    })
-  }
-  const prefix = modelRef.slice(0, separator)
-  const modelId = modelRef.slice(separator + 1)
-  if (!PROVIDER_IDS.includes(prefix as ProviderId) || !modelId) {
-    throw new TanzoValidationError('PROVIDER_MODEL_REF_INVALID', `Invalid model ref: ${modelRef}`, {
-      details: { modelRef }
-    })
-  }
-  return { providerId: prefix as ProviderId, modelId }
 }
 
 export function createProviderRuntime(deps: RuntimeDeps): ProviderRuntime {
@@ -70,7 +52,7 @@ export function createProviderRuntime(deps: RuntimeDeps): ProviderRuntime {
 
   return {
     resolveLanguageModel(modelRef) {
-      const { providerId, modelId } = parseModelRef(modelRef)
+      const { providerId, modelId } = requireModelRef(modelRef)
       return languageModel(providerId, modelId)
     },
     invalidate(providerId) {

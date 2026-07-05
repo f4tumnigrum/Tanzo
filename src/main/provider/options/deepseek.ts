@@ -21,6 +21,7 @@ export const deepseekOptionSchemas: ProviderOptionSchema[] = [
         path: 'reasoningEffort',
         label: 'Reasoning effort',
         control: 'select',
+        role: 'reasoningEffort',
         choices: ['low', 'medium', 'high', 'xhigh', 'max'].map((value) => ({ value, label: value }))
       }
     ]

@@ -163,6 +163,7 @@ export function createAgentStore(
       agentId: normalizeAgentId(input.agentId),
       modelRef: input.modelRef ?? '',
       subagentModelRef: input.subagentModelRef ?? '',
+      reasoningEffort: input.reasoningEffort ?? '',
       workspaceId,
       workspaceName: workspaceNameFromCwd(cwd),
       cwd,
@@ -220,6 +221,13 @@ export function createAgentStore(
     return { ...existing, subagentModelRef: modelRef, updatedAt }
   }
 
+  function setConversationReasoningEffort(chatId: string, effort: string): ConversationSummary {
+    const existing = requireConversation(chatId, 'CHAT_CONVERSATION_NOT_FOUND')
+    const updatedAt = Date.now()
+    conversations.setReasoningEffort(chatId, effort, updatedAt)
+    return { ...existing, reasoningEffort: effort, updatedAt }
+  }
+
   function setConversationAgent(chatId: string, agentId: string): ConversationSummary {
     const existing = requireConversation(chatId, 'AGENT_DEFINITION_NOT_FOUND')
     const normalizedAgentId = normalizeAgentId(agentId)
@@ -265,6 +273,7 @@ export function createAgentStore(
           agentId: source.agentId,
           modelRef: source.modelRef,
           subagentModelRef: source.subagentModelRef,
+          reasoningEffort: source.reasoningEffort,
           workspaceId: source.workspaceId,
           cwd: source.cwd,
           parentConversationId,
@@ -290,6 +299,7 @@ export function createAgentStore(
     setConversationModel,
     setConversationTitle,
     setConversationSubagentModel,
+    setConversationReasoningEffort,
     setConversationAgent,
     save(chatId, nextMessages) {
       requireConversation(chatId, 'CHAT_CONVERSATION_NOT_FOUND')

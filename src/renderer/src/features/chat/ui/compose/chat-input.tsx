@@ -310,7 +310,6 @@ export function ChatInput({
         </div>
       ) : null}
       <LiquidGlass
-        aberration
         intensity={1.15}
         style={
           {

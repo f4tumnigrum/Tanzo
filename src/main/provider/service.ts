@@ -19,7 +19,7 @@ import type {
   StoredProviderModel,
   UpdateProviderKeyInput
 } from '@shared/provider'
-import { PROVIDER_IDS } from '@shared/provider'
+import { parseModelRef, requireModelRef } from '@shared/provider'
 import type { LanguageModel } from 'ai'
 import type { ProviderOptions } from '@ai-sdk/provider-utils'
 import { randomUUID } from 'crypto'
@@ -34,6 +34,7 @@ import {
   normalizeDefaults,
   normalizeStoredDefaults
 } from './options'
+import { coerceCallSettings, parseCallSettings, type CallSettings } from './call-settings'
 import type { SecretCodec } from './secret'
 import type { ProviderStore, StoredConnection, StoredModel, StoredProviderKey } from './store'
 
@@ -60,7 +61,7 @@ export interface ProviderService {
 
   getModelMetadata(modelRef: string): ModelMetadata | undefined
   getProviderOptions(providerId: ProviderId, family: ModelFamily): ProviderOptions
-  getCallSettings(providerId: ProviderId, family: ModelFamily): Record<string, unknown>
+  getCallSettings(providerId: ProviderId, family: ModelFamily): CallSettings
 }
 
 export interface ModelMetadata {
@@ -202,15 +203,6 @@ interface CredentialSnapshot {
   stored: StoredConnection
   key?: StoredProviderKey
   credentials: Credentials
-}
-
-function parseModelRef(modelRef: string): { providerId: ProviderId; modelId: string } | undefined {
-  const separator = modelRef.indexOf(':')
-  if (separator === -1) return undefined
-  const providerId = modelRef.slice(0, separator)
-  const modelId = modelRef.slice(separator + 1)
-  if (!PROVIDER_IDS.includes(providerId as ProviderId) || !modelId) return undefined
-  return { providerId: providerId as ProviderId, modelId }
 }
 
 function stringRecordsEqual(left: Record<string, string>, right: Record<string, string>): boolean {
@@ -900,24 +892,21 @@ export function createProviderService(store: ProviderStore, codec: SecretCodec):
       for (const family of getSupportedFamilies(input.providerId)) {
         const defaults = input.byFamily[family]
         if (!defaults) continue
+        const normalized = normalizeDefaults(defaults)
+        // Strict on write: reject unknown keys / mistyped values so the UI
+        // reports them instead of the runtime silently dropping them.
+        parseCallSettings(normalized.callDefaults)
         store.saveDefaults({
           providerId: input.providerId,
           family,
-          defaults: normalizeDefaults(defaults),
+          defaults: normalized,
           updatedAt: now
         })
       }
       return buildWorkspace(input.providerId)
     },
     resolveLanguageModel(modelRef) {
-      const parsed = parseModelRef(modelRef)
-      if (!parsed) {
-        throw new TanzoValidationError(
-          'PROVIDER_MODEL_REF_INVALID',
-          `Invalid model ref: ${modelRef}`,
-          { details: { modelRef } }
-        )
-      }
+      const parsed = requireModelRef(modelRef)
       ensureUsableLanguageModel(parsed.providerId, parsed.modelId)
       return runtime.resolveLanguageModel(modelRef)
     },
@@ -945,7 +934,10 @@ export function createProviderService(store: ProviderStore, codec: SecretCodec):
       )
     },
     getCallSettings(providerId, family) {
-      return normalizeStoredDefaults(store.getDefaults(providerId, family)?.defaults).callDefaults
+      // Lenient on read: rows may predate save-time validation.
+      return coerceCallSettings(
+        normalizeStoredDefaults(store.getDefaults(providerId, family)?.defaults).callDefaults
+      )
     }
   }
 }

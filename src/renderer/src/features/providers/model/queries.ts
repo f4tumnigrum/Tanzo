@@ -42,10 +42,14 @@ export function useProviderKeys(providerId: ProviderId) {
   })
 }
 
-export function useProviderOptionSchemas(providerId: ProviderId, family?: ModelFamily) {
+export function useProviderOptionSchemas(
+  providerId: ProviderId | null | undefined,
+  family?: ModelFamily
+) {
   return useQuery({
-    queryKey: providerKeys.optionSchemas(providerId, family),
-    queryFn: () => providersClient.listOptionSchemas(providerId, family),
+    queryKey: providerKeys.optionSchemas(providerId ?? undefined, family),
+    queryFn: () => providersClient.listOptionSchemas(providerId ?? undefined, family),
+    enabled: Boolean(providerId),
     staleTime: PROVIDER_STALE_TIME,
     gcTime: PROVIDER_GC_TIME
   })
