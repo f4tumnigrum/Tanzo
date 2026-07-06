@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-07-06
+
+### Added
+
+- Git sync now returns a structured result so the UI reports real outcomes
+  (received/published commits, conflicts, no-op) instead of silently refreshing.
+- Chat: long pasted text is externalized to a temp `.txt` file and handed to the
+  model as a `fileRead` pointer, while the attachment chip stays in the
+  transcript. New `openPath`/`revealInFolder` system IPC channels.
+
+### Changed
+
+- App: refined update checks and reasoning defaults.
+- Git: read branch ahead/behind and upstream via `for-each-ref` (previously left
+  at zero by simple-git's `branchLocal()`); `git-sync-history-views` split into
+  `git-sync-view` and `git-history-view`; `restore-confirm` renamed to
+  `discard-confirm`.
+
+### Fixed
+
+- Git discard partitions tracked vs. untracked paths, so mixed batches no longer
+  leave tracked files un-reverted.
+
 ## [0.4.1] - 2026-07-05
 
 ### Added
