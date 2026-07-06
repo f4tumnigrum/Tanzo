@@ -16,6 +16,7 @@ export const anthropicOptionSchemas: ProviderOptionSchema[] = [
         label: 'Reasoning effort',
         control: 'select',
         role: 'reasoningEffort',
+        default: 'high',
         choices: ['low', 'medium', 'high', 'xhigh', 'max'].map((value) => ({ value, label: value }))
       },
       {

@@ -20,6 +20,9 @@ export const updaterClient = {
   getState(): Promise<UpdaterState> {
     return requireUpdaterApi().getState()
   },
+  check(): Promise<void> {
+    return requireUpdaterApi().check()
+  },
   download(): Promise<void> {
     return requireUpdaterApi().download()
   },

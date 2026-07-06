@@ -8,7 +8,6 @@ import {
   getDefaultLanguageModel,
   useAvailableLanguageModels
 } from '../../model/use-available-models'
-import { DEFAULT_REASONING_EFFORT } from '../../model/reasoning-effort'
 import { useReasoningEffortControl } from '../../model/use-reasoning-effort'
 import { ChatInput } from './chat-input'
 import { ModelSelector } from './model-selector'
@@ -35,7 +34,8 @@ export function StartComposer({
   const pluginMentions = usePluginMentions()
   const { models } = useAvailableLanguageModels()
   const [selectedModelRef, setSelectedModelRef] = useState<string | null>(null)
-  // Pre-conversation effort override; persisted onto the conversation at start.
+  // Pre-conversation effort choice; '' means "untouched", so the badge shows
+  // the provider schema's default. Resolved to a concrete value at start.
   const [selectedEffort, setSelectedEffort] = useState<string>('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -57,12 +57,13 @@ export function StartComposer({
 
   const handleSelectModel = useCallback((nextModelRef: string) => {
     setSelectedModelRef(nextModelRef)
-    // Effort overrides are provider-specific; reset when the model changes.
+    // Effort choices are provider-specific; reset when the model changes so the
+    // new provider's default applies.
     setSelectedEffort('')
   }, [])
 
   const handleReasoningEffortChange = useCallback((next: string) => {
-    setSelectedEffort(next === DEFAULT_REASONING_EFFORT ? '' : next)
+    setSelectedEffort(next)
   }, [])
 
   const handleSubmit = useCallback(
@@ -74,6 +75,10 @@ export function StartComposer({
       if (trimmed) parts.push({ type: 'text', text: trimmed })
       if (files) parts.push(...(files as TanzoUIMessage['parts']))
 
+      // The badge always reflects a real provider choice (the schema default
+      // when untouched); persist it so the new conversation starts explicit.
+      const effort = effortControl.options ? effortControl.effort : undefined
+
       setIsSubmitting(true)
       try {
         await onStart({
@@ -83,13 +88,13 @@ export function StartComposer({
             parts
           },
           modelRef,
-          ...(selectedEffort ? { reasoningEffort: selectedEffort } : {})
+          ...(effort ? { reasoningEffort: effort } : {})
         })
       } finally {
         setIsSubmitting(false)
       }
     },
-    [isSubmitting, modelRef, onStart, selectedEffort]
+    [isSubmitting, modelRef, onStart, effortControl.options, effortControl.effort]
   )
 
   const trailing = (

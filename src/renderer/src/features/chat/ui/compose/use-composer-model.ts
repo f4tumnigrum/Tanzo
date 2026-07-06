@@ -4,7 +4,6 @@ import {
   useSetConversationReasoningEffort,
   useSetConversationSubagentModel
 } from '../../model/mutations'
-import { DEFAULT_REASONING_EFFORT } from '../../model/reasoning-effort'
 import { useReasoningEffortControl } from '../../model/use-reasoning-effort'
 import {
   findModelOption,
@@ -77,10 +76,7 @@ export function useComposerModel({
 
   const handleReasoningEffortChange = useCallback(
     (next: string) => {
-      setReasoningEffort.mutate({
-        chatId,
-        effort: next === DEFAULT_REASONING_EFFORT ? '' : next
-      })
+      setReasoningEffort.mutate({ chatId, effort: next })
     },
     [setReasoningEffort, chatId]
   )

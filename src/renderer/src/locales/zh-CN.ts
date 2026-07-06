@@ -261,7 +261,6 @@ export const zhCN = {
           }
         },
         reasoningEffort: {
-          default: '自动',
           none: '关闭',
           minimal: '极简',
           low: '低',
@@ -1252,7 +1251,6 @@ export const zhCN = {
         }
       },
       about: {
-        tagline: 'AI 原生桌面工作台，为规划、编码与自动化而生。',
         copy: '复制信息',
         copied: '已复制',
         license: '基于 Apache-2.0 许可证发布',
@@ -1260,6 +1258,8 @@ export const zhCN = {
           issues: '反馈问题'
         },
         update: {
+          check: '检查更新',
+          checking: '正在检查更新…',
           available: '更新到 {{version}}',
           downloading: '下载中… {{percent}}%',
           ready: '重启以完成更新',

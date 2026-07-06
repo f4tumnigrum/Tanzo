@@ -57,7 +57,7 @@ export function registerSystemIpc(
   target.handle(SYSTEM_CHANNELS.getPlatform, (): ElectronPlatformInfo => ({
     platform: process.platform,
     arch: process.arch,
-    version: process.versions.node
+    version: app.getVersion()
   }))
 
   target.handle(SYSTEM_CHANNELS.getSystemPreferences, () => getSystemPreferences())

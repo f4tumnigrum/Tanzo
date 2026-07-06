@@ -3,6 +3,7 @@ import { invoke, subscribe } from './invoke'
 
 export const updaterApi: UpdaterApi = {
   getState: invoke<() => Promise<UpdaterState>>(UPDATER_CHANNELS.getState),
+  check: invoke<() => Promise<void>>(UPDATER_CHANNELS.check),
   download: invoke<() => Promise<void>>(UPDATER_CHANNELS.download),
   install: invoke<() => Promise<void>>(UPDATER_CHANNELS.install),
   onStateChanged: (callback: (state: UpdaterState) => void) =>

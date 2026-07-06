@@ -263,7 +263,6 @@ export const en = {
           }
         },
         reasoningEffort: {
-          default: 'auto',
           none: 'none',
           minimal: 'min',
           low: 'low',
@@ -1258,7 +1257,6 @@ export const en = {
         }
       },
       about: {
-        tagline: 'AI-native desktop workspace for planning, coding, and automation.',
         copy: 'Copy info',
         copied: 'Copied',
         license: 'Released under the Apache-2.0 license',
@@ -1266,6 +1264,8 @@ export const en = {
           issues: 'Report an issue'
         },
         update: {
+          check: 'Check for updates',
+          checking: 'Checking for updates…',
           available: 'Update to {{version}}',
           downloading: 'Downloading… {{percent}}%',
           ready: 'Restart to update',

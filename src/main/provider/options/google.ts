@@ -16,6 +16,7 @@ export const googleOptionSchemas: ProviderOptionSchema[] = [
         label: 'Thinking level',
         control: 'select',
         role: 'reasoningEffort',
+        default: 'high',
         choices: ['minimal', 'low', 'medium', 'high'].map((value) => ({ value, label: value }))
       },
       {

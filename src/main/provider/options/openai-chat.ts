@@ -10,6 +10,7 @@ const openaiChatLanguageFields: ProviderOptionField[] = [
     label: 'Reasoning effort',
     control: 'select',
     role: 'reasoningEffort',
+    default: 'high',
     choices: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'].map((value) => ({
       value,
       label: value

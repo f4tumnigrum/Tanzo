@@ -19,6 +19,7 @@ export const openaiCompatibleOptionSchemas: ProviderOptionSchema[] = [
         // Choices are suggestions for quick pickers (e.g. the composer badge).
         control: 'string',
         role: 'reasoningEffort',
+        default: 'high',
         choices: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'].map((value) => ({
           value,
           label: value

@@ -11,6 +11,7 @@ const electronMock = vi.hoisted(() => {
     app: {
       getLocale: vi.fn(() => 'en-US'),
       getPreferredSystemLanguages: vi.fn(() => ['en-US', 'zh-CN']),
+      getVersion: vi.fn(() => '1.2.3'),
       quit: vi.fn()
     },
     nativeTheme: { shouldUseDarkColors: false },
@@ -82,7 +83,7 @@ describe('main/system', () => {
     expect(handlers.get(SYSTEM_CHANNELS.getPlatform)?.()).toMatchObject({
       platform: process.platform,
       arch: process.arch,
-      version: process.versions.node
+      version: '1.2.3'
     })
     await expect(
       handlers.get(SYSTEM_CHANNELS.pickDirectory)?.(null, { title: 'Pick', defaultPath: '/tmp' })

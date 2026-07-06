@@ -4,7 +4,7 @@ import { ArrowUpRight, Check, Copy, Download, RefreshCw } from 'lucide-react'
 import type { ElectronPlatformInfo } from '@shared/system'
 import tanzoWordmark from '@/assets/tanzo1.png'
 import { systemClient } from '@/platform/electron/system-client'
-import { useAppUpdate, formatBytes, formatSpeed } from '@/hooks/use-app-update'
+import { useAppUpdate, formatBytes, formatSpeed, type AppUpdate } from '@/hooks/use-app-update'
 import { ProgressRing } from '@/components/ui/progress-ring'
 import { cn } from '@/lib/utils'
 
@@ -68,9 +68,9 @@ function usePlatformInfo(): ElectronPlatformInfo | null {
   return info
 }
 
-function UpdatePill(): React.JSX.Element | null {
+function UpdatePill({ update }: { update: AppUpdate }): React.JSX.Element | null {
   const { t } = useTranslation()
-  const { state, download, install } = useAppUpdate()
+  const { state, download, install } = update
 
   if (state.status === 'idle') return null
 
@@ -78,6 +78,15 @@ function UpdatePill(): React.JSX.Element | null {
     'inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs',
     'animate-in fade-in-0 zoom-in-95 duration-300 motion-reduce:animate-none'
   )
+
+  if (state.status === 'checking') {
+    return (
+      <span className={cn(pillClass, 'border border-border/20 text-foreground/60')}>
+        <RefreshCw className="size-3.5 animate-spin motion-reduce:animate-none" />
+        {t('settings.about.update.checking', { defaultValue: 'Checking for updates…' })}
+      </span>
+    )
+  }
 
   if (state.status === 'available') {
     return (
@@ -166,7 +175,10 @@ export function SettingsAboutTab(): React.JSX.Element {
   const { t } = useTranslation()
   const platformInfo = usePlatformInfo()
   const versions = systemClient.processVersions()
+  const update = useAppUpdate()
   const [copied, setCopied] = useState(false)
+
+  const checkBusy = update.state.status === 'checking' || update.state.status === 'downloading'
 
   const osLabel = platformInfo
     ? `${OS_NAMES[platformInfo.platform] ?? platformInfo.platform} ${platformInfo.arch}`
@@ -194,7 +206,7 @@ export function SettingsAboutTab(): React.JSX.Element {
 
   return (
     <div className="flex flex-1 flex-col items-center justify-center px-6 py-12 text-center">
-      {/* Hero: wordmark, version, tagline */}
+      {/* Hero: wordmark, version */}
       <Reveal>
         <img
           src={tanzoWordmark}
@@ -217,16 +229,8 @@ export function SettingsAboutTab(): React.JSX.Element {
         ) : null}
       </Reveal>
 
-      <Reveal delay={140} className="mt-3">
-        <p className="max-w-[17rem] text-[0.8125rem] leading-5 text-balance text-foreground/50">
-          {t('settings.about.tagline', {
-            defaultValue: 'AI-native desktop workspace for planning, coding, and automation.'
-          })}
-        </p>
-      </Reveal>
-
       <div className="mt-5 min-h-0 empty:hidden">
-        <UpdatePill />
+        <UpdatePill update={update} />
       </div>
 
       {/* Hairline ornament */}
@@ -255,6 +259,25 @@ export function SettingsAboutTab(): React.JSX.Element {
             {t('settings.about.links.issues', { defaultValue: 'Report an issue' })}
             <ArrowUpRight className="size-3 opacity-45 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
           </a>
+          {update.available ? (
+            <>
+              <Dot />
+              <button
+                type="button"
+                onClick={update.check}
+                disabled={checkBusy}
+                className={cn(TEXT_ACTION_CLASS, 'disabled:opacity-40')}
+              >
+                {t('settings.about.update.check', { defaultValue: 'Check for updates' })}
+                <RefreshCw
+                  className={cn(
+                    'size-3 opacity-45 transition-opacity duration-150 group-hover:opacity-80',
+                    checkBusy && 'animate-spin motion-reduce:animate-none'
+                  )}
+                />
+              </button>
+            </>
+          ) : null}
           <Dot />
           <button
             type="button"

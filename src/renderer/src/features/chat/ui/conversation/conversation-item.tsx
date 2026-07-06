@@ -275,7 +275,7 @@ export const ConversationItem = memo(function ConversationItem({
                 : isAncestorSelected
                   ? 'text-foreground/30'
                   : 'text-foreground/35',
-              'group-hover/item:opacity-0 group-focus-within/item:opacity-0'
+              'group-hover/item:pointer-events-none group-hover/item:opacity-0 group-focus-within/item:pointer-events-none group-focus-within/item:opacity-0'
             )}
           >
             {formattedTime}

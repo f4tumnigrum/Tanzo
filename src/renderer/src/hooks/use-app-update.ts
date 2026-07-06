@@ -7,6 +7,9 @@ const log = createLogger('renderer.app-update')
 
 export interface AppUpdate {
   state: UpdaterState
+  /** Whether the updater IPC surface exists (packaged Electron builds). */
+  available: boolean
+  check: () => void
   download: () => void
   install: () => void
 }
@@ -28,6 +31,7 @@ export function formatSpeed(bytesPerSecond: number): string | null {
 
 export function useAppUpdate(): AppUpdate {
   const [state, setState] = useState<UpdaterState>(INITIAL_UPDATER_STATE)
+  const available = updaterClient.isAvailable()
 
   useEffect(() => {
     if (!updaterClient.isAvailable()) return
@@ -48,6 +52,12 @@ export function useAppUpdate(): AppUpdate {
     }
   }, [])
 
+  const check = useCallback(() => {
+    void updaterClient.check().catch((error) => {
+      log.error('failed to check for updates', error)
+    })
+  }, [])
+
   const download = useCallback(() => {
     void updaterClient.download().catch((error) => {
       log.error('failed to start update download', error)
@@ -60,5 +70,5 @@ export function useAppUpdate(): AppUpdate {
     })
   }, [])
 
-  return { state, download, install }
+  return { state, available, check, download, install }
 }
