@@ -152,15 +152,16 @@ jobs:
   release:
     name: GitHub Release
     needs: [quality, package]
-    # Run even when the x64 package job is stuck/failed (see continue-on-error
-    # above) so the other platforms still ship, but only on tag pushes and only
-    # when quality passed. `always()` is scoped by the explicit result checks:
-    # quality must succeed, and package must not be outright cancelled.
+    # Run even when the x64 package build fails (see continue-on-error above) so
+    # the other platforms still ship, but only on tag pushes and only when the
+    # required builds passed. Because the x64 branch is continue-on-error, the
+    # aggregate `package` result stays `success` when only x64 fails; any other
+    # required platform failing turns it to `failure` and blocks the release.
     if: >-
       ${{ always()
       && startsWith(github.ref, 'refs/tags/v')
       && needs.quality.result == 'success'
-      && needs.package.result != 'cancelled' }}
+      && needs.package.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
