@@ -23,7 +23,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dependency-blocked tasks, approval waiters register before the block is
   surfaced, and dependency failures are tracked with structured
   unknown/failureKind feedback in the tools.
-- CI: macOS builds now produce Intel (x64) alongside arm64.
 
 ### Fixed
 

@@ -4,12 +4,11 @@
 /*
  * Collect CI package artifacts into a single flat release directory.
  *
- * The macOS build is split across two runners (arm64 on macos-latest, x64 on
- * macos-13). Each runner emits its own `latest-mac.yml` auto-update manifest
- * describing only its architecture. This script copies every artifact into one
- * directory and merges the mac manifests into a single `latest-mac.yml` whose
- * `files` list covers both architectures, so electron-updater can serve the
- * correct zip to each arch.
+ * This script copies every artifact into one directory. If more than one macOS
+ * `latest-mac.yml` auto-update manifest is present (e.g. if additional mac
+ * architectures are ever built on separate runners), their `files` lists are
+ * merged into a single manifest so electron-updater can serve the correct zip
+ * to each arch; a single manifest passes through unchanged.
  *
  * Usage: node scripts/collect-release-artifacts.mjs <inputDir> <outputDir>
  */
