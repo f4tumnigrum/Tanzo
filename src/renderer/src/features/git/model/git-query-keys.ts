@@ -8,7 +8,8 @@ export const gitKeys = {
   repo: (cwd: string) => [...gitKeys.all, cwd] as const,
   overview: (cwd: string) => [...gitKeys.repo(cwd), 'overview'] as const,
   status: (cwd: string) => [...gitKeys.repo(cwd), 'status'] as const,
-  history: (cwd: string) => [...gitKeys.repo(cwd), 'history'] as const,
+  history: (cwd: string, limit?: number) =>
+    [...gitKeys.repo(cwd), 'history', ...(limit === undefined ? [] : [limit])] as const,
   branches: (cwd: string) => [...gitKeys.repo(cwd), 'branches'] as const,
   remoteBranches: (cwd: string) => [...gitKeys.repo(cwd), 'remoteBranches'] as const,
   remotes: (cwd: string) => [...gitKeys.repo(cwd), 'remotes'] as const,

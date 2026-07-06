@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { convertToModelMessages, type ModelMessage } from 'ai'
 import type { TanzoDataParts, TanzoUIMessage, TanzoUsageMetadata } from '@shared/agent-message'
 import { canonicalizeToolTranscript } from '../tool-transcript'
+import { resolvePastedTextPointers } from '../../runtime/pasted-text'
 import { isSummaryUIMessage } from '../ledger'
 import { splitForCompaction, type Partition } from './cut'
 import { stripAnalysis } from './prompt'
@@ -35,7 +36,9 @@ export async function planCompaction(
   if (head.every(isSummaryUIMessage)) return null
 
   const sourceMessages = canonicalizeToolTranscript(
-    await convertToModelMessages(head, { ignoreIncompleteToolCalls: true })
+    await convertToModelMessages(resolvePastedTextPointers(head), {
+      ignoreIncompleteToolCalls: true
+    })
   )
   if (sourceMessages.length === 0) return null
 

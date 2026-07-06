@@ -23,7 +23,7 @@ const mocks = vi.hoisted(() => {
   const contextDeps = { kind: 'context-deps' }
   const contextEngine = { kind: 'context-engine' }
   const shell = { kind: 'shell' }
-  const fs = { kind: 'fs' }
+  const fs = { kind: 'fs', registerReadRoot: vi.fn() }
   const search = { kind: 'search' }
   const service = {
     cancel: vi.fn(),

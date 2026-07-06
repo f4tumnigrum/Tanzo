@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { GitStatusEntry } from '@shared/git'
 import type { GitReviewController, GitReviewSelectedFile } from '../model'
-import { RestoreConfirm } from './restore-confirm'
+import { DiscardConfirm } from './discard-confirm'
 import {
   DeltaStats,
   GIT_DIALOG_ICON_BUTTON_CLASSNAME,
@@ -237,8 +237,9 @@ function FileTreeNodeRow({
             >
               <ArrowDownToLine className="size-3" />
             </Button>
-            <RestoreConfirm
-              onConfirm={() => void controller.restoreFile(node.path)}
+            <DiscardConfirm
+              onConfirm={() => void controller.discardFile(node.path)}
+              untrackedCount={node.entry.untracked ? 1 : 0}
               trigger={
                 <Button
                   type="button"
@@ -246,7 +247,11 @@ function FileTreeNodeRow({
                   size="icon-xs"
                   className={GIT_DIALOG_ICON_BUTTON_CLASSNAME}
                   disabled={disabled || node.entry.conflicted}
-                  aria-label={t('gitReview.aria.restoreFile', { path: node.path })}
+                  aria-label={
+                    node.entry.untracked
+                      ? t('gitReview.aria.discardFile', { path: node.path })
+                      : t('gitReview.aria.restoreFile', { path: node.path })
+                  }
                 >
                   <RotateCcw className="size-3" />
                 </Button>

@@ -24,6 +24,7 @@ import type {
   GitResult,
   GitSetUserInput,
   GitStatusSnapshot,
+  GitSyncResult,
   GitUserInfo
 } from '@shared/git'
 import type { createLogger } from '../../logger'
@@ -77,9 +78,9 @@ export interface GitService {
   restoreWorktree(input: GitPathsInput): Promise<GitResult<GitStatusSnapshot>>
   discard(input: GitPathsInput): Promise<GitResult<GitStatusSnapshot>>
   commit(input: GitCommitInput): Promise<GitResult<GitCommitResult>>
-  fetch(input: GitFetchInput): Promise<GitResult<GitStatusSnapshot>>
-  pull(input: GitPullInput): Promise<GitResult<GitStatusSnapshot>>
-  push(input: GitPushInput): Promise<GitResult<GitStatusSnapshot>>
+  fetch(input: GitFetchInput): Promise<GitResult<GitSyncResult>>
+  pull(input: GitPullInput): Promise<GitResult<GitSyncResult>>
+  push(input: GitPushInput): Promise<GitResult<GitSyncResult>>
   checkout(input: GitCheckoutInput): Promise<GitResult<GitStatusSnapshot>>
   checkoutRemoteBranch(input: GitCheckoutRemoteBranchInput): Promise<GitResult<GitStatusSnapshot>>
   createBranch(input: GitCreateBranchInput): Promise<GitResult<GitStatusSnapshot>>

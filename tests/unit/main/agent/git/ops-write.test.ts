@@ -134,14 +134,10 @@ describe('agent/git/ops-write', () => {
       expect(result.data.isClean).toBe(true)
     })
 
-    it('CHARACTERIZATION: mixing tracked + untracked paths leaves the tracked file unreverted', async () => {
-      // Known quirk: discard runs reset/checkout/clean as three `.catch(() => undefined)`
-      // steps over the SAME path list. The `git checkout -- <paths>` step fails the whole
-      // batch when any path (here `new.txt`) is untracked, so the tracked file's worktree
-      // revert is silently skipped even though its staged change was reset. The untracked
-      // file is still removed by `git clean`. Net result: `tracked.txt` keeps its unstaged
-      // modification and the tree is NOT clean. Phase 1+ may choose to fix this; the test
-      // documents today's behavior so any change is deliberate.
+    it('reverts the tracked file AND removes the untracked file when both are discarded together', async () => {
+      // discard now partitions paths: tracked ones are reset+checked out from HEAD,
+      // untracked ones are cleaned. Mixing the two no longer aborts the tracked revert
+      // (the previous behavior where `git checkout -- <untracked>` failed the whole batch).
       await commitFile(root, 'tracked.txt', 'original\n')
       await writeFile(join(root, 'tracked.txt'), 'changed\n', 'utf8')
       await execGit(root, ['add', 'tracked.txt'])
@@ -151,9 +147,9 @@ describe('agent/git/ops-write', () => {
 
       expect(result.ok).toBe(true)
       if (!result.ok) return
-      expect(await readFile(join(root, 'tracked.txt'), 'utf8')).toBe('changed\n')
+      expect(await readFile(join(root, 'tracked.txt'), 'utf8')).toBe('original\n')
       await expect(readFile(join(root, 'new.txt'), 'utf8')).rejects.toThrow()
-      expect(result.data.isClean).toBe(false)
+      expect(result.data.isClean).toBe(true)
     })
 
     it('is a no-op that returns status when paths is empty', async () => {

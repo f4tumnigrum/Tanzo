@@ -858,10 +858,27 @@ export const en = {
     },
     gitReview: {
       title: 'Workspace Git',
-      confirmTitle: 'Restore files?',
+      confirmTitle: 'Discard changes?',
       confirmBody:
-        'This will discard the current changes and restore the files to their last committed state.',
-      confirmAction: 'Restore',
+        'This discards your working-tree changes to the selected tracked files. This cannot be undone.',
+      confirmAction: 'Discard',
+      discard: {
+        confirmTitle: 'Delete these changes?',
+        confirmBody:
+          'This permanently deletes the selected changes, including untracked files, from your working tree. It cannot be undone with Git.',
+        confirmBodyUntracked_one:
+          '1 untracked file will be permanently deleted and cannot be recovered.',
+        confirmBodyUntracked_other:
+          '{{count}} untracked files will be permanently deleted and cannot be recovered.',
+        confirmAction: 'Delete changes'
+      },
+      detached: {
+        title: 'Detached HEAD',
+        detail:
+          'You are not on a branch. New commits here can be lost. Create a branch to keep your work.',
+        createBranch: 'Create branch here',
+        branchName: 'Branch name'
+      },
       tabs: {
         changes: 'Changes',
         sync: 'Sync',
@@ -876,6 +893,7 @@ export const en = {
         unstage: 'Unstage',
         unstageAll: 'Unstage all',
         restore: 'Discard',
+        discard: 'Delete',
         options: 'Options',
         fetch: 'Fetch',
         pull: 'Pull',
@@ -970,11 +988,22 @@ export const en = {
         branch: 'Branch',
         noUpstream: 'No upstream',
         forceWithLease: 'Force with lease',
-        lease: 'Lease ref (optional)'
+        lease: 'Lease ref (optional)',
+        result: {
+          fetched: 'Fetched new commits from the remote.',
+          fetchedNothing: 'Already up to date — nothing to fetch.',
+          pulled_one: 'Pulled 1 commit.',
+          pulled_other: 'Pulled {{count}} commits.',
+          pushed_one: 'Pushed 1 commit to the remote.',
+          pushed_other: 'Pushed {{count}} commits to the remote.',
+          upToDate: 'Already up to date.',
+          conflicts: 'Completed with conflicts — resolve them in the working tree.'
+        }
       },
       history: {
         noSubject: '(no message)',
-        pickCommit: 'Select commit'
+        pickCommit: 'Select commit',
+        loadMore: 'Load more'
       },
       push: {
         confirmTitle: 'Push to remote?',
@@ -982,6 +1011,12 @@ export const en = {
           'This will push your local commits to {{target}}. Pushed commits are published to the remote.',
         forceWarning:
           'Force-with-lease can overwrite commits on the remote. This may be hard to undo.'
+      },
+      pull: {
+        confirmTitle: 'Pull from {{target}}?',
+        confirmBody:
+          'This fetches and merges remote commits into your current branch, which may modify local files or create merge conflicts.',
+        confirmAction: 'Pull'
       },
       changePreview: {
         files_one: '{{count}} file changed',
@@ -1024,6 +1059,7 @@ export const en = {
         restoreFile: 'Failed to restore file.',
         restoreFiles: 'Failed to restore files.',
         discardFile: 'Failed to discard file.',
+        discardFiles: 'Failed to discard files.',
         commitMessageRequired: 'Commit message is required.',
         createCommit: 'Failed to create commit.',
         fetch: 'Failed to fetch.',
@@ -1044,7 +1080,8 @@ export const en = {
       aria: {
         stageFile: 'Stage {{path}}',
         unstageFile: 'Unstage {{path}}',
-        restoreFile: 'Discard changes to {{path}}'
+        restoreFile: 'Discard changes to {{path}}',
+        discardFile: 'Delete changes to {{path}}'
       }
     },
     providers: {

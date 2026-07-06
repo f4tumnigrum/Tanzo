@@ -3,13 +3,36 @@ import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import i18n from '@/i18n'
 import { gitClient } from '@/platform/electron/git-client'
-import type { GitCommitInput, GitPushInput, GitTargetRef } from '@shared/git'
+import type { GitCommitInput, GitPushInput, GitSyncResult, GitTargetRef } from '@shared/git'
 import { gitKeys } from './git-query-keys'
 
 type GitMutationOptions<T> = Omit<T, 'cwd'>
 
+/**
+ * Every distinct write action. Tracked individually so the UI can show which
+ * button is busy instead of graying out the whole dialog behind one boolean.
+ */
+export type GitActionKind =
+  | 'init'
+  | 'stage'
+  | 'unstage'
+  | 'restore'
+  | 'discard'
+  | 'commit'
+  | 'fetch'
+  | 'pull'
+  | 'push'
+  | 'checkout'
+  | 'createBranch'
+  | 'deleteBranch'
+  | 'addRemote'
+  | 'removeRemote'
+  | 'setUser'
+
 export interface GitMutations {
+  readonly pendingAction: GitActionKind | null
   readonly mutating: boolean
+  readonly isPending: (action: GitActionKind) => boolean
   readonly error: string | null
   readonly clearError: () => void
   readonly refresh: () => Promise<void>
@@ -21,6 +44,7 @@ export interface GitMutations {
   readonly restoreFile: (path: string) => Promise<boolean>
   readonly restoreFiles: (paths: readonly string[]) => Promise<boolean>
   readonly discardFile: (path: string) => Promise<boolean>
+  readonly discardFiles: (paths: readonly string[]) => Promise<boolean>
   readonly commit: (options?: GitMutationOptions<GitCommitInput>) => Promise<boolean>
   readonly fetch: (remote?: string) => Promise<boolean>
   readonly pull: (remote?: string, branch?: string) => Promise<boolean>
@@ -43,10 +67,27 @@ function optional(value: string | undefined): string | undefined {
   return trimmed ? trimmed : undefined
 }
 
+/** Turn a sync outcome into a short, honest success message. */
+function syncMessage(result: GitSyncResult): string {
+  const t = i18n.t
+  if (result.hasConflicts) return t('gitReview.sync.result.conflicts')
+  if (result.noop) {
+    return result.kind === 'fetch'
+      ? t('gitReview.sync.result.fetchedNothing')
+      : t('gitReview.sync.result.upToDate')
+  }
+  if (result.kind === 'push') {
+    return t('gitReview.sync.result.pushed', { count: result.published })
+  }
+  if (result.kind === 'fetch') return t('gitReview.sync.result.fetched')
+  return t('gitReview.sync.result.pulled', { count: result.received })
+}
+
 /**
  * All git write actions. Each runs the IPC call, then invalidates every query
  * scoped to the repository's cwd so React Query refetches the active views —
  * the cache-aware replacement for the controller's old manual `refresh()`.
+ * `pendingAction` records which action is in flight for per-button busy state.
  */
 export function useGitMutations(
   target: GitTargetRef | null,
@@ -54,7 +95,7 @@ export function useGitMutations(
   onCommitted: () => void
 ): GitMutations {
   const queryClient = useQueryClient()
-  const [mutating, setMutating] = useState(false)
+  const [pendingAction, setPendingAction] = useState<GitActionKind | null>(null)
   const [error, setError] = useState<string | null>(null)
   const cwd = target?.cwd ?? ''
 
@@ -64,11 +105,15 @@ export function useGitMutations(
   }, [cwd, queryClient])
 
   const runMutation = useCallback(
-    async (action: () => Promise<unknown>, fallback: string): Promise<boolean> => {
+    async (
+      action: GitActionKind,
+      run: () => Promise<unknown>,
+      fallback: string
+    ): Promise<boolean> => {
       if (!target) return false
-      setMutating(true)
+      setPendingAction(action)
       try {
-        await action()
+        await run()
         await queryClient.invalidateQueries({ queryKey: gitKeys.repo(target.cwd) })
         setError(null)
         return true
@@ -78,7 +123,7 @@ export function useGitMutations(
         toast.error(message)
         return false
       } finally {
-        setMutating(false)
+        setPendingAction(null)
       }
     },
     [queryClient, target]
@@ -87,6 +132,7 @@ export function useGitMutations(
   const initRepository = useCallback(
     (initialBranch?: string) =>
       runMutation(
+        'init',
         () =>
           gitClient.init({ ...(target as GitTargetRef), initialBranch: optional(initialBranch) }),
         i18n.t('gitReview.errors.initializeRepository')
@@ -97,6 +143,7 @@ export function useGitMutations(
   const stageFile = useCallback(
     (path: string) =>
       runMutation(
+        'stage',
         () => gitClient.stage({ ...(target as GitTargetRef), paths: [path] }),
         i18n.t('gitReview.errors.stageFile')
       ),
@@ -108,6 +155,7 @@ export function useGitMutations(
       paths.length === 0
         ? Promise.resolve(false)
         : runMutation(
+            'stage',
             () => gitClient.stage({ ...(target as GitTargetRef), paths }),
             i18n.t('gitReview.errors.stageFiles')
           ),
@@ -117,6 +165,7 @@ export function useGitMutations(
   const unstageFile = useCallback(
     (path: string) =>
       runMutation(
+        'unstage',
         () => gitClient.restoreStaged({ ...(target as GitTargetRef), paths: [path] }),
         i18n.t('gitReview.errors.unstageFile')
       ),
@@ -128,6 +177,7 @@ export function useGitMutations(
       paths.length === 0
         ? Promise.resolve(false)
         : runMutation(
+            'unstage',
             () => gitClient.restoreStaged({ ...(target as GitTargetRef), paths }),
             i18n.t('gitReview.errors.unstageFiles')
           ),
@@ -137,6 +187,7 @@ export function useGitMutations(
   const restoreFile = useCallback(
     (path: string) =>
       runMutation(
+        'restore',
         () => gitClient.restoreWorktree({ ...(target as GitTargetRef), paths: [path] }),
         i18n.t('gitReview.errors.restoreFile')
       ),
@@ -148,6 +199,7 @@ export function useGitMutations(
       paths.length === 0
         ? Promise.resolve(false)
         : runMutation(
+            'restore',
             () => gitClient.restoreWorktree({ ...(target as GitTargetRef), paths }),
             i18n.t('gitReview.errors.restoreFiles')
           ),
@@ -157,9 +209,22 @@ export function useGitMutations(
   const discardFile = useCallback(
     (path: string) =>
       runMutation(
+        'discard',
         () => gitClient.discard({ ...(target as GitTargetRef), paths: [path] }),
         i18n.t('gitReview.errors.discardFile')
       ),
+    [runMutation, target]
+  )
+
+  const discardFiles = useCallback(
+    (paths: readonly string[]) =>
+      paths.length === 0
+        ? Promise.resolve(false)
+        : runMutation(
+            'discard',
+            () => gitClient.discard({ ...(target as GitTargetRef), paths }),
+            i18n.t('gitReview.errors.discardFiles')
+          ),
     [runMutation, target]
   )
 
@@ -171,26 +236,50 @@ export function useGitMutations(
         toast.error(i18n.t('gitReview.errors.commitMessageRequired'))
         return Promise.resolve(false)
       }
-      return runMutation(async () => {
-        await gitClient.commit({ ...target, ...commitOptions, message })
-        onCommitted()
-      }, i18n.t('gitReview.errors.createCommit'))
+      return runMutation(
+        'commit',
+        async () => {
+          await gitClient.commit({ ...target, ...commitOptions, message })
+          onCommitted()
+        },
+        i18n.t('gitReview.errors.createCommit')
+      )
     },
     [commitMessage, onCommitted, runMutation, target]
   )
 
+  const runSync = useCallback(
+    (
+      action: Extract<GitActionKind, 'fetch' | 'pull' | 'push'>,
+      run: () => Promise<GitSyncResult>,
+      fallback: string
+    ) =>
+      runMutation(
+        action,
+        async () => {
+          const result = await run()
+          if (result.hasConflicts) toast.warning(syncMessage(result))
+          else toast.success(syncMessage(result))
+        },
+        fallback
+      ),
+    [runMutation]
+  )
+
   const fetch = useCallback(
     (remote?: string) =>
-      runMutation(
+      runSync(
+        'fetch',
         () => gitClient.fetch({ ...(target as GitTargetRef), remote: optional(remote) }),
         i18n.t('gitReview.errors.fetch')
       ),
-    [runMutation, target]
+    [runSync, target]
   )
 
   const pull = useCallback(
     (remote?: string, branch?: string) =>
-      runMutation(
+      runSync(
+        'pull',
         () =>
           gitClient.pull({
             ...(target as GitTargetRef),
@@ -199,12 +288,13 @@ export function useGitMutations(
           }),
         i18n.t('gitReview.errors.pull')
       ),
-    [runMutation, target]
+    [runSync, target]
   )
 
   const push = useCallback(
     (pushOptions: GitMutationOptions<GitPushInput> = {}) =>
-      runMutation(
+      runSync(
+        'push',
         () =>
           gitClient.push({
             ...(target as GitTargetRef),
@@ -215,12 +305,13 @@ export function useGitMutations(
           }),
         i18n.t('gitReview.errors.push')
       ),
-    [runMutation, target]
+    [runSync, target]
   )
 
   const checkoutBranch = useCallback(
     (branch: string) =>
       runMutation(
+        'checkout',
         () => gitClient.checkout({ ...(target as GitTargetRef), ref: branch }),
         i18n.t('gitReview.errors.checkoutBranch')
       ),
@@ -230,6 +321,7 @@ export function useGitMutations(
   const checkoutRemoteBranch = useCallback(
     (remoteBranch: string, localBranch?: string) =>
       runMutation(
+        'checkout',
         () =>
           gitClient.checkoutRemoteBranch({
             ...(target as GitTargetRef),
@@ -249,6 +341,7 @@ export function useGitMutations(
         return Promise.resolve(false)
       }
       return runMutation(
+        'createBranch',
         () =>
           gitClient.createBranch({
             ...(target as GitTargetRef),
@@ -264,6 +357,7 @@ export function useGitMutations(
   const deleteBranch = useCallback(
     (name: string, force?: boolean) =>
       runMutation(
+        'deleteBranch',
         () => gitClient.deleteBranch({ ...(target as GitTargetRef), name, force }),
         i18n.t('gitReview.errors.deleteBranch')
       ),
@@ -273,6 +367,7 @@ export function useGitMutations(
   const addRemote = useCallback(
     (name: string, url: string, fetchRemote?: boolean) =>
       runMutation(
+        'addRemote',
         () =>
           gitClient.addRemote({
             ...(target as GitTargetRef),
@@ -288,6 +383,7 @@ export function useGitMutations(
   const removeRemote = useCallback(
     (name: string) =>
       runMutation(
+        'removeRemote',
         () => gitClient.removeRemote({ ...(target as GitTargetRef), name }),
         i18n.t('gitReview.errors.removeRemote')
       ),
@@ -297,6 +393,7 @@ export function useGitMutations(
   const setUser = useCallback(
     (name: string, email: string, scope?: 'local' | 'global') =>
       runMutation(
+        'setUser',
         () =>
           gitClient.setUser({
             ...(target as GitTargetRef),
@@ -310,9 +407,15 @@ export function useGitMutations(
   )
 
   const clearError = useCallback(() => setError(null), [])
+  const isPending = useCallback(
+    (action: GitActionKind) => pendingAction === action,
+    [pendingAction]
+  )
 
   return {
-    mutating,
+    pendingAction,
+    mutating: pendingAction !== null,
+    isPending,
     error,
     clearError,
     refresh,
@@ -324,6 +427,7 @@ export function useGitMutations(
     restoreFile,
     restoreFiles,
     discardFile,
+    discardFiles,
     commit,
     fetch,
     pull,

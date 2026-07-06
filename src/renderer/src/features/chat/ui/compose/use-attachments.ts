@@ -4,6 +4,25 @@ import type { FileUIPart } from 'ai'
 import { toast } from 'sonner'
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024
+const LONG_PASTE_THRESHOLD = 2000
+
+function readBlobAsDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(reader.error ?? new Error('read failed'))
+    reader.onload = () => resolve(String(reader.result))
+    reader.readAsDataURL(blob)
+  })
+}
+
+async function pastedTextToPart(text: string): Promise<FileUIPart> {
+  return {
+    type: 'file',
+    mediaType: 'text/plain',
+    filename: 'pasted.txt',
+    url: await readBlobAsDataUrl(new Blob([text], { type: 'text/plain' }))
+  }
+}
 
 function readImageFile(file: File): Promise<FileUIPart> {
   return new Promise((resolve, reject) => {
@@ -88,9 +107,17 @@ export function useAttachments(isStreaming: boolean): {
       const files = Array.from(event.clipboardData.files).filter((file) =>
         file.type.startsWith('image/')
       )
-      if (files.length === 0) return
+      if (files.length > 0) {
+        event.preventDefault()
+        void addFiles(files)
+        return
+      }
+      // Long pasted text becomes a text/plain attachment; the main process
+      // externalizes it to a temp .txt the agent reads with fileRead.
+      const text = event.clipboardData.getData('text/plain')
+      if (text.length < LONG_PASTE_THRESHOLD) return
       event.preventDefault()
-      void addFiles(files)
+      void pastedTextToPart(text).then((part) => setAttachments((prev) => [...prev, part]))
     },
     [addFiles, isStreaming]
   )

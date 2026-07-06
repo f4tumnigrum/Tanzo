@@ -21,12 +21,13 @@ import {
   type GitReviewSelectedFile
 } from './git-selection'
 
-const HISTORY_LIMIT = 80
+export const HISTORY_PAGE_SIZE = 80
 
 export interface GitIntent {
   readonly file: GitReviewSelectedFile | null
   readonly commitHash: string | null
   readonly commitFile: string | null
+  readonly historyLimit: number
 }
 
 export interface GitQueries {
@@ -35,6 +36,8 @@ export interface GitQueries {
   readonly overview: GitOverview | null
   readonly status: GitStatusSnapshot | null
   readonly history: GitHistoryPage | null
+  readonly hasMoreHistory: boolean
+  readonly historyLoading: boolean
   readonly branches: readonly GitBranchInfo[]
   readonly remoteBranches: readonly GitRemoteBranchInfo[]
   readonly remotes: readonly GitRemoteInfo[]
@@ -83,8 +86,9 @@ export function useGitQueries(target: GitTargetRef | null, intent: GitIntent): G
     enabled: repoEnabled
   })
   const history = useQuery({
-    queryKey: gitKeys.history(cwd),
-    queryFn: () => gitClient.listHistory({ ...(target as GitTargetRef), limit: HISTORY_LIMIT }),
+    queryKey: gitKeys.history(cwd, intent.historyLimit),
+    queryFn: () =>
+      gitClient.listHistory({ ...(target as GitTargetRef), limit: intent.historyLimit }),
     enabled: repoEnabled
   })
   const branches = useQuery({
@@ -151,6 +155,8 @@ export function useGitQueries(target: GitTargetRef | null, intent: GitIntent): G
     overview: overview.data ?? null,
     status: statusData,
     history: historyData,
+    hasMoreHistory: (historyData?.entries.length ?? 0) >= intent.historyLimit,
+    historyLoading: history.isFetching,
     branches: repoEnabled ? (branches.data ?? []) : [],
     remoteBranches: repoEnabled ? (remoteBranches.data ?? []) : [],
     remotes: repoEnabled ? (remotes.data ?? []) : [],

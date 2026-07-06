@@ -39,8 +39,11 @@ export const UserMessage = memo(function UserMessage({
     [parts]
   )
 
-  const imageParts = useMemo(
-    () => parts.filter(isFileUIPart).filter((part) => part.mediaType.startsWith('image/')),
+  const attachmentParts = useMemo(
+    () =>
+      parts
+        .filter(isFileUIPart)
+        .filter((part) => part.mediaType.startsWith('image/') || part.mediaType === 'text/plain'),
     [parts]
   )
 
@@ -203,10 +206,10 @@ export const UserMessage = memo(function UserMessage({
           </MessageContent>
         ) : null}
 
-        {imageParts.length > 0 ? (
+        {attachmentParts.length > 0 ? (
           <div className="flex flex-wrap justify-end gap-1.5">
-            {imageParts.map((part, index) => (
-              <ImageAttachment key={`image-${index}`} part={part} />
+            {attachmentParts.map((part, index) => (
+              <ImageAttachment key={`attachment-${index}`} part={part} />
             ))}
           </div>
         ) : null}

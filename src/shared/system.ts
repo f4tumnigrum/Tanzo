@@ -6,8 +6,16 @@ export const SYSTEM_CHANNELS = {
   toggleMaximize: 'window:toggle-maximize',
   close: 'window:close',
   isMaximized: 'window:is-maximized',
-  pickDirectory: 'system:pick-directory'
+  pickDirectory: 'system:pick-directory',
+  openPath: 'system:open-path',
+  revealInFolder: 'system:reveal-in-folder'
 } as const
+
+export interface OpenPathResult {
+  ok: boolean
+  /** Present when the path could not be opened (missing, not a directory, or OS error). */
+  error?: string
+}
 
 export type ElectronColorScheme = 'light' | 'dark'
 

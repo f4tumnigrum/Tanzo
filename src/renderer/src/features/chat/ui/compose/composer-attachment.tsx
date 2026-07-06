@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { FileUIPart } from 'ai'
-import { X } from 'lucide-react'
+import { FileText, X } from 'lucide-react'
 import { Dialog, DialogContent, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 
@@ -16,6 +16,25 @@ export function ComposerAttachment({
   imageTitle: string
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
+
+  if (!part.mediaType.startsWith('image/')) {
+    return (
+      <div className="group/att relative flex size-16 flex-col items-center justify-center gap-1 rounded-[var(--radius-lg)] border border-border/60 bg-muted/40">
+        <FileText className="size-5 text-foreground/60" strokeWidth={1.5} />
+        <span className="max-w-full truncate px-1 text-[0.5625rem] text-foreground/60">
+          {part.filename ?? 'txt'}
+        </span>
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label={removeLabel}
+          className="absolute top-0.5 right-0.5 rounded-full bg-background/80 p-0.5 text-foreground/70 opacity-0 shadow-sm transition hover:text-foreground group-hover/att:opacity-100 focus-visible:opacity-100"
+        >
+          <X className="size-3" strokeWidth={2} />
+        </button>
+      </div>
+    )
+  }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>

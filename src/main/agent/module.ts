@@ -48,6 +48,7 @@ import { createPluginStateStore } from './plugins/plugin-state-db'
 import { createMarketplaceSourceStore } from './plugins/marketplace-source-db'
 import { createMarketplaceInstaller } from './plugins/marketplace-install'
 import { createAgentStore } from './store'
+import { PASTED_TEXT_DIR } from './runtime/pasted-text'
 import { createBuildTools } from './tools/registry'
 import type { AgentService, ChunkSink, ChunkSinkMeta } from './runtime/types'
 import type { SkillsStore } from './skills/types'
@@ -379,8 +380,12 @@ export function createAgentModule(options: AgentModuleOptions): AgentModule {
 
   function toolDeps(workspaceRoot: string, mode: PermissionMode): ToolDeps {
     const dangerous = mode === 'dangerous'
+    const fs = createWorkspaceFs(workspaceRoot, { dangerous })
+    // Long pasted text is externalized to temp .txt files by the chat inbox;
+    // fileRead must be able to reach them in sandboxed modes.
+    fs.registerReadRoot(PASTED_TEXT_DIR)
     return {
-      fs: createWorkspaceFs(workspaceRoot, { dangerous }),
+      fs,
       shell,
       shellSessions,
       questions,

@@ -202,7 +202,9 @@ export function BranchesView({
               disabled={controller.mutating || selectedLocal.current}
               onClick={() => void controller.checkoutBranch(selectedLocal.name)}
             >
-              {t('gitReview.actions.checkout')}
+              {controller.isPending('checkout')
+                ? t('common.actions.refreshing')
+                : t('gitReview.actions.checkout')}
             </Button>
           ) : selectedRemote ? (
             <Button

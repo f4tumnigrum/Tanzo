@@ -25,6 +25,7 @@ import type {
   GitResult,
   GitSetUserInput,
   GitStatusSnapshot,
+  GitSyncResult,
   GitTargetRef,
   GitUserInfo
 } from '@shared/git'
@@ -102,13 +103,13 @@ export const gitClient = {
   commit(input: GitCommitInput): Promise<GitCommitResult> {
     return unwrap(requireGitApi().commit(input))
   },
-  fetch(input: GitFetchInput): Promise<GitStatusSnapshot> {
+  fetch(input: GitFetchInput): Promise<GitSyncResult> {
     return unwrap(requireGitApi().fetch(input))
   },
-  pull(input: GitPullInput): Promise<GitStatusSnapshot> {
+  pull(input: GitPullInput): Promise<GitSyncResult> {
     return unwrap(requireGitApi().pull(input))
   },
-  push(input: GitPushInput): Promise<GitStatusSnapshot> {
+  push(input: GitPushInput): Promise<GitSyncResult> {
     return unwrap(requireGitApi().push(input))
   },
   checkout(input: GitCheckoutInput): Promise<GitStatusSnapshot> {

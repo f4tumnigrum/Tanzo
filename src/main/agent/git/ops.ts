@@ -381,35 +381,49 @@ export async function readCommit(
   }
 }
 
+const BRANCH_FIELD_SEP = '\x1f'
+const BRANCH_REF_FORMAT = [
+  '%(refname:short)',
+  '%(HEAD)',
+  '%(upstream:short)',
+  '%(upstream:track,nobracket)'
+].join(BRANCH_FIELD_SEP)
+
+/** Parse `git for-each-ref --format=... refs/heads` output into branch info. */
+function parseBranchRefs(raw: string): GitBranchInfo[] {
+  const branches: GitBranchInfo[] = []
+  for (const line of raw.split('\n')) {
+    if (!line.trim()) continue
+    const [name = '', head = '', upstream = '', track = ''] = line.split(BRANCH_FIELD_SEP)
+    if (!name) continue
+    const ahead = /ahead (\d+)/.exec(track)
+    const behind = /behind (\d+)/.exec(track)
+    branches.push({
+      name,
+      current: head === '*',
+      ...(upstream ? { upstream } : {}),
+      ahead: ahead ? parseIntSafe(ahead[1] ?? '0') : 0,
+      behind: behind ? parseIntSafe(behind[1] ?? '0') : 0
+    })
+  }
+  return branches
+}
+
 export async function readBranches(
   pool: GitClientPool,
   cwd: string
 ): Promise<GitResult<readonly GitBranchInfo[]>> {
   try {
     const git = pool.client(cwd)
-    const summary = await git.branchLocal()
-    if (summary.all.length === 0) {
-      const current = await git.raw(['symbolic-ref', '--short', 'HEAD']).catch(() => '')
-      return ok(
-        current
-          ? [
-              {
-                name: current,
-                current: true,
-                ahead: 0,
-                behind: 0
-              }
-            ]
-          : []
-      )
-    }
-    const branches: GitBranchInfo[] = summary.all.map((name) => ({
-      name,
-      current: summary.branches[name]?.current ?? false,
-      ahead: 0,
-      behind: 0
-    }))
-    return ok(branches)
+    // `for-each-ref` yields name, current marker, upstream and ahead/behind in a
+    // single call — the values simple-git's branchLocal() leaves at zero.
+    const raw = await git.raw(['for-each-ref', `--format=${BRANCH_REF_FORMAT}`, 'refs/heads'])
+    const branches = parseBranchRefs(raw)
+    if (branches.length > 0) return ok(branches)
+    // Unborn branch (repo with no commits yet): surface the symbolic HEAD name.
+    const current = await git.raw(['symbolic-ref', '--short', 'HEAD']).catch(() => '')
+    const name = current.trim()
+    return ok(name ? [{ name, current: true, ahead: 0, behind: 0 }] : [])
   } catch (error) {
     return fail(error)
   }

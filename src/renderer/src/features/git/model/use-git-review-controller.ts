@@ -21,8 +21,10 @@ import {
   type GitReviewCounts,
   type GitReviewSelectedFile
 } from './git-selection'
-import { useGitQueries } from './use-git-queries'
-import { useGitMutations } from './use-git-mutations'
+import { HISTORY_PAGE_SIZE, useGitQueries } from './use-git-queries'
+import { useGitMutations, type GitActionKind } from './use-git-mutations'
+
+export type { GitActionKind }
 
 type GitMutationOptions<T> = Omit<T, 'cwd'>
 
@@ -33,6 +35,9 @@ export interface GitReviewController {
   readonly overview: GitOverview | null
   readonly status: GitStatusSnapshot | null
   readonly history: GitHistoryPage | null
+  readonly hasMoreHistory: boolean
+  readonly historyLoading: boolean
+  readonly loadMoreHistory: () => void
   readonly branches: readonly GitBranchInfo[]
   readonly remoteBranches: readonly GitRemoteBranchInfo[]
   readonly remotes: readonly GitRemoteInfo[]
@@ -51,6 +56,8 @@ export interface GitReviewController {
   readonly commitLoading: boolean
   readonly commitDiffLoading: boolean
   readonly mutating: boolean
+  readonly pendingAction: GitActionKind | null
+  readonly isPending: (action: GitActionKind) => boolean
   readonly error: string | null
   readonly counts: GitReviewCounts
   readonly setSelectedFile: (file: GitReviewSelectedFile | null) => void
@@ -66,6 +73,7 @@ export interface GitReviewController {
   readonly restoreFile: (path: string) => Promise<boolean>
   readonly restoreFiles: (paths: readonly string[]) => Promise<boolean>
   readonly discardFile: (path: string) => Promise<boolean>
+  readonly discardFiles: (paths: readonly string[]) => Promise<boolean>
   readonly commit: (options?: GitMutationOptions<GitCommitInput>) => Promise<boolean>
   readonly fetch: (remote?: string) => Promise<boolean>
   readonly pull: (remote?: string, branch?: string) => Promise<boolean>
@@ -103,10 +111,21 @@ export function useGitReviewController(
   const [intentCommitHash, setIntentCommitHash] = useState<string | null>(null)
   const [intentCommitFile, setIntentCommitFile] = useState<string | null>(null)
   const [commitMessage, setCommitMessage] = useState('')
+  const [historyLimit, setHistoryLimit] = useState(HISTORY_PAGE_SIZE)
 
   const intent = useMemo(
-    () => ({ file: intentFile, commitHash: intentCommitHash, commitFile: intentCommitFile }),
-    [intentFile, intentCommitHash, intentCommitFile]
+    () => ({
+      file: intentFile,
+      commitHash: intentCommitHash,
+      commitFile: intentCommitFile,
+      historyLimit
+    }),
+    [intentFile, intentCommitHash, intentCommitFile, historyLimit]
+  )
+
+  const loadMoreHistory = useCallback(
+    () => setHistoryLimit((current) => current + HISTORY_PAGE_SIZE),
+    []
   )
 
   const queries = useGitQueries(target, intent)
@@ -146,6 +165,9 @@ export function useGitReviewController(
     overview: queries.overview,
     status: queries.status,
     history: queries.history,
+    hasMoreHistory: queries.hasMoreHistory,
+    historyLoading: queries.historyLoading,
+    loadMoreHistory,
     branches: queries.branches,
     remoteBranches: queries.remoteBranches,
     remotes: queries.remotes,
@@ -164,6 +186,8 @@ export function useGitReviewController(
     commitLoading: queries.commitLoading,
     commitDiffLoading: queries.commitDiffLoading,
     mutating: mutations.mutating,
+    pendingAction: mutations.pendingAction,
+    isPending: mutations.isPending,
     error: mutations.error ?? queries.error,
     counts,
     setSelectedFile: setIntentFile,
@@ -179,6 +203,7 @@ export function useGitReviewController(
     restoreFile: mutations.restoreFile,
     restoreFiles: mutations.restoreFiles,
     discardFile: mutations.discardFile,
+    discardFiles: mutations.discardFiles,
     commit: mutations.commit,
     fetch: mutations.fetch,
     pull: mutations.pull,

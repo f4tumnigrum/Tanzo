@@ -116,6 +116,40 @@ describe('agent/git/ops', () => {
     expect(calls).toEqual(['add:origin:https://example.test/repo.git', 'fetch:origin'])
   })
 
+  it('computes real ahead/behind and upstream for a tracking branch', async () => {
+    const pool = createClientPool()
+    // Base commit on main, then a feature branch that tracks main as its upstream.
+    await writeFile(join(root, 'base.txt'), 'base\n', 'utf8')
+    await execGit(root, ['add', '-A'])
+    await execGit(root, ['commit', '-m', 'base'])
+    await execGit(root, ['checkout', '-b', 'feature'])
+    // Point feature's upstream at main, then diverge: feature +2, behind main +1.
+    await execGit(root, ['branch', '--set-upstream-to=main', 'feature'])
+    await writeFile(join(root, 'f1.txt'), '1\n', 'utf8')
+    await execGit(root, ['add', '-A'])
+    await execGit(root, ['commit', '-m', 'f1'])
+    await writeFile(join(root, 'f2.txt'), '2\n', 'utf8')
+    await execGit(root, ['add', '-A'])
+    await execGit(root, ['commit', '-m', 'f2'])
+    await execGit(root, ['checkout', 'main'])
+    await writeFile(join(root, 'm1.txt'), '1\n', 'utf8')
+    await execGit(root, ['add', '-A'])
+    await execGit(root, ['commit', '-m', 'm1'])
+
+    const result = await readBranches(pool, root)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const feature = result.data.find((branch) => branch.name === 'feature')
+    expect(feature).toBeDefined()
+    expect(feature?.upstream).toBe('main')
+    // feature has 2 commits main lacks (ahead), main has 1 commit feature lacks (behind).
+    expect(feature?.ahead).toBe(2)
+    expect(feature?.behind).toBe(1)
+    const main = result.data.find((branch) => branch.name === 'main')
+    expect(main?.current).toBe(true)
+  })
+
   it('treats an empty initialized repository as a valid unborn branch', async () => {
     const pool = createClientPool()
 

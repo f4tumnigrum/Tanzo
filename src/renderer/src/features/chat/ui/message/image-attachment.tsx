@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { FileUIPart } from 'ai'
-import { ImageIcon } from 'lucide-react'
+import { FileText, ImageIcon } from 'lucide-react'
 import { Dialog, DialogContent, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 
@@ -24,8 +24,26 @@ export function ImageAttachment({
   className?: string
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
+  const isImage = part.mediaType.startsWith('image/')
   const label = part.filename || part.mediaType.replace('image/', '').toUpperCase()
   const size = formatBytes(part.url)
+
+  if (!isImage) {
+    return (
+      <span
+        className={cn(
+          'inline-flex max-w-[14rem] items-center gap-1.5 rounded-full border border-border/60 bg-card/60 py-1 pr-3 pl-2 backdrop-blur-sm',
+          className
+        )}
+      >
+        <FileText className="size-3.5 shrink-0 text-muted-foreground" strokeWidth={1.8} />
+        <span className="truncate text-[0.75rem] font-medium text-foreground/90">{label}</span>
+        {size ? (
+          <span className="shrink-0 text-[0.625rem] text-muted-foreground/60">{size}</span>
+        ) : null}
+      </span>
+    )
+  }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>

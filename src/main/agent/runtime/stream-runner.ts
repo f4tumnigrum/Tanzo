@@ -31,6 +31,7 @@ import { createDbTelemetrySink } from '../telemetry/sinks'
 import type { AgentRuntimeDeps, GoalRuntime, Logger } from './types'
 import type { SkillsStore } from '../skills/types'
 import { buildAgentCall } from './build-agent'
+import { resolvePastedTextPointers } from './pasted-text'
 import { recordFinishedStepDiagnostic, recordPreparedStepDiagnostic } from './prompt-diagnostics'
 import { toolKeyMatchesPattern } from '../tools/registry'
 
@@ -342,7 +343,10 @@ export function startAgentStream(
       })
 
       const initialMessages = canonicalizeToolTranscript(
-        await convertToModelMessages(opts.messages, { tools, ignoreIncompleteToolCalls: true })
+        await convertToModelMessages(resolvePastedTextPointers(opts.messages), {
+          tools,
+          ignoreIncompleteToolCalls: true
+        })
       )
 
       // Rebased model transcript (append-only prefix invariant). Two events

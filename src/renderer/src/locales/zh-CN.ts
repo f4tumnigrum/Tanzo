@@ -855,9 +855,22 @@ export const zhCN = {
     },
     gitReview: {
       title: '工作区 Git',
-      confirmTitle: '恢复文件？',
-      confirmBody: '这会丢弃当前更改，并将文件恢复到最近一次提交的状态。',
-      confirmAction: '恢复',
+      confirmTitle: '丢弃更改？',
+      confirmBody: '这会丢弃所选已跟踪文件的工作区更改，且无法撤销。',
+      confirmAction: '丢弃',
+      discard: {
+        confirmTitle: '删除这些更改？',
+        confirmBody: '这会从工作区中永久删除所选更改（包括未跟踪文件），且无法用 Git 恢复。',
+        confirmBodyUntracked_one: '将永久删除 1 个未跟踪文件，且无法恢复。',
+        confirmBodyUntracked_other: '将永久删除 {{count}} 个未跟踪文件，且无法恢复。',
+        confirmAction: '删除更改'
+      },
+      detached: {
+        title: '游离 HEAD',
+        detail: '你当前不在任何分支上，此处的新提交可能丢失。请创建分支以保留你的工作。',
+        createBranch: '在此创建分支',
+        branchName: '分支名称'
+      },
       tabs: {
         changes: '更改',
         sync: '同步',
@@ -872,6 +885,7 @@ export const zhCN = {
         unstage: '取消暂存',
         unstageAll: '全部取消暂存',
         restore: '丢弃',
+        discard: '删除',
         options: '选项',
         fetch: '抓取',
         pull: '拉取',
@@ -966,16 +980,32 @@ export const zhCN = {
         branch: '分支',
         noUpstream: '无上游',
         forceWithLease: '带租约强制推送',
-        lease: '租约引用（可选）'
+        lease: '租约引用（可选）',
+        result: {
+          fetched: '已从远程抓取到新提交。',
+          fetchedNothing: '已是最新 — 无内容可抓取。',
+          pulled_one: '已拉取 1 个提交。',
+          pulled_other: '已拉取 {{count}} 个提交。',
+          pushed_one: '已向远程推送 1 个提交。',
+          pushed_other: '已向远程推送 {{count}} 个提交。',
+          upToDate: '已是最新。',
+          conflicts: '完成但存在冲突 — 请在工作区中解决。'
+        }
       },
       history: {
         noSubject: '（无信息）',
-        pickCommit: '选择提交'
+        pickCommit: '选择提交',
+        loadMore: '加载更多'
       },
       push: {
         confirmTitle: '推送到远程？',
         confirmBody: '这会把你的本地提交推送到 {{target}}。推送后的提交将发布到远程。',
         forceWarning: '带租约的强制推送可能覆盖远程上的提交，且不易撤销。'
+      },
+      pull: {
+        confirmTitle: '从 {{target}} 拉取？',
+        confirmBody: '这会抓取并合并远程提交到当前分支，可能修改本地文件或产生合并冲突。',
+        confirmAction: '拉取'
       },
       changePreview: {
         files_one: '{{count}} 个文件改动',
@@ -1018,6 +1048,7 @@ export const zhCN = {
         restoreFile: '恢复文件失败。',
         restoreFiles: '恢复文件失败。',
         discardFile: '丢弃文件失败。',
+        discardFiles: '丢弃文件失败。',
         commitMessageRequired: '请填写提交信息。',
         createCommit: '创建提交失败。',
         fetch: '抓取失败。',
@@ -1038,7 +1069,8 @@ export const zhCN = {
       aria: {
         stageFile: '暂存 {{path}}',
         unstageFile: '取消暂存 {{path}}',
-        restoreFile: '丢弃对 {{path}} 的更改'
+        restoreFile: '丢弃对 {{path}} 的更改',
+        discardFile: '删除对 {{path}} 的更改'
       }
     },
     providers: {

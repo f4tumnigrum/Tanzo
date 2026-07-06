@@ -242,6 +242,26 @@ export interface GitCommitResult {
   readonly branch: string
 }
 
+export type GitSyncKind = 'fetch' | 'pull' | 'push'
+
+/**
+ * Outcome of a fetch/pull/push. Carries the refreshed status snapshot plus a
+ * structured summary so the UI can give real positive feedback ("pulled 3
+ * commits", "already up to date", "created conflicts") instead of silence.
+ */
+export interface GitSyncResult {
+  readonly kind: GitSyncKind
+  readonly snapshot: GitStatusSnapshot
+  /** Commits the local branch moved forward by (pull/fetch), if determinable. */
+  readonly received: number
+  /** Commits published to the remote (push), if determinable. */
+  readonly published: number
+  /** True when the operation left conflicts in the working tree. */
+  readonly hasConflicts: boolean
+  /** True when nothing changed (already up to date / nothing to push). */
+  readonly noop: boolean
+}
+
 export interface GitChangedEvent {
   readonly cwd: string
 }
@@ -269,9 +289,9 @@ export interface GitApi {
   restoreWorktree(input: GitPathsInput): Promise<GitResult<GitStatusSnapshot>>
   discard(input: GitPathsInput): Promise<GitResult<GitStatusSnapshot>>
   commit(input: GitCommitInput): Promise<GitResult<GitCommitResult>>
-  fetch(input: GitFetchInput): Promise<GitResult<GitStatusSnapshot>>
-  pull(input: GitPullInput): Promise<GitResult<GitStatusSnapshot>>
-  push(input: GitPushInput): Promise<GitResult<GitStatusSnapshot>>
+  fetch(input: GitFetchInput): Promise<GitResult<GitSyncResult>>
+  pull(input: GitPullInput): Promise<GitResult<GitSyncResult>>
+  push(input: GitPushInput): Promise<GitResult<GitSyncResult>>
   checkout(input: GitCheckoutInput): Promise<GitResult<GitStatusSnapshot>>
   checkoutRemoteBranch(input: GitCheckoutRemoteBranchInput): Promise<GitResult<GitStatusSnapshot>>
   createBranch(input: GitCreateBranchInput): Promise<GitResult<GitStatusSnapshot>>

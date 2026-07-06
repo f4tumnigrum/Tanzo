@@ -1,8 +1,10 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme, type IpcMain } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell, type IpcMain } from 'electron'
+import { stat } from 'node:fs/promises'
 import {
   SYSTEM_CHANNELS,
   type ElectronPlatformInfo,
   type ElectronSystemPreferences,
+  type OpenPathResult,
   type PickDirectoryArgs
 } from '@shared/system'
 
@@ -10,6 +12,8 @@ const HANDLED_CHANNELS = [
   SYSTEM_CHANNELS.getPlatform,
   SYSTEM_CHANNELS.getSystemPreferences,
   SYSTEM_CHANNELS.pickDirectory,
+  SYSTEM_CHANNELS.openPath,
+  SYSTEM_CHANNELS.revealInFolder,
   SYSTEM_CHANNELS.minimize,
   SYSTEM_CHANNELS.close,
   SYSTEM_CHANNELS.isMaximized,
@@ -77,6 +81,37 @@ export function registerSystemIpc(
       : await dialog.showOpenDialog(options)
     return result.canceled ? null : (result.filePaths[0] ?? null)
   })
+
+  target.handle(SYSTEM_CHANNELS.openPath, async (_event, rawPath?: unknown): Promise<OpenPathResult> => {
+    if (typeof rawPath !== 'string' || rawPath.trim().length === 0) {
+      return { ok: false, error: 'invalid-path' }
+    }
+    try {
+      const info = await stat(rawPath)
+      if (!info.isDirectory()) return { ok: false, error: 'not-a-directory' }
+    } catch {
+      return { ok: false, error: 'not-found' }
+    }
+    // shell.openPath returns '' on success, or an OS error string on failure.
+    const error = await shell.openPath(rawPath)
+    return error ? { ok: false, error } : { ok: true }
+  })
+
+  target.handle(
+    SYSTEM_CHANNELS.revealInFolder,
+    async (_event, rawPath?: unknown): Promise<OpenPathResult> => {
+      if (typeof rawPath !== 'string' || rawPath.trim().length === 0) {
+        return { ok: false, error: 'invalid-path' }
+      }
+      try {
+        await stat(rawPath)
+      } catch {
+        return { ok: false, error: 'not-found' }
+      }
+      shell.showItemInFolder(rawPath)
+      return { ok: true }
+    }
+  )
 
   target.handle(SYSTEM_CHANNELS.minimize, () => mainWindowRef()?.minimize())
   target.handle(SYSTEM_CHANNELS.close, () => app.quit())

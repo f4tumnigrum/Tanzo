@@ -17,8 +17,11 @@ import type {
   GitResult,
   GitSetUserInput,
   GitStatusSnapshot,
+  GitSyncKind,
+  GitSyncResult,
   GitUserInfo
 } from '@shared/git'
+import type { SimpleGit } from 'simple-git'
 import { fail, ok } from './errors'
 import { readOverview, readRemotes, readStatus, readUser, type GitClientPool } from './ops'
 
@@ -83,6 +86,31 @@ export async function restoreWorktree(
   }
 }
 
+/**
+ * Partition the requested paths into tracked vs. untracked so `discard` can
+ * apply the right recovery per path. Running `git checkout -- <path>` over an
+ * untracked path aborts the whole batch, which previously left tracked files
+ * un-reverted when the two kinds were mixed.
+ */
+async function partitionTracked(
+  git: SimpleGit,
+  paths: readonly string[]
+): Promise<{ tracked: string[]; untracked: string[] }> {
+  const status = await git.status()
+  const untrackedSet = new Set(
+    status.files
+      .filter((file) => file.index === '?' || file.working_dir === '?')
+      .map((file) => file.path)
+  )
+  const tracked: string[] = []
+  const untracked: string[] = []
+  for (const path of paths) {
+    if (untrackedSet.has(path)) untracked.push(path)
+    else tracked.push(path)
+  }
+  return { tracked, untracked }
+}
+
 export async function discard(
   pool: GitClientPool,
   input: GitPathsInput
@@ -90,9 +118,15 @@ export async function discard(
   try {
     if (input.paths.length === 0) return readStatus(pool, input.cwd)
     const git = pool.client(input.cwd)
-    await git.reset(['--', ...input.paths]).catch(() => undefined)
-    await git.checkout(['--', ...input.paths]).catch(() => undefined)
-    await git.clean('f', ['--', ...input.paths]).catch(() => undefined)
+    const { tracked, untracked } = await partitionTracked(git, input.paths)
+    if (tracked.length > 0) {
+      // Unstage then restore the worktree copy from HEAD for tracked paths.
+      await git.reset(['--', ...tracked]).catch(() => undefined)
+      await git.checkout(['--', ...tracked])
+    }
+    if (untracked.length > 0) {
+      await git.clean('f', ['--', ...untracked])
+    }
     return readStatus(pool, input.cwd)
   } catch (error) {
     return fail(error)
@@ -119,55 +153,98 @@ export async function commit(
   }
 }
 
-export async function fetch(
+async function headSha(git: SimpleGit): Promise<string | null> {
+  return git.revparse(['HEAD']).catch(() => null)
+}
+
+/** Count commits reachable from `to` but not from `from` (0 when unknown). */
+async function countBetween(git: SimpleGit, from: string, to: string): Promise<number> {
+  if (from === to) return 0
+  const raw = await git.raw(['rev-list', '--count', `${from}..${to}`]).catch(() => '0')
+  const parsed = Number.parseInt(raw.trim(), 10)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+/**
+ * Run a fetch/pull/push, then diff HEAD and ahead/behind before/after so the UI
+ * can report a real outcome. `received` = local HEAD advanced (pull); `published`
+ * = commits the remote gained (push, i.e. the ahead count we consumed).
+ */
+async function runSync(
   pool: GitClientPool,
-  input: GitFetchInput
-): Promise<GitResult<GitStatusSnapshot>> {
+  cwd: string,
+  kind: GitSyncKind,
+  run: (git: SimpleGit) => Promise<unknown>
+): Promise<GitResult<GitSyncResult>> {
   try {
-    if (input.remote) assertNotOption(input.remote, 'remote')
-    await pool.client(input.cwd).fetch(input.remote ? [input.remote] : [])
-    return readStatus(pool, input.cwd)
+    const git = pool.client(cwd)
+    const beforeHead = await headSha(git)
+    const beforeStatus = await readStatus(pool, cwd)
+    const beforeAhead = beforeStatus.ok ? beforeStatus.data.head.ahead : 0
+    await run(git)
+    const status = await readStatus(pool, cwd)
+    if (!status.ok) return status
+    const afterHead = await headSha(git)
+    const received = beforeHead && afterHead ? await countBetween(git, beforeHead, afterHead) : 0
+    const published = kind === 'push' ? Math.max(0, beforeAhead - status.data.head.ahead) : 0
+    const hasConflicts = status.data.hasConflicts
+    const noop = !hasConflicts && received === 0 && published === 0
+    return ok({ kind, snapshot: status.data, received, published, hasConflicts, noop })
   } catch (error) {
     return fail(error)
   }
+}
+
+export async function fetch(
+  pool: GitClientPool,
+  input: GitFetchInput
+): Promise<GitResult<GitSyncResult>> {
+  if (input.remote) {
+    try {
+      assertNotOption(input.remote, 'remote')
+    } catch (error) {
+      return fail(error)
+    }
+  }
+  return runSync(pool, input.cwd, 'fetch', (git) => git.fetch(input.remote ? [input.remote] : []))
 }
 
 export async function pull(
   pool: GitClientPool,
   input: GitPullInput
-): Promise<GitResult<GitStatusSnapshot>> {
-  try {
-    const git = pool.client(input.cwd)
-    if (input.remote && input.branch) {
+): Promise<GitResult<GitSyncResult>> {
+  if (input.remote && input.branch) {
+    try {
       assertNotOption(input.remote, 'remote')
       assertNotOption(input.branch, 'branch')
-      await git.pull(input.remote, input.branch)
-    } else await git.pull()
-    return readStatus(pool, input.cwd)
-  } catch (error) {
-    return fail(error)
+    } catch (error) {
+      return fail(error)
+    }
   }
+  return runSync(pool, input.cwd, 'pull', (git) =>
+    input.remote && input.branch ? git.pull(input.remote, input.branch) : git.pull()
+  )
 }
 
 export async function push(
   pool: GitClientPool,
   input: GitPushInput
-): Promise<GitResult<GitStatusSnapshot>> {
-  try {
-    const git = pool.client(input.cwd)
-    const options: string[] = []
-    if (input.forceWithLease) {
-      options.push(input.lease ? `--force-with-lease=${input.lease}` : '--force-with-lease')
-    }
-    if (input.remote && input.branch) {
+): Promise<GitResult<GitSyncResult>> {
+  const options: string[] = []
+  if (input.forceWithLease) {
+    options.push(input.lease ? `--force-with-lease=${input.lease}` : '--force-with-lease')
+  }
+  if (input.remote && input.branch) {
+    try {
       assertNotOption(input.remote, 'remote')
       assertNotOption(input.branch, 'branch')
-      await git.push(input.remote, input.branch, options)
-    } else await git.push(options)
-    return readStatus(pool, input.cwd)
-  } catch (error) {
-    return fail(error)
+    } catch (error) {
+      return fail(error)
+    }
   }
+  return runSync(pool, input.cwd, 'push', (git) =>
+    input.remote && input.branch ? git.push(input.remote, input.branch, options) : git.push(options)
+  )
 }
 
 export async function checkout(

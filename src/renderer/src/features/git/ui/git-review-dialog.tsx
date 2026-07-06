@@ -44,7 +44,8 @@ import {
   formatGitUserLabel
 } from './git-dialog-shared'
 import { ReviewView } from './git-review-view'
-import { HistoryView, SyncView } from './git-sync-history-views'
+import { SyncView } from './git-sync-view'
+import { HistoryView } from './git-history-view'
 
 type GitDialogView = 'review' | 'sync' | 'branches' | 'history'
 

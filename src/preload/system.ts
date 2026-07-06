@@ -3,6 +3,7 @@ import {
   type ElectronPlatformInfo,
   type ElectronSystemPreferences,
   type NativeWindowEffect,
+  type OpenPathResult,
   type PickDirectoryArgs,
   type WindowControlsApi
 } from '@shared/system'
@@ -30,6 +31,10 @@ export const systemApi = {
   ),
   pickDirectory: invoke<(args?: PickDirectoryArgs) => Promise<string | null>>(
     SYSTEM_CHANNELS.pickDirectory
+  ),
+  openPath: invoke<(path: string) => Promise<OpenPathResult>>(SYSTEM_CHANNELS.openPath),
+  revealInFolder: invoke<(path: string) => Promise<OpenPathResult>>(
+    SYSTEM_CHANNELS.revealInFolder
   ),
   onSystemPreferencesChanged: (callback: (preferences: ElectronSystemPreferences) => void) =>
     subscribe<ElectronSystemPreferences>(SYSTEM_CHANNELS.preferencesChanged, callback),

@@ -13,7 +13,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { composeSurfaceClass } from '@/features/chat/ui/compose/surface-style'
 import type { GitReviewController } from '../model'
-import { RestoreConfirm } from './restore-confirm'
+import { DiscardConfirm } from './discard-confirm'
 import { FileTreeSection } from './git-file-tree'
 import {
   EmptyState,
@@ -145,7 +145,10 @@ function CommitPanel({
                     : 'pointer-events-none bg-foreground/30 text-background/70 shadow-none'
                 )}
               >
-                <GitCommitHorizontal className="size-3.5" strokeWidth={1.85} />
+                <GitCommitHorizontal
+                  className={cn('size-3.5', controller.isPending('commit') && 'animate-pulse')}
+                  strokeWidth={1.85}
+                />
                 {amend ? t('gitReview.actions.amend') : t('gitReview.actions.commit')}
               </Button>
             </div>
@@ -177,7 +180,9 @@ export function ReviewView({
   const stageable = unstaged.filter((entry) => !entry.conflicted)
   const stagedPaths = staged.map((entry) => entry.path)
   const stageablePaths = stageable.map((entry) => entry.path)
-  const restoreablePaths = stageable.filter((entry) => !entry.untracked).map((entry) => entry.path)
+  // Discard covers every unstaged change (tracked reverts + untracked deletes);
+  // the backend routes each path to the right recovery.
+  const discardablePaths = stageablePaths
   const untrackedCount = stageable.filter((entry) => entry.untracked).length
   const selectedEntry = controller.selectedFile
     ? (status?.entries.find((entry) => entry.path === controller.selectedFile?.path) ?? null)
@@ -254,9 +259,10 @@ export function ReviewView({
           </div>
           {listView === 'changes' ? (
             <div className="flex shrink-0 items-center gap-1">
-              {restoreablePaths.length > 0 ? (
-                <RestoreConfirm
-                  onConfirm={() => void controller.restoreFiles(restoreablePaths)}
+              {discardablePaths.length > 0 ? (
+                <DiscardConfirm
+                  onConfirm={() => void controller.discardFiles(discardablePaths)}
+                  untrackedCount={untrackedCount}
                   trigger={
                     <Button
                       type="button"
@@ -268,7 +274,9 @@ export function ReviewView({
                       )}
                       disabled={controller.mutating}
                     >
-                      <RotateCcw className="size-3" />
+                      <RotateCcw
+                        className={cn('size-3', controller.isPending('discard') && 'animate-pulse')}
+                      />
                       {t('gitReview.actions.restore')}
                     </Button>
                   }
@@ -282,7 +290,9 @@ export function ReviewView({
                 disabled={controller.mutating || stageablePaths.length === 0}
                 onClick={() => void controller.stageFiles(stageablePaths)}
               >
-                <ArrowDownToLine className="size-3" />
+                <ArrowDownToLine
+                  className={cn('size-3', controller.isPending('stage') && 'animate-pulse')}
+                />
                 {t('gitReview.actions.stageAll')}
               </Button>
             </div>
@@ -295,7 +305,9 @@ export function ReviewView({
               disabled={controller.mutating || stagedPaths.length === 0}
               onClick={() => void controller.unstageFiles(stagedPaths)}
             >
-              <ArrowUpFromLine className="size-3" />
+              <ArrowUpFromLine
+                className={cn('size-3', controller.isPending('unstage') && 'animate-pulse')}
+              />
               {t('gitReview.actions.unstageAll')}
             </Button>
           )}
@@ -404,11 +416,14 @@ export function ReviewView({
                     disabled={controller.mutating || selectedEntry?.conflicted}
                     onClick={() => void controller.stageFile(controller.selectedFile!.path)}
                   >
-                    <ArrowDownToLine className="size-3" />
+                    <ArrowDownToLine
+                      className={cn('size-3', controller.isPending('stage') && 'animate-pulse')}
+                    />
                     {t('gitReview.actions.stage')}
                   </Button>
-                  <RestoreConfirm
-                    onConfirm={() => void controller.restoreFile(controller.selectedFile!.path)}
+                  <DiscardConfirm
+                    onConfirm={() => void controller.discardFile(controller.selectedFile!.path)}
+                    untrackedCount={selectedEntry?.untracked ? 1 : 0}
                     trigger={
                       <Button
                         type="button"
@@ -438,7 +453,9 @@ export function ReviewView({
                   disabled={controller.mutating}
                   onClick={() => void controller.unstageFile(controller.selectedFile!.path)}
                 >
-                  <ArrowUpFromLine className="size-3" />
+                  <ArrowUpFromLine
+                    className={cn('size-3', controller.isPending('unstage') && 'animate-pulse')}
+                  />
                   {t('gitReview.actions.unstage')}
                 </Button>
               )}

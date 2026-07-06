@@ -5,6 +5,7 @@ import { TanzoNotFoundError, TanzoValidationError } from '@shared/errors'
 import { applyApprovalResponses, hasPendingApprovalRequest } from '@shared/approval-responses'
 import type { QueuedMessage, TanzoUIMessage } from '@shared/agent-message'
 import { fingerprint, fingerprintFieldsFor } from '../policy/engine'
+import { externalizePastedTextParts } from './pasted-text'
 import type { ChatKeyedQueue } from './chat-keyed-queue'
 import type { AgentRuntimeDeps, Logger } from './types'
 
@@ -125,6 +126,12 @@ export function createChatInbox(
   }
 
   async function submitMessage(chatId: string, message: TanzoUIMessage): Promise<void> {
+    if (message.role === 'user') {
+      message = await externalizePastedTextParts(message, {
+        chatId,
+        ...(deps.logger ? { logger: deps.logger } : {})
+      })
+    }
     const history = await deps.store.load(chatId)
     if (deps.hooks && history.length === 0) {
       await deps.hooks.runSessionStart({ chatId, source: 'startup' }).catch((error) => {
