@@ -62,8 +62,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     # The Intel (x64) build needs a real x64 runner (macos-13) so its native
     # deps (@vscode/ripgrep, better-sqlite3) resolve to darwin-x64. Those
-    # runners can queue for a long time, so don't let a stuck/failed x64 job
-    # block the release of the other platforms.
+    # runners can queue for a long time; continue-on-error keeps a stuck/failed
+    # x64 build from marking the whole workflow red. The release job (which uses
+    # `if: always()`) still runs and ships the other platforms without it.
     continue-on-error: ${{ matrix.name == 'macOS (x64)' }}
 
     strategy:
@@ -150,8 +151,16 @@ jobs:
 
   release:
     name: GitHub Release
-    needs: package
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [quality, package]
+    # Run even when the x64 package job is stuck/failed (see continue-on-error
+    # above) so the other platforms still ship, but only on tag pushes and only
+    # when quality passed. `always()` is scoped by the explicit result checks:
+    # quality must succeed, and package must not be outright cancelled.
+    if: >-
+      ${{ always()
+      && startsWith(github.ref, 'refs/tags/v')
+      && needs.quality.result == 'success'
+      && needs.package.result != 'cancelled' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
