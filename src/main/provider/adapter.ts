@@ -4,9 +4,11 @@ import type { ProviderAdapter } from './adapter-types'
 import { anthropicAdapter } from './adapters/anthropic'
 import { deepseekAdapter } from './adapters/deepseek'
 import { googleAdapter } from './adapters/google'
+import { minimaxAdapter } from './adapters/minimax'
 import { openaiAdapter } from './adapters/openai'
 import { openaiChatAdapter } from './adapters/openai-chat'
 import { openaiCompatibleAdapter } from './adapters/openai-compatible'
+import { zhipuAdapter } from './adapters/zhipu'
 
 export type { Credentials, ProviderAdapter, RemoteModel } from './adapter-types'
 
@@ -16,6 +18,8 @@ export const ADAPTERS: Record<ProviderId, ProviderAdapter> = {
   anthropic: anthropicAdapter,
   google: googleAdapter,
   deepseek: deepseekAdapter,
+  zhipu: zhipuAdapter,
+  minimax: minimaxAdapter,
   'openai-compatible': openaiCompatibleAdapter
 }
 

@@ -13,9 +13,9 @@ describe('database/migrations on real sqlite', () => {
           .all(['tanzo']) as Array<{ version: number }>
       ).map((row) => row.version)
 
-    expect(versions()).toEqual([1, 19, 20, 21, 22, 23, 24, 25, 26])
+    expect(versions()).toEqual([1, 19, 20, 21, 22, 23, 24, 25, 26, 27])
     expect(() => runMigrations(db, [tanzoMigrations])).not.toThrow()
-    expect(versions()).toEqual([1, 19, 20, 21, 22, 23, 24, 25, 26])
+    expect(versions()).toEqual([1, 19, 20, 21, 22, 23, 24, 25, 26, 27])
   })
 
   it('adds reasoning_effort to conversations created by the initial schema (v24)', () => {
@@ -208,6 +208,83 @@ describe('database/migrations on real sqlite', () => {
           `INSERT INTO provider_connections (
              provider_id, public_fields_json, secret_fields_encrypted_json, updated_at
            ) VALUES ('openai-chat', '{}', '{}', 2)`
+        )
+        .run()
+    ).not.toThrow()
+    db.close()
+  })
+
+  it('accepts zhipu and minimax provider ids after the v27 rebuild', () => {
+    const db = createRealDb()
+
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO provider_connections (
+             provider_id, public_fields_json, secret_fields_encrypted_json, updated_at
+           ) VALUES (?, '{}', '{}', 2)`
+        )
+        .run(['zhipu'])
+    ).not.toThrow()
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO provider_connections (
+             provider_id, public_fields_json, secret_fields_encrypted_json, updated_at
+           ) VALUES (?, '{}', '{}', 2)`
+        )
+        .run(['minimax'])
+    ).not.toThrow()
+    db.close()
+  })
+
+  it('preserves provider data through the v27 provider rebuild', () => {
+    const db = createRealDb({ migrate: false })
+    // Apply every migration up to and including v26 (all but the final v27).
+    runMigrations(db, [{ moduleName: 'tanzo', files: tanzoMigrations.files.slice(0, -1) }])
+    db.exec(`
+      INSERT INTO provider_connections (
+        provider_id, public_fields_json, secret_fields_encrypted_json, active_key_id, updated_at
+      ) VALUES ('deepseek', '{"baseUrl":"https://api.deepseek.com"}', '{}', 'primary', 1);
+      INSERT INTO provider_keys (
+        id, provider_id, key_id, label, encrypted_value, status, created_at, updated_at
+      ) VALUES ('deepseek:primary', 'deepseek', 'primary', 'Primary', 'enc:key', 'valid', 1, 1);
+      INSERT INTO provider_models (
+        provider_id, family, model_id, name, model_json, updated_at
+      ) VALUES ('deepseek', 'language', 'deepseek-chat', 'DeepSeek Chat', '{"id":"deepseek-chat","name":"DeepSeek Chat"}', 1);
+      INSERT INTO provider_default_models (provider_id, family, model_id, updated_at)
+        VALUES ('deepseek', 'language', 'deepseek-chat', 1);
+      INSERT INTO provider_defaults (provider_id, family, defaults_json, updated_at)
+        VALUES ('deepseek', 'language', '{"callDefaults":{}}', 1);
+    `)
+
+    runMigrations(db, [tanzoMigrations])
+
+    expect(
+      db
+        .prepare('SELECT active_key_id FROM provider_connections WHERE provider_id = ?')
+        .get(['deepseek'])
+    ).toEqual({ active_key_id: 'primary' })
+    expect(
+      db.prepare('SELECT COUNT(*) AS n FROM provider_keys WHERE provider_id = ?').get(['deepseek'])
+    ).toEqual({ n: 1 })
+    expect(
+      db
+        .prepare('SELECT model_id FROM provider_default_models WHERE provider_id = ?')
+        .get(['deepseek'])
+    ).toEqual({ model_id: 'deepseek-chat' })
+    expect(
+      db
+        .prepare('SELECT COUNT(*) AS n FROM provider_defaults WHERE provider_id = ?')
+        .get(['deepseek'])
+    ).toEqual({ n: 1 })
+
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO provider_connections (
+             provider_id, public_fields_json, secret_fields_encrypted_json, updated_at
+           ) VALUES ('minimax', '{}', '{}', 2)`
         )
         .run()
     ).not.toThrow()

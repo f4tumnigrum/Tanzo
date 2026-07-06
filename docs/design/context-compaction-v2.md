@@ -130,7 +130,7 @@ post-turn 三路径牵动 runId 更迭、stream finish、steering reconcile、ch
 - **I1 · Append-only prefix。** 两次压缩事件之间，每一步发出的 prompt 必须是上一步 prompt 的
   严格前缀扩展。任何会破坏它的机制（volatile 注入、steering 重排、section 内容漂移）要么持久化
   进 transcript，要么只允许发生在压缩事件点（该时刻缓存反正已失效）。此不变量同时服务
-  Anthropic 显式 cache_control、OpenAI/DeepSeek 前缀哈希、Gemini 隐式缓存。
+  Anthropic 显式 cache_control、OpenAI key 路由、DeepSeek 磁盘 prefix-unit 完整匹配、Gemini 隐式缓存。
 - **I2 · 单一转换点。** UI→Model 每个 run 只转换一次；run 内以 `ModelMessage[]` transcript 为
   唯一工作表示。
 - **I3 · Token ledger。** 预算 = 持久化的**每消息 token 账本**，由 provider 报告的步间
@@ -366,7 +366,7 @@ interface CompactionPolicyV2 {
   尾部重新 tokenize，非逐字节相同）；
 - tools 用 `withoutExecute` 剥离 execute（线上序列化不变，客户端不可执行）；
   Anthropic 改 `tool_choice` 会使 tools/system 段缓存失效 → 该路径保持 `auto`，靠指令
-  约束 + `stopWhen: isStepCount(1)`；OpenAI/DeepSeek 前缀哈希不受 tool_choice 影响，
+  约束 + `stopWhen: isStepCount(1)`；OpenAI key 路由与 DeepSeek 自动磁盘缓存均不受 tool_choice 影响，
   照常 `none`。
 
 **路径 B（配置了专用压缩模型 / head 超出其窗口）—— 分块 map-reduce：**
@@ -416,7 +416,7 @@ freeze 机制删除）。
 |---|---|---|
 | Anthropic | system 尾 1h + leading 尾 1h + history 尾 2×5m | 保留 4 断点；第 3 断点改打在**最近一条 summary 消息**（1h）——压缩边界是新前缀家族的根，值得长 TTL；history 尾留 1 个 5m |
 | OpenAI / compatible | `promptCacheKey = tanzo:global:<model>`（D5） | `tanzo:chat:<chatId>`；fork 请求不带 key |
-| DeepSeek | 内存 freeze volatile prefix | 删除 freeze；纯 passthrough（注入已持久化，前缀哈希自然命中） |
+| DeepSeek | 内存 freeze volatile prefix | 删除 freeze；纯 no-op（无请求侧控制面；注入已持久化 → I1 逐字前缀天然命中磁盘 prefix-unit；best-effort、<64 token 不缓存、hitRatio 更抖） |
 | Google | unsupported | 保持无显式标记；I1 使 Gemini 隐式缓存自然受益 |
 
 配套：`buildTools` 输出用 v7 `toolOrder` 固定确定性排序；每回合**快照工具集**——MCP server

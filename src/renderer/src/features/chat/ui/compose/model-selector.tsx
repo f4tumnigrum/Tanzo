@@ -20,6 +20,8 @@ const PROVIDER_ICON: Record<string, typeof Cloud> = {
   google: Bot,
   anthropic: Brain,
   deepseek: Sparkles,
+  zhipu: Sparkles,
+  minimax: Sparkles,
   'openai-compatible': Plug
 }
 

@@ -10,9 +10,11 @@ import type {
 import { anthropicOptionSchemas } from './options/anthropic'
 import { deepseekOptionSchemas } from './options/deepseek'
 import { googleOptionSchemas } from './options/google'
+import { minimaxOptionSchemas } from './options/minimax'
 import { openaiOptionSchemas } from './options/openai'
 import { openaiChatOptionSchemas } from './options/openai-chat'
 import { openaiCompatibleOptionSchemas } from './options/openai-compatible'
+import { zhipuOptionSchemas } from './options/zhipu'
 
 export const EMPTY_DEFAULTS: ProviderDefaultsState = {
   callDefaults: {},
@@ -28,6 +30,8 @@ export const OPTION_SCHEMAS: ProviderOptionSchema[] = [
   ...anthropicOptionSchemas,
   ...googleOptionSchemas,
   ...deepseekOptionSchemas,
+  ...zhipuOptionSchemas,
+  ...minimaxOptionSchemas,
   ...openaiCompatibleOptionSchemas
 ]
 

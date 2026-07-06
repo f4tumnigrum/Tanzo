@@ -13,8 +13,8 @@ the model?* Four invariants drive the design:
 - **I1 — Append-only prefix.** Between two compaction events, every step's prompt is a strict prefix
   extension of the previous step's prompt. Anything that would break this (per-turn volatile content,
   steering reordering, section drift) is either persisted into the transcript or confined to compaction
-  event points. This is what makes provider KV caching (Anthropic explicit, OpenAI/DeepSeek prefix-hash,
-  Gemini implicit) effective.
+  event points. This is what makes provider KV caching (Anthropic explicit, OpenAI key-routed, DeepSeek
+  disk prefix-units, Gemini implicit) effective.
 - **I2 — Single conversion point.** UI→Model conversion happens once per run; the run works on
   `ModelMessage[]`.
 - **I3 — Token ledger.** Budgeting reads provider-reported usage anchors persisted in message metadata;
@@ -148,8 +148,16 @@ summary message records `degraded: 'prune' | 'drop-oldest'` in its `data-compact
   current prefix family — and the last history message (5m, the moving frontier).
 - **OpenAI / OpenAI-compatible** (`openai.ts`) — `promptCacheKey = tanzo:chat:<chatId>` (per-conversation,
   not global) + `promptCacheRetention: '24h'`. Fork requests carry the same key on path A.
-- **DeepSeek / Google** — automatic prefix caching; no explicit markers. The prefix-freeze machinery from
-  v1 is deleted — I1 makes it unnecessary.
+- **DeepSeek** (`deepseek.ts`) — no-op strategy: DeepSeek's on-disk caching is fully automatic with **no
+  request-side control surface** (no markers, no cache key). It matches whole *cache prefix units* (carved at
+  user-input / model-output ends and fixed token intervals under Sliding Window Attention), so a hit needs a
+  request to *fully match* a persisted unit — I1's byte-stable prefix is what earns those matches. It is
+  best-effort (no 100% guarantee), skips inputs < 64 tokens, and evicts units after hours-to-days, so its
+  `cacheReadTokens` is inherently choppier than Anthropic's — do not assume a steady per-step hit ratio.
+  Metrics still surface: the SDK maps `prompt_cache_hit_tokens` to `cacheReadTokens` and derives
+  `noCacheTokens = promptTokens − cacheHit`.
+- **Google** — automatic implicit caching; no explicit markers. For both, the v1 prefix-freeze machinery is
+  deleted — I1 makes it unnecessary.
 
 Tool serialization order is pinned via `toolOrder` (sorted) in `build-agent.ts`, since the Anthropic cache
 prefix includes the tools block.

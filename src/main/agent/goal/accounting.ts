@@ -12,6 +12,14 @@
  * (Anthropic cache_read/creation, OpenAI cached_tokens all map there), so this
  * is provider-agnostic. When the breakdown is unavailable (some
  * openai-compatible backends) fall back conservatively to the full input.
+ *
+ * DeepSeek note: the native adapter always derives `noCacheTokens =
+ * promptTokens − prompt_cache_hit_tokens` whenever a usage object is present
+ * (@ai-sdk/deepseek convert-to-deepseek-usage.ts), so DeepSeek runs take the
+ * precise branch below — cache hits are NOT counted as full-price compute. The
+ * conservative fallback only fires for backends that omit the usage breakdown
+ * entirely (never native DeepSeek). DeepSeek never reports cacheWrite (its
+ * cache writes are free), so the `?? 0` there is correct, not a gap.
  */
 
 export interface UsageForAccounting {

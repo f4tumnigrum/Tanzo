@@ -111,6 +111,13 @@ describe('main/provider/options', () => {
     expect(reasoningEffortOverlay('deepseek', 'low')).toEqual({
       deepseek: { reasoningEffort: 'low' }
     })
+    // Zhipu/MiniMax use free-form (string) reasoning-effort fields.
+    expect(reasoningEffortOverlay('zhipu', 'high')).toEqual({
+      zhipu: { reasoningEffort: 'high' }
+    })
+    expect(reasoningEffortOverlay('minimax', 'medium')).toEqual({
+      minimax: { reasoningEffort: 'medium' }
+    })
     // Nested path (google) expands into the object shape.
     expect(reasoningEffortOverlay('google', 'medium')).toEqual({
       google: { thinkingConfig: { thinkingLevel: 'medium' } }

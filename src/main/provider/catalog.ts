@@ -198,6 +198,54 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     ],
     families: { language: languageFamily }
   },
+  zhipu: {
+    id: 'zhipu',
+    name: 'Zhipu (Z.ai)',
+    description: 'Zhipu GLM language, embedding, and image models.',
+    docsUrl: 'https://docs.z.ai/guides/overview/quick-start',
+    credentialFields: [
+      {
+        key: 'apiKey',
+        label: 'API key',
+        type: 'password',
+        required: true,
+        secret: true
+      },
+      {
+        key: 'baseUrl',
+        label: 'Base URL',
+        type: 'url',
+        required: false,
+        secret: false,
+        placeholder: 'https://open.bigmodel.cn/api/paas/v4'
+      }
+    ],
+    families: { language: languageFamily, embedding: embeddingFamily, image: imageFamily }
+  },
+  minimax: {
+    id: 'minimax',
+    name: 'MiniMax',
+    description: 'MiniMax language models.',
+    docsUrl: 'https://www.minimaxi.com/document',
+    credentialFields: [
+      {
+        key: 'apiKey',
+        label: 'API key',
+        type: 'password',
+        required: true,
+        secret: true
+      },
+      {
+        key: 'baseUrl',
+        label: 'Base URL',
+        type: 'url',
+        required: false,
+        secret: false,
+        placeholder: 'https://api.minimaxi.com/v1'
+      }
+    ],
+    families: { language: languageFamily }
+  },
   'openai-compatible': {
     id: 'openai-compatible',
     name: 'OpenAI-compatible',

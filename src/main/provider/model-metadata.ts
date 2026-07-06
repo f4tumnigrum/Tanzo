@@ -45,7 +45,9 @@ const PROVIDER_KEY_MAP: Partial<Record<ProviderId, string>> = {
   'openai-chat': 'openai',
   anthropic: 'anthropic',
   google: 'google',
-  deepseek: 'deepseek'
+  deepseek: 'deepseek',
+  zhipu: 'zhipuai',
+  minimax: 'minimax'
 }
 
 let cachedData: ModelsDevData | null = null

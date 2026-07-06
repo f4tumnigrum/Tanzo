@@ -530,6 +530,117 @@ DROP TABLE provider_defaults;
 ALTER TABLE provider_defaults_new RENAME TO provider_defaults;
 `
 
+// Rebuild provider tables so their CHECK constraints accept the 'zhipu' and
+// 'minimax' provider ids (Zhipu/GLM and MiniMax via OpenAI-compatible). As
+// with v21, SQLite cannot alter CHECK constraints in place, so each provider
+// table is recreated and data copied over. provider_default_models rows are
+// backed up and restored around the provider_models rebuild because dropping
+// the parent table cascades into it.
+const PROVIDER_IDS_V27 =
+  "('openai', 'openai-chat', 'anthropic', 'google', 'deepseek', 'zhipu', 'minimax', 'openai-compatible')"
+
+const PROVIDER_TABLES_V27 = `
+DROP TRIGGER trg_provider_keys__clear_active_on_delete;
+
+CREATE TABLE provider_connections_new (
+  provider_id                    TEXT PRIMARY KEY CHECK (
+    provider_id IN ${PROVIDER_IDS_V27}
+  ),
+  public_fields_json             TEXT NOT NULL CHECK (json_valid(public_fields_json)),
+  secret_fields_encrypted_json   TEXT NOT NULL CHECK (json_valid(secret_fields_encrypted_json)),
+  active_key_id                  TEXT,
+  connected_at                   INTEGER,
+  updated_at                     INTEGER NOT NULL,
+  last_validated_at              INTEGER,
+  last_validation_succeeded      INTEGER CHECK (last_validation_succeeded IN (0, 1)),
+  last_validation_message        TEXT,
+  last_validation_latency        INTEGER
+);
+INSERT INTO provider_connections_new SELECT * FROM provider_connections;
+DROP TABLE provider_connections;
+ALTER TABLE provider_connections_new RENAME TO provider_connections;
+
+CREATE TABLE provider_keys_new (
+  id                             TEXT PRIMARY KEY,
+  provider_id                    TEXT NOT NULL CHECK (
+    provider_id IN ${PROVIDER_IDS_V27}
+  ),
+  key_id                         TEXT NOT NULL,
+  label                          TEXT NOT NULL,
+  encrypted_value                TEXT NOT NULL,
+  status                         TEXT NOT NULL DEFAULT 'untested' CHECK (
+    status IN ('untested', 'valid', 'invalid')
+  ),
+  created_at                     INTEGER NOT NULL,
+  updated_at                     INTEGER NOT NULL,
+  last_used_at                   INTEGER,
+  last_validated_at              INTEGER,
+  last_validation_succeeded      INTEGER CHECK (last_validation_succeeded IN (0, 1)),
+  last_validation_message        TEXT,
+  last_validation_latency        INTEGER,
+  UNIQUE (provider_id, key_id)
+);
+INSERT INTO provider_keys_new SELECT * FROM provider_keys;
+DROP TABLE provider_keys;
+ALTER TABLE provider_keys_new RENAME TO provider_keys;
+CREATE INDEX idx_provider_keys__provider_updated ON provider_keys (provider_id, updated_at);
+CREATE TRIGGER trg_provider_keys__clear_active_on_delete
+AFTER DELETE ON provider_keys
+FOR EACH ROW
+BEGIN
+  UPDATE provider_connections
+  SET active_key_id = NULL,
+      updated_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000
+  WHERE provider_id = OLD.provider_id
+    AND active_key_id = OLD.key_id;
+END;
+
+CREATE TABLE provider_default_models_backup AS SELECT * FROM provider_default_models;
+
+CREATE TABLE provider_models_new (
+  provider_id                    TEXT NOT NULL CHECK (
+    provider_id IN ${PROVIDER_IDS_V27}
+  ),
+  family                         TEXT NOT NULL CHECK (
+    family IN ('language', 'embedding', 'image', 'transcription', 'speech')
+  ),
+  model_id                       TEXT NOT NULL,
+  name                           TEXT NOT NULL,
+  enabled                        INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+  is_custom                      INTEGER NOT NULL DEFAULT 0 CHECK (is_custom IN (0, 1)),
+  source                         TEXT NOT NULL DEFAULT 'api' CHECK (
+    source IN ('api', 'curated', 'custom')
+  ),
+  model_json                     TEXT NOT NULL CHECK (json_valid(model_json)),
+  context_window_override        INTEGER,
+  updated_at                     INTEGER NOT NULL,
+  PRIMARY KEY (provider_id, family, model_id)
+);
+INSERT INTO provider_models_new SELECT * FROM provider_models;
+DROP TABLE provider_models;
+ALTER TABLE provider_models_new RENAME TO provider_models;
+CREATE INDEX idx_provider_models__provider_family ON provider_models (provider_id, family);
+
+DELETE FROM provider_default_models;
+INSERT INTO provider_default_models SELECT * FROM provider_default_models_backup;
+DROP TABLE provider_default_models_backup;
+
+CREATE TABLE provider_defaults_new (
+  provider_id  TEXT NOT NULL CHECK (
+    provider_id IN ${PROVIDER_IDS_V27}
+  ),
+  family       TEXT NOT NULL CHECK (
+    family IN ('language', 'embedding', 'image', 'transcription', 'speech')
+  ),
+  defaults_json TEXT NOT NULL CHECK (json_valid(defaults_json)),
+  updated_at   INTEGER NOT NULL,
+  PRIMARY KEY (provider_id, family)
+);
+INSERT INTO provider_defaults_new SELECT * FROM provider_defaults;
+DROP TABLE provider_defaults;
+ALTER TABLE provider_defaults_new RENAME TO provider_defaults;
+`
+
 export const tanzoMigrations: ModuleMigrations = {
   moduleName: 'tanzo',
   files: [
@@ -603,6 +714,13 @@ export const tanzoMigrations: ModuleMigrations = {
         if (columns.some((column) => column.name === 'pinned_at')) return
         db.exec('ALTER TABLE conversations ADD COLUMN pinned_at INTEGER')
       }
+    },
+    {
+      // Accept the 'zhipu' and 'minimax' provider ids in provider table CHECK
+      // constraints (Zhipu/GLM and MiniMax via OpenAI-compatible surfaces).
+      version: 27,
+      name: 'provider_zhipu_minimax',
+      up: (db) => db.exec(PROVIDER_TABLES_V27)
     }
   ]
 }
