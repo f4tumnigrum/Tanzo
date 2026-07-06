@@ -60,6 +60,11 @@ jobs:
     needs: quality
     if: github.event_name == 'push'
     runs-on: ${{ matrix.os }}
+    # The Intel (x64) build needs a real x64 runner (macos-13) so its native
+    # deps (@vscode/ripgrep, better-sqlite3) resolve to darwin-x64. Those
+    # runners can queue for a long time, so don't let a stuck/failed x64 job
+    # block the release of the other platforms.
+    continue-on-error: ${{ matrix.name == 'macOS (x64)' }}
 
     strategy:
       fail-fast: false
@@ -75,7 +80,7 @@ jobs:
               dist/*.blockmap
               dist/latest-mac.yml
           - name: macOS (x64)
-            os: macos-latest
+            os: macos-13
             command: pnpm build && pnpm exec electron-builder --mac --x64 --publish never
             artifact-name: Tanzo-macOS-x64
             artifact-path: |
