@@ -1,4 +1,12 @@
-import { cpSync, existsSync, readFileSync, readdirSync, rmSync, type Dirent } from 'node:fs'
+import {
+  cpSync,
+  existsSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  type Dirent
+} from 'node:fs'
 import { basename, join, resolve, sep } from 'node:path'
 import { homedir } from 'node:os'
 import { TanzoValidationError } from '@shared/errors'
@@ -257,11 +265,28 @@ function loadFromRoot(root: SkillRoot, logger: Logger): ResolvedSkill[] {
   }
   const resolved: ResolvedSkill[] = []
   for (const entry of entries) {
-    if (!entry.isDirectory()) continue
-    const skill = loadSkill(join(root.dir, entry.name), root.scope, logger)
+    const entryPath = join(root.dir, entry.name)
+    if (!isDirectoryEntry(entry, entryPath)) continue
+    const skill = loadSkill(entryPath, root.scope, logger)
     if (skill) resolved.push(skill)
   }
   return resolved
+}
+
+/**
+ * True when the entry is a directory, or a symlink/Windows junction that
+ * resolves to one. Skill managers (e.g. the `skills` CLI) install skills as
+ * links pointing at a shared store, and `Dirent.isDirectory()` reports `false`
+ * for links — so we follow the link with `statSync` before skipping it.
+ */
+function isDirectoryEntry(entry: Dirent, entryPath: string): boolean {
+  if (entry.isDirectory()) return true
+  if (!entry.isSymbolicLink()) return false
+  try {
+    return statSync(entryPath).isDirectory()
+  } catch {
+    return false
+  }
 }
 
 function loadSkill(skillDir: string, scope: SkillScope, logger: Logger): ResolvedSkill | undefined {

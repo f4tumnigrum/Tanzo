@@ -1281,6 +1281,147 @@ export const en = {
         }
       }
     },
+    channels: {
+      page: { title: 'Channels' },
+      section: { configured: 'Configured', available: 'Available' },
+      enabled: 'Enable channel',
+      enabledHint: 'Master switch. Requires credentials and a stored secret to connect.',
+      enabledToggleAria: 'enable channel',
+      botIdentity: 'Bot id: {{id}}',
+      activeConversations: '{{n}} active',
+      lastActivity: 'Last activity {{time}}',
+      webhookWarning:
+        'Webhook mode needs a public HTTPS URL. The desktop app runs no public server; use a tunnel/reverse proxy or choose a long-connection mode.',
+      connectionMode: { websocket: 'WebSocket', webhook: 'Webhook' },
+      name: { qq: 'QQ', discord: 'Discord', lark: 'Feishu / Lark', wechat: 'WeChat' },
+      tagline: {
+        qq: 'Outbound connection · no public server needed',
+        discord: 'Gateway connection · no public server needed',
+        lark: 'Long connection · no public server needed',
+        wechat: 'Webhook · public HTTPS required'
+      },
+      description: {
+        qq: 'Drive the local agent through QQ Bot Open Platform.',
+        discord: 'Drive the local agent through a Discord bot over Gateway.',
+        lark: 'Drive the local agent through a Feishu/Lark bot over long connection.',
+        wechat: 'Drive the local agent through a WeChat Dialog Platform bot callback.'
+      },
+      secretLabel: {
+        qq: 'AppSecret',
+        discord: 'Bot Token',
+        lark: 'App Secret',
+        wechat: 'AES Key'
+      },
+      status: {
+        disabled: 'Disabled',
+        connecting: 'Connecting…',
+        connected: 'Connected',
+        error: 'Error',
+        configured: 'Configured',
+        notConfigured: 'Not configured'
+      },
+      credentials: {
+        title: 'Credentials & connection',
+        description: {
+          qq: 'From the QQ Bot Open Platform console (q.qq.com).',
+          discord: 'From the Discord Developer Portal.',
+          lark: 'From the Feishu/Lark open platform app credentials.',
+          wechat: 'From the WeChat Dialog Platform.'
+        }
+      },
+      qq: {
+        appId: 'AppID',
+        mode: 'Connection mode',
+        modeHint: 'WebSocket connects outbound (recommended for desktop).',
+        webhookPath: 'Webhook path',
+        sandbox: 'Sandbox environment',
+        sandboxHint: 'Use QQ sandbox OpenAPI/gateway (for bots pending review).',
+        sandboxToggleAria: 'toggle sandbox'
+      },
+      discord: {
+        applicationId: 'Application ID',
+        applicationIdPlaceholder: 'Discord application id',
+        publicKey: 'Public key (required)',
+        publicKeyPlaceholder: 'Discord public key',
+        publicKeyHint:
+          'Required by the Discord adapter for interaction signature checks; copy it from the Developer Portal.',
+        mentionRoleIds: 'Mention role ids (optional)',
+        rolePlaceholder: 'Role id, Enter to add'
+      },
+      lark: {
+        appId: 'App ID',
+        encryptKey: 'Encrypt key (optional)',
+        encryptKeyPlaceholder: 'Only if event encryption is enabled',
+        domain: 'Domain',
+        domainOption: { feishu: 'Feishu', lark: 'Lark' },
+        mode: 'Incoming transport',
+        modeOption: { ws: 'ws', webhook: 'webhook' },
+        modeHint: 'ws = long connection (recommended for desktop); webhook needs a public URL.'
+      },
+      wechat: {
+        appId: 'AppID',
+        token: 'Verification token',
+        tokenPlaceholder: 'Plain token from the WeChat console',
+        tokenHint: 'The plaintext token (not the secret AES key set below).',
+        env: 'Environment',
+        envOption: { online: 'online', debug: 'debug' },
+        transportNote:
+          'WeChat Dialog Platform delivers events by webhook callback, which needs a public HTTPS URL reachable by WeChat.'
+      },
+      secret: {
+        stored: 'stored',
+        notSet: 'not set',
+        save: 'Save',
+        clear: 'Clear',
+        hint: 'Stored encrypted via the OS secure store. Never displayed again.'
+      },
+      test: {
+        button: 'Test connection',
+        running: 'Testing…',
+        ok: 'Reachable',
+        okWithBot: 'Reachable · bot {{id}}',
+        failed: 'Failed: {{msg}}',
+        unknownError: 'unknown error'
+      },
+      safety: {
+        title: 'Access & safety',
+        description: 'Only allow-listed groups/users can trigger the agent. Empty = nobody.',
+        groups: 'Allowed group / channel ids',
+        users: 'Allowed user ids',
+        groupPlaceholder: 'Group id, Enter to add',
+        userPlaceholder: 'User id, Enter to add',
+        addValue: 'Add value',
+        removeValue: 'Remove {{value}}',
+        permissionMode: 'Permission mode',
+        permissionModeHint:
+          'default: ask in chat · plan: block writes · yolo: auto-approve non-destructive.',
+        mode: { default: 'Default', plan: 'Plan', yolo: 'Auto' },
+        surfaceApprovals: 'Surface approvals in chat',
+        surfaceApprovalsHint: 'When off, any operation needing approval is auto-denied.',
+        surfaceApprovalsAria: 'surface approvals',
+        lastDenied: {
+          title: 'Last blocked source',
+          description:
+            'The bridge received a message, but the allowlist denied it. Add the matching id above and try again.',
+          threadId: 'Thread ID',
+          authorId: 'Author ID',
+          missingAuthor: '(missing)'
+        }
+      },
+      bot: {
+        title: 'Bot identity',
+        description: 'Display name used for fallback mention detection.',
+        name: 'Bot name'
+      },
+      actions: {
+        consoleMenu: 'Console',
+        openConsole: 'Open console',
+        save: 'Save settings',
+        connect: 'Connect',
+        disconnect: 'Disconnect',
+        unsaved: 'Unsaved changes'
+      }
+    },
     settings: {
       page: {
         title: 'Settings',
@@ -1290,6 +1431,7 @@ export const en = {
           hooks: 'Hooks',
           pet: 'Pet',
           tools: 'Tools',
+          channels: 'Channels',
           about: 'About'
         }
       },

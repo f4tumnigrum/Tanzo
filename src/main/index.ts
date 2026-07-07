@@ -11,6 +11,8 @@ import { createAgentModule, type AgentModule } from './agent/module'
 import { createSlashCommandModule, type SlashCommandModule } from './slash-command/module'
 import { createFileMentionModule, type FileMentionModule } from './file-mention/module'
 import { createPetAssetsModule, type PetAssetsModule } from './pet/module'
+import { createChatBridgeModule, type ChatBridgeModule } from './chat-bridge/module'
+import { chatBridgeEventChannel, type ChatBridgeEvent } from '@shared/chat-bridge'
 import {
   initPreferences,
   getPreferences,
@@ -94,6 +96,7 @@ let providerModule: ProviderModule | null = null
 let agentModule: AgentModule | null = null
 let slashCommandModule: SlashCommandModule | null = null
 let fileMentionModule: FileMentionModule | null = null
+let chatBridgeModule: ChatBridgeModule | null = null
 let isQuitting = false
 let devParentWatcher: NodeJS.Timeout | null = null
 let syncPetWindow = (): void => {}
@@ -242,10 +245,46 @@ function bootstrap(): void {
     getWindows: () => BrowserWindow.getAllWindows(),
     getChatWindows: () => (mainWindow && !mainWindow.isDestroyed() ? [mainWindow] : []),
     disabledTools: () => getPreferences().disabledTools,
-    browserAutomationEnabled: () => getPreferences().browserAutomation
+    browserAutomationEnabled: () => getPreferences().browserAutomation,
+    // Mirror every outbound chat chunk to the chat bridge (late-bound; safe before init).
+    observeChunk: (chatId, chunk) =>
+      chatBridgeModule?.observeChunk(
+        chatId,
+        chunk as {
+          type?: string
+          delta?: string
+          toolName?: string
+          toolCallId?: string
+          input?: unknown
+          data?: unknown
+        }
+      )
   })
   agentModule.registerIpc(ipcMain)
   markStartup('agent.module')
+
+  chatBridgeModule = createChatBridgeModule({
+    userDataPath: app.getPath('userData'),
+    agent: {
+      ensureConversation: (chatId) => agentModule!.ensureConversation(chatId),
+      submitMessage: (chatId, message) => agentModule!.service.submitMessage(chatId, message),
+      respondApprovals: (chatId, responses) =>
+        agentModule!.service.respondApprovals(chatId, responses),
+      answerQuestion: (chatId, questionId, reply) =>
+        agentModule!.service.answerQuestion({ chatId, questionId, ...reply }),
+      isRunning: (chatId) => agentModule!.service.isRunning(chatId),
+      loadConversationMessages: (chatId) => agentModule!.loadConversationMessages(chatId),
+      setPermissionMode: (chatId, mode) => agentModule!.setPermissionMode(chatId, mode)
+    },
+    broadcast: (event: ChatBridgeEvent) => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (window.isDestroyed()) continue
+        window.webContents.send(chatBridgeEventChannel(), event)
+      }
+    }
+  })
+  chatBridgeModule.registerIpc(ipcMain)
+  markStartup('chatBridge.module')
 
   slashCommandModule = createSlashCommandModule({ skills: agentModule.skills })
   slashCommandModule.registerIpc(ipcMain)
@@ -315,6 +354,14 @@ function bootstrap(): void {
       log.error('Failed to initialize MCP module', error)
     })
 
+  // Auto-start the chat bridge for any channel the user enabled and stored a secret for.
+  void chatBridgeModule
+    ?.autoStart()
+    .then(() => markStartup('chatBridge.autoStart'))
+    .catch((error) => {
+      log.error('Failed to auto-start chat bridge', error)
+    })
+
   app.on('activate', () => {
     showMainWindow()
   })
@@ -346,6 +393,7 @@ app.on('before-quit', (event) => {
     petWindow = null
     slashCommandModule?.close()
     fileMentionModule?.close()
+    await chatBridgeModule?.close()
     await agentModule?.close()
     await mcpModule?.close()
     providerModule?.close()

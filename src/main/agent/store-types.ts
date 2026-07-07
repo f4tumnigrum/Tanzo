@@ -30,6 +30,7 @@ import type { SubagentTaskRepo } from './repositories/subagent-task-repo'
 export interface AgentStore {
   transaction<T>(fn: () => T): T
   createConversation(input: NewConversationInput): ConversationSummary
+  ensureConversation(id: string, input?: NewConversationInput): ConversationSummary
   forkConversation(input: ForkConversationInput): Promise<ForkConversationResult>
   listConversations(): ConversationSummary[]
   listWorkspaces(): WorkspaceSummary[]

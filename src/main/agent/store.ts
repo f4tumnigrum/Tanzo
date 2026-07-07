@@ -178,6 +178,39 @@ export function createAgentStore(
     return summary
   }
 
+  /**
+   * Ensure a conversation with a caller-provided id exists, creating it if absent. Used by
+   * external drivers (e.g. the chat bridge) that address conversations by a stable external
+   * id (`qq:group:{id}`) rather than a generated UUID. Idempotent.
+   */
+  function ensureConversation(id: string, input: NewConversationInput = {}): ConversationSummary {
+    const existing = conversations.get(id)
+    if (existing) return existing
+    const now = Date.now()
+    const cwd = normalizeCwd(input.cwd ?? defaultCwd)
+    const workspaceId = input.workspaceId?.trim() || workspaceIdFromCwd(cwd)
+    const parentConversationId = input.parentConversationId ?? null
+    const summary: ConversationSummary = {
+      id,
+      title: input.title ?? '',
+      agentId: normalizeAgentId(input.agentId),
+      modelRef: input.modelRef ?? '',
+      subagentModelRef: input.subagentModelRef ?? '',
+      reasoningEffort: input.reasoningEffort ?? '',
+      workspaceId,
+      workspaceName: workspaceNameFromCwd(cwd),
+      cwd,
+      parentConversationId,
+      parentRelation: parentConversationId ? (input.parentRelation ?? 'subagent') : null,
+      pinnedAt: null,
+      createdAt: now,
+      updatedAt: now,
+      archivedAt: null
+    }
+    conversations.insert(summary)
+    return summary
+  }
+
   function deleteConversation(chatId: string): void {
     requireConversation(chatId, 'CHAT_CONVERSATION_NOT_FOUND')
     db.transaction(() => {
@@ -261,6 +294,7 @@ export function createAgentStore(
   return {
     transaction: (fn) => db.transaction(fn),
     createConversation,
+    ensureConversation,
     async forkConversation(input): Promise<ForkConversationResult> {
       const source = requireConversation(input.sourceChatId, 'CHAT_CONVERSATION_NOT_FOUND')
       const sourceMessages = await messages.loadFullHistory(source.id)

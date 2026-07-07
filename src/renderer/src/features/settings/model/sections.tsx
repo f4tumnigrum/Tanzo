@@ -4,6 +4,7 @@ import {
   Blocks,
   Cat,
   Info,
+  MessageCircle,
   Palette,
   Plug,
   Server,
@@ -24,6 +25,7 @@ import { SettingsPermissionsTab } from '../ui/settings-permissions-tab'
 import { SettingsPetTab } from '../ui/settings-pet-tab'
 import { SettingsThemeTab } from '../ui/settings-theme-tab'
 import { SettingsToolsTab } from '../ui/settings-tools-tab'
+import { ChannelsPage } from '@/features/channels/page'
 
 export type SettingsSectionId =
   | 'theme'
@@ -36,6 +38,7 @@ export type SettingsSectionId =
   | 'hooks'
   | 'pet'
   | 'tools'
+  | 'channels'
   | 'about'
 
 export interface SettingsSectionDef {
@@ -124,6 +127,14 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
     defaultLabel: 'Tools',
     icon: Wrench,
     Component: SettingsToolsTab
+  },
+  {
+    id: 'channels',
+    labelKey: 'settings.page.tabs.channels',
+    defaultLabel: 'Channels',
+    icon: MessageCircle,
+    Component: ChannelsPage,
+    embedded: true
   },
   {
     id: 'about',

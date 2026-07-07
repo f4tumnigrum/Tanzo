@@ -11,6 +11,7 @@ import { skillsApi } from './skills'
 import { pluginsApi } from './plugins'
 import { slashCommandApi } from './slash-command'
 import { fileMentionApi } from './file-mention'
+import { chatBridgeApi } from './chat-bridge'
 import { systemApi } from './system'
 import { updaterApi } from './updater'
 
@@ -30,6 +31,7 @@ const tanzoApi = {
   plugins: pluginsApi,
   slashCommand: slashCommandApi,
   fileMention: fileMentionApi,
+  chatBridge: chatBridgeApi,
   pet: petApi,
   browser: browserApi,
   updater: updaterApi,

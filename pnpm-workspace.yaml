@@ -6,3 +6,5 @@ allowBuilds:
   electron: true
   electron-winstaller: true
   esbuild: true
+  # protobufjs postinstall only wires up its own CLI; the Feishu/Lark SDK runtime does not need it.
+  protobufjs: false

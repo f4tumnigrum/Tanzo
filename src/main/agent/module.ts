@@ -6,6 +6,7 @@ import {
   type ChatEvent,
   type ChatNotificationChunk
 } from '@shared/chat'
+import type { TanzoUIMessage } from '@shared/agent-message'
 import type { PermissionMode } from '@shared/policy'
 import { gitEventChannel, type GitChangedEvent } from '@shared/git'
 import { PET_CHANNELS, type PetPresencePayload } from '@shared/pet'
@@ -60,6 +61,23 @@ export interface AgentModule {
   skills: SkillsStore
   plugins: PluginsManager
   presence: PresenceAggregator
+  /**
+   * Set the per-conversation permission mode via the policy engine. Exposed for the
+   * chat bridge, which fixes the approval posture of externally-triggered conversations
+   * (e.g. QQ) before their first run.
+   */
+  setPermissionMode(chatId: string, mode: PermissionMode): void
+  /**
+   * Read the conversation's current messages (unvalidated view). Exposed for the chat
+   * bridge to inspect for pending tool approvals after a run pauses.
+   */
+  loadConversationMessages(chatId: string): TanzoUIMessage[]
+  /**
+   * Ensure a conversation with a caller-provided id exists (idempotent). Exposed for the
+   * chat bridge, which addresses conversations by a stable external id (`qq:group:{id}`)
+   * and must have a persisted conversation row for messages/approvals to be stored.
+   */
+  ensureConversation(chatId: string, cwd?: string): void
   registerIpc(ipcMain: IpcMain): void
   close(): Promise<void>
 }
@@ -75,6 +93,13 @@ export interface AgentModuleOptions {
   disabledTools?: () => readonly string[]
   /** Master switch for the browser-automation capability; read fresh on each build. */
   browserAutomationEnabled?: () => boolean
+  /**
+   * Optional in-process observer of every outbound chat chunk, invoked alongside the
+   * renderer delivery path. Used by the chat bridge to mirror assistant output (text
+   * deltas, status, approval requests) to external chat platforms without a renderer.
+   * Must never throw or block; failures are swallowed by the caller.
+   */
+  observeChunk?: (chatId: string, chunk: Parameters<ChunkSink>[1], meta?: ChunkSinkMeta) => void
 }
 
 interface WebContentsLike {
@@ -201,6 +226,13 @@ export function createAgentModule(options: AgentModuleOptions): AgentModule {
       presence.observeText(chatId, chunk.delta)
     }
     rawSend(chatId, chunk, meta)
+    if (options.observeChunk) {
+      try {
+        options.observeChunk(chatId, chunk, meta)
+      } catch (error) {
+        logger.warn('chat chunk observer threw', { chatId, error })
+      }
+    }
   }
 
   const sendTo = (channel: string, payload: unknown): void => {
@@ -463,6 +495,15 @@ export function createAgentModule(options: AgentModuleOptions): AgentModule {
     skills,
     plugins,
     presence,
+    setPermissionMode(chatId, mode) {
+      policyEngine.setMode(mode, chatId)
+    },
+    loadConversationMessages(chatId) {
+      return store.loadUnvalidated(chatId)
+    },
+    ensureConversation(chatId, cwd) {
+      store.ensureConversation(chatId, { cwd: cwd ?? options.workspaceRoot })
+    },
     registerIpc(ipcMain) {
       unregisterIpc?.()
       unregisterIpc = registerAgentIpc(ipcMain, {

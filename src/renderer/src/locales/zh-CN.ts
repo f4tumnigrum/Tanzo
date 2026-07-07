@@ -1270,6 +1270,145 @@ export const zhCN = {
         }
       }
     },
+    channels: {
+      page: { title: '渠道' },
+      section: { configured: '已配置', available: '可用' },
+      enabled: '启用渠道',
+      enabledHint: '主开关。连接前需填写凭据并保存密钥。',
+      enabledToggleAria: '启用渠道',
+      botIdentity: '机器人 ID: {{id}}',
+      activeConversations: '{{n}} 个活跃会话',
+      lastActivity: '最近活动 {{time}}',
+      webhookWarning:
+        'Webhook 模式需要一个公网 HTTPS 地址。桌面端不运行公网服务；请使用内网穿透/反向代理，或选择长连接模式。',
+      connectionMode: { websocket: 'WebSocket', webhook: 'Webhook' },
+      name: { qq: 'QQ', discord: 'Discord', lark: '飞书 / Lark', wechat: '微信' },
+      tagline: {
+        qq: '出站连接 · 无需公网服务',
+        discord: '网关连接 · 无需公网服务',
+        lark: '长连接 · 无需公网服务',
+        wechat: 'Webhook · 需要公网 HTTPS 地址'
+      },
+      description: {
+        qq: '通过 QQ 机器人开放平台驱动本地 agent。',
+        discord: '通过 Discord 机器人 Gateway 长连接驱动本地 agent。',
+        lark: '通过飞书/Lark 机器人长连接驱动本地 agent。',
+        wechat: '通过微信对话开放平台机器人回调驱动本地 agent。'
+      },
+      secretLabel: {
+        qq: 'AppSecret',
+        discord: '机器人 Token',
+        lark: 'App Secret',
+        wechat: 'AES 密钥'
+      },
+      status: {
+        disabled: '已禁用',
+        connecting: '连接中…',
+        connected: '已连接',
+        error: '错误',
+        configured: '已配置',
+        notConfigured: '未配置'
+      },
+      credentials: {
+        title: '凭据与连接',
+        description: {
+          qq: '来自 QQ 机器人开放平台控制台(q.qq.com)。',
+          discord: '来自 Discord Developer Portal。',
+          lark: '来自飞书/Lark 开放平台应用凭证。',
+          wechat: '来自微信对话开放平台。'
+        }
+      },
+      qq: {
+        appId: 'AppID',
+        mode: '连接方式',
+        modeHint: 'WebSocket 为出站连接(桌面端推荐)。',
+        webhookPath: 'Webhook 路径',
+        sandbox: '沙箱环境',
+        sandboxHint: '使用 QQ 沙箱 OpenAPI/网关(用于审核中的机器人)。',
+        sandboxToggleAria: '切换沙箱环境'
+      },
+      discord: {
+        applicationId: 'Application ID',
+        applicationIdPlaceholder: 'Discord application id',
+        publicKey: '公钥(必填)',
+        publicKeyPlaceholder: 'Discord public key',
+        publicKeyHint: 'Discord adapter 会用它做交互签名校验；请从 Developer Portal 复制。',
+        mentionRoleIds: '触发提及的身份组 ID(可选)',
+        rolePlaceholder: '身份组 ID,回车添加'
+      },
+      lark: {
+        appId: 'App ID',
+        encryptKey: '加密 Key(可选)',
+        encryptKeyPlaceholder: '仅在开启事件加密时填写',
+        domain: '域名',
+        domainOption: { feishu: '飞书', lark: 'Lark' },
+        mode: '接收方式',
+        modeOption: { ws: '长连接', webhook: 'Webhook' },
+        modeHint: 'ws = 长连接(桌面端推荐);webhook 需要公网地址。'
+      },
+      wechat: {
+        appId: 'AppID',
+        token: '校验 Token',
+        tokenPlaceholder: '微信控制台中的明文 Token',
+        tokenHint: '明文 Token(不是下方的 AES 密钥)。',
+        env: '环境',
+        envOption: { online: '正式', debug: '调试' },
+        transportNote:
+          '微信对话开放平台通过 webhook 回调下发事件,需要一个微信能访问的公网 HTTPS 地址。'
+      },
+      secret: {
+        stored: '已保存',
+        notSet: '未设置',
+        save: '保存',
+        clear: '清除',
+        hint: '通过操作系统安全存储加密保存,不会再次显示。'
+      },
+      test: {
+        button: '测试连接',
+        running: '测试中…',
+        ok: '可连接',
+        okWithBot: '可连接 · 机器人 {{id}}',
+        failed: '失败: {{msg}}',
+        unknownError: '未知错误'
+      },
+      safety: {
+        title: '访问与安全',
+        description: '仅白名单中的群/用户可触发 agent。留空 = 无人可用。',
+        groups: '允许的群 / 频道 ID',
+        users: '允许的用户 ID',
+        groupPlaceholder: '群/频道 ID,回车添加',
+        userPlaceholder: '用户 ID,回车添加',
+        addValue: '添加值',
+        removeValue: '移除 {{value}}',
+        permissionMode: '权限模式',
+        permissionModeHint:
+          'default:在聊天中请求审批 · plan:阻止所有写入 · yolo:自动批准非破坏性操作。',
+        mode: { default: '默认', plan: '计划', yolo: '放行' },
+        surfaceApprovals: '在聊天中呈现审批',
+        surfaceApprovalsHint: '关闭时,任何需要审批的操作都会被自动拒绝。',
+        surfaceApprovalsAria: '在聊天中呈现审批',
+        lastDenied: {
+          title: '最近被拦截的来源',
+          description: '桥接已收到消息,但白名单未允许。把对应 ID 加到上方白名单后再试。',
+          threadId: 'Thread ID',
+          authorId: 'Author ID',
+          missingAuthor: '(缺失)'
+        }
+      },
+      bot: {
+        title: '机器人身份',
+        description: '用于兜底提及识别的显示名称。',
+        name: '机器人名称'
+      },
+      actions: {
+        consoleMenu: '控制台',
+        openConsole: '打开控制台',
+        save: '保存设置',
+        connect: '连接',
+        disconnect: '断开',
+        unsaved: '有未保存的更改'
+      }
+    },
     settings: {
       page: {
         title: '设置',
@@ -1279,6 +1418,7 @@ export const zhCN = {
           hooks: '钩子',
           pet: '桌面宠物',
           tools: '工具',
+          channels: '渠道',
           about: '关于'
         }
       },
