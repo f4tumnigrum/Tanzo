@@ -26,6 +26,7 @@ export type {
   ProviderOptionControl,
   ProviderOptionField,
   ProviderOptionSchema,
+  ProviderReasoningCapability,
   ProviderSetupState,
   ProviderWorkspace,
   SaveProviderConnectionInput,

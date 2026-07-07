@@ -1,4 +1,5 @@
 import type { InferUIMessageChunk } from 'ai'
+import type { PermissionMode } from './policy'
 import type {
   AskQuestionAnswer,
   AskQuestionInput,
@@ -59,6 +60,7 @@ export interface ConversationSummary {
   createdAt: number
   updatedAt: number
   archivedAt: number | null
+  permissionMode?: PermissionMode
 }
 
 export interface NewConversationInput {

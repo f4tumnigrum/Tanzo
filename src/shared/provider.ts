@@ -15,6 +15,7 @@ export const PROVIDER_CHANNELS = {
   deleteKey: 'provider:delete-key',
   setActiveKey: 'provider:set-active-key',
   listOptionSchemas: 'provider:list-option-schemas',
+  getReasoning: 'provider:get-reasoning',
   syncModels: 'provider:sync-models',
   saveModelState: 'provider:save-model-state',
   saveDefaults: 'provider:save-defaults'
@@ -216,7 +217,6 @@ export interface ProviderOptionField {
   label: string
   control: ProviderOptionControl
 
-  role?: 'reasoningEffort'
   description?: string
   default?: unknown
   min?: number
@@ -333,34 +333,21 @@ export interface ProviderApi {
   deleteKey(providerId: ProviderId, keyId: string): Promise<ProviderKeySummary[]>
   setActiveKey(providerId: ProviderId, keyId: string): Promise<ProviderWorkspace>
   listOptionSchemas(providerId?: ProviderId, family?: ModelFamily): Promise<ProviderOptionSchema[]>
+  getReasoning(providerId: ProviderId, family?: ModelFamily): Promise<ProviderReasoningCapability>
   syncModels(providerId: ProviderId, family: ModelFamily): Promise<ModelRefreshResult>
   saveModelState(input: SaveProviderModelStateInput): Promise<ProviderWorkspace>
   saveDefaults(input: SaveProviderDefaultsInput): Promise<ProviderWorkspace>
 }
 
-export type ReasoningCapability =
-  | { kind: 'native-thinking' }
-  | { kind: 'native-effort'; values: readonly string[] }
-  | { kind: 'native-config' }
-  | { kind: 'tag-extracted'; tagName: string }
-  | { kind: 'unsupported' }
+export interface ReasoningEffortCapability {
+  providerKey: string
+  path: string
+  values: string[]
+  default: string
+}
 
-export type CacheCapability =
-  | { kind: 'auto' }
-  | { kind: 'ephemeral'; maxBreakpoints: number; ttls: readonly ('5m' | '1h')[] }
-  | { kind: 'unsupported' }
-
-export type StructuredOutputCapability = 'native' | 'jsonTool' | 'unsupported'
-
-export type MultimodalInputKind = 'image' | 'audio' | 'video' | 'pdf'
-
-export interface ProviderCapabilities {
+export interface ProviderReasoningCapability {
   providerId: ProviderId
   family: ModelFamily
-  modelIdGlob?: string
-  reasoning?: ReasoningCapability
-  cache?: CacheCapability
-  structuredOutput?: StructuredOutputCapability
-  multimodalInput?: readonly MultimodalInputKind[]
-  parallelToolCall: boolean
+  effort: ReasoningEffortCapability | null
 }

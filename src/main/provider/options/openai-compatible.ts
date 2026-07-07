@@ -12,18 +12,6 @@ export const openaiCompatibleOptionSchemas: ProviderOptionSchema[] = [
     label: 'OpenAI-compatible options',
     fields: [
       { path: 'user', label: 'User', control: 'string' },
-      {
-        path: 'reasoningEffort',
-        label: 'Reasoning effort',
-
-        control: 'string',
-        role: 'reasoningEffort',
-        default: 'high',
-        choices: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'].map((value) => ({
-          value,
-          label: value
-        }))
-      },
       { path: 'textVerbosity', label: 'Text verbosity', control: 'string' },
       { path: 'strictJsonSchema', label: 'Strict JSON schema', control: 'boolean' }
     ]

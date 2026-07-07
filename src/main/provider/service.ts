@@ -11,6 +11,7 @@ import type {
   ProviderKeySummary,
   ProviderModel,
   ProviderOptionSchema,
+  ProviderReasoningCapability,
   ProviderSetupState,
   ProviderWorkspace,
   SaveProviderConnectionInput,
@@ -24,6 +25,7 @@ import type { LanguageModel } from 'ai'
 import type { ProviderOptions } from '@ai-sdk/provider-utils'
 import { randomUUID } from 'crypto'
 import { TanzoNotFoundError, TanzoValidationError } from '@shared/errors'
+import { getReasoningCapability } from './capabilities'
 import { getAdapter, type Credentials, type RemoteModel } from './adapter'
 import { getProvider, getSupportedFamilies, listProviders } from './catalog'
 import { enrichLanguageModelsWithMetadata } from './model-metadata'
@@ -53,6 +55,7 @@ export interface ProviderService {
   deleteKey(providerId: ProviderId, keyId: string): ProviderKeySummary[]
   setActiveKey(providerId: ProviderId, keyId: string): ProviderWorkspace
   listOptionSchemas(providerId?: ProviderId, family?: ModelFamily): ProviderOptionSchema[]
+  getReasoning(providerId: ProviderId, family?: ModelFamily): ProviderReasoningCapability
   syncModels(providerId: ProviderId, family: ModelFamily): Promise<ModelRefreshResult>
   saveModelState(input: SaveProviderModelStateInput): Promise<ProviderWorkspace>
   saveDefaults(input: SaveProviderDefaultsInput): ProviderWorkspace
@@ -821,6 +824,10 @@ export function createProviderService(store: ProviderStore, codec: SecretCodec):
     listOptionSchemas(providerId, family) {
       if (providerId) getProvider(providerId)
       return listOptionSchemas(providerId, family)
+    },
+    getReasoning(providerId, family = 'language') {
+      getProvider(providerId)
+      return getReasoningCapability(providerId, family)
     },
     async syncModels(providerId, family) {
       const descriptor = getProvider(providerId).families[family]

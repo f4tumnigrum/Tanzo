@@ -5,6 +5,7 @@ export const chatKeys = {
   workspaces: () => [...chatKeys.all, 'workspaces'] as const,
   agents: (kind: string) => [...chatKeys.all, 'agents', kind] as const,
   policyRules: () => [...chatKeys.all, 'policy', 'rules'] as const,
+  policyModeAll: () => [...chatKeys.all, 'policy', 'mode'] as const,
   policyMode: (chatId?: string) =>
     [...chatKeys.all, 'policy', 'mode', chatId ?? '__global__'] as const,
   policyDecisions: () => [...chatKeys.all, 'policy', 'decisions'] as const,

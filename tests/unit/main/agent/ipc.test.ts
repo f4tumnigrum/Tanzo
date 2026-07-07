@@ -67,6 +67,7 @@ function deps() {
     createConversation: vi.fn((input: unknown) => ({ id: 'chat-1', ...(input as object) })),
     listConversations: vi.fn(() => [{ id: 'chat-1' }]),
     getConversation: vi.fn((chatId: string) => ({ id: chatId, parentRelation: null })),
+    rootOf: vi.fn((chatId: string) => chatId),
     load: vi.fn((chatId: string) => [{ id: 'm1', chatId }]),
     loadDisplay: vi.fn((chatId: string) => [{ id: 'm1', chatId }]),
     setConversationModel: vi.fn((chatId: string, modelRef: string) => ({ chatId, modelRef })),
@@ -262,7 +263,9 @@ describe('agent/ipc', () => {
       conversation: { id: 'fork-1', parentRelation: 'fork' },
       input: { sourceChatId: 'chat-1', messageId: 'm1' }
     })
-    expect(handlers.get(CHAT_CHANNELS.listConversations)?.(null)).toEqual([{ id: 'chat-1' }])
+    expect(handlers.get(CHAT_CHANNELS.listConversations)?.(null)).toEqual([
+      { id: 'chat-1', permissionMode: { modeFor: 'chat-1' } }
+    ])
     await expect(
       Promise.resolve(handlers.get(CHAT_CHANNELS.listMessages)?.(null, 'chat-1'))
     ).resolves.toEqual([{ id: 'm1', chatId: 'chat-1' }])

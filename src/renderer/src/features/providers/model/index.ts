@@ -2,6 +2,7 @@ export {
   useProviderCatalog,
   useProviderKeys,
   useProviderOptionSchemas,
+  useProviderReasoning,
   useProviderSetups,
   useProviderWorkspace
 } from './queries'

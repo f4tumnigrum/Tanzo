@@ -12,14 +12,6 @@ export const anthropicOptionSchemas: ProviderOptionSchema[] = [
     label: 'Anthropic language options',
     fields: [
       {
-        path: 'effort',
-        label: 'Reasoning effort',
-        control: 'select',
-        role: 'reasoningEffort',
-        default: 'high',
-        choices: ['low', 'medium', 'high', 'xhigh', 'max'].map((value) => ({ value, label: value }))
-      },
-      {
         path: 'thinking.type',
         label: 'Thinking',
         control: 'select',

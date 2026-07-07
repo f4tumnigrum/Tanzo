@@ -250,7 +250,7 @@ export function Composer({ chatId }: ComposerProps): React.JSX.Element {
           state={{
             isStreaming,
             isStopping: runState.isStopping,
-            permissionMode: mode.data ?? 'default',
+            permissionMode: mode.data ?? activeConversation?.permissionMode ?? 'default',
             contextBadge,
             canSubmitOverride: Boolean(modelRef)
           }}

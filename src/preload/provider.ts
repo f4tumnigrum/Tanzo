@@ -16,6 +16,7 @@ export const providerApi: ProviderApi = {
   deleteKey: invoke<ProviderApi['deleteKey']>(PROVIDER_CHANNELS.deleteKey),
   setActiveKey: invoke<ProviderApi['setActiveKey']>(PROVIDER_CHANNELS.setActiveKey),
   listOptionSchemas: invoke<ProviderApi['listOptionSchemas']>(PROVIDER_CHANNELS.listOptionSchemas),
+  getReasoning: invoke<ProviderApi['getReasoning']>(PROVIDER_CHANNELS.getReasoning),
   syncModels: invoke<ProviderApi['syncModels']>(PROVIDER_CHANNELS.syncModels),
   saveModelState: invoke<ProviderApi['saveModelState']>(PROVIDER_CHANNELS.saveModelState),
   saveDefaults: invoke<ProviderApi['saveDefaults']>(PROVIDER_CHANNELS.saveDefaults)

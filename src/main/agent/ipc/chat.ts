@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { CHAT_CHANNELS } from '@shared/chat'
+import type { ConversationSummary } from '@shared/chat'
 import type { TanzoUIMessage } from '@shared/agent-message'
 import { toAgentSummary } from '../agents'
 import { agentKindSchema, approvalScopeSchema, chatIdSchema } from './schemas'
@@ -100,6 +101,10 @@ function rejectSubagentWrite(deps: AgentIpcDeps, chatId: string): void {
 }
 
 export function chatHandlers(deps: AgentIpcDeps): IpcRegistration[] {
+  const withMode = (summary: ConversationSummary): ConversationSummary => ({
+    ...summary,
+    permissionMode: deps.policy.getMode(deps.store.rootOf(summary.id))
+  })
   return [
     [
       CHAT_CHANNELS.submit,
@@ -163,9 +168,12 @@ export function chatHandlers(deps: AgentIpcDeps): IpcRegistration[] {
     ],
     [
       CHAT_CHANNELS.getConversation,
-      (chatId) => deps.store.getConversation(chatIdSchema.parse(chatId)) ?? null
+      (chatId) => {
+        const summary = deps.store.getConversation(chatIdSchema.parse(chatId))
+        return summary ? withMode(summary) : null
+      }
     ],
-    [CHAT_CHANNELS.listConversations, () => deps.store.listConversations()],
+    [CHAT_CHANNELS.listConversations, () => deps.store.listConversations().map(withMode)],
     [CHAT_CHANNELS.listWorkspaces, () => deps.store.listWorkspaces()],
     [CHAT_CHANNELS.listMessages, (chatId) => deps.store.loadDisplay(chatIdSchema.parse(chatId))],
     [

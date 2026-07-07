@@ -113,6 +113,14 @@ export function useSetPolicyMode() {
       policyClient.setMode(mode, chatId),
     onSuccess: (_result, { mode, chatId }) => {
       queryClient.setQueryData(chatKeys.policyMode(chatId), mode)
+      if (chatId) {
+        queryClient.setQueryData<ConversationSummary[]>(chatKeys.conversations(), (list) =>
+          list?.map((c) => (c.id === chatId ? { ...c, permissionMode: mode } : c))
+        )
+      } else {
+        queryClient.invalidateQueries({ queryKey: chatKeys.policyModeAll() })
+        queryClient.invalidateQueries({ queryKey: chatKeys.conversations() })
+      }
     },
     onError: (error) => toast.error(errorMessage(error, t('policy.notifications.modeChangeFailed')))
   })

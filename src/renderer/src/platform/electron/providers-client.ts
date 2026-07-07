@@ -7,6 +7,7 @@ import type {
   ProviderId,
   ProviderKeySummary,
   ProviderOptionSchema,
+  ProviderReasoningCapability,
   ProviderSetupState,
   ProviderWorkspace,
   SaveProviderConnectionInput,
@@ -84,6 +85,9 @@ export const providersClient = {
     return requireProviderApi()
       .listOptionSchemas(providerId, family)
       .then((schemas) => [...schemas])
+  },
+  getReasoning(providerId: ProviderId, family?: ModelFamily): Promise<ProviderReasoningCapability> {
+    return requireProviderApi().getReasoning(providerId, family)
   },
   syncModels(providerId: ProviderId, family: ModelFamily): Promise<ModelRefreshResult> {
     return requireProviderApi().syncModels(providerId, family)

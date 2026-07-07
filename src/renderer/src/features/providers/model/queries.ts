@@ -54,3 +54,16 @@ export function useProviderOptionSchemas(
     gcTime: PROVIDER_GC_TIME
   })
 }
+
+export function useProviderReasoning(
+  providerId: ProviderId | null | undefined,
+  family?: ModelFamily
+) {
+  return useQuery({
+    queryKey: providerKeys.reasoning(providerId ?? undefined, family),
+    queryFn: () => providersClient.getReasoning(providerId as ProviderId, family),
+    enabled: Boolean(providerId),
+    staleTime: PROVIDER_STALE_TIME,
+    gcTime: PROVIDER_GC_TIME
+  })
+}

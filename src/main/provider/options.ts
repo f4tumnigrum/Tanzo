@@ -7,6 +7,8 @@ import type {
   ProviderId,
   ProviderOptionSchema
 } from '@shared/provider'
+import { reasoningEffortOverlayValue } from '@shared/reasoning'
+import { getReasoningCapability } from './capabilities'
 import { anthropicOptionSchemas } from './options/anthropic'
 import { deepseekOptionSchemas } from './options/deepseek'
 import { googleOptionSchemas } from './options/google'
@@ -58,18 +60,9 @@ export function reasoningEffortOverlay(
   providerId: ProviderId,
   effort: string
 ): ProviderOptions | undefined {
-  for (const schema of listOptionSchemas(providerId, 'language')) {
-    const field = schema.fields.find((candidate) => candidate.role === 'reasoningEffort')
-    if (!field) continue
-    if (field.control === 'select' && !field.choices?.some((choice) => choice.value === effort)) {
-      return undefined
-    }
-    let value: unknown = effort
-    const segments = field.path.split('.')
-    for (let i = segments.length - 1; i >= 0; i -= 1) value = { [segments[i]]: value }
-    return { [schema.providerKey]: value as ProviderOptions[string] }
-  }
-  return undefined
+  const overlay = reasoningEffortOverlayValue(getReasoningCapability(providerId, 'language'), effort)
+  if (!overlay) return undefined
+  return { [overlay.providerKey]: overlay.value as ProviderOptions[string] }
 }
 
 export function normalizeDefaults(input: ProviderDefaultsInput | undefined): ProviderDefaultsState {

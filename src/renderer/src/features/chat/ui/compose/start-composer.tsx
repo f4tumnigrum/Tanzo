@@ -73,7 +73,7 @@ export function StartComposer({
       if (trimmed) parts.push({ type: 'text', text: trimmed })
       if (files) parts.push(...(files as TanzoUIMessage['parts']))
 
-      const effort = effortControl.options ? effortControl.effort : undefined
+      const effort = effortControl.options && selectedEffort ? effortControl.effort : undefined
 
       setIsSubmitting(true)
       try {
@@ -90,7 +90,7 @@ export function StartComposer({
         setIsSubmitting(false)
       }
     },
-    [isSubmitting, modelRef, onStart, effortControl.options, effortControl.effort]
+    [isSubmitting, modelRef, onStart, effortControl.options, effortControl.effort, selectedEffort]
   )
 
   const trailing = (

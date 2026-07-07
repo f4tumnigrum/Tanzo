@@ -7,5 +7,7 @@ export const providerKeys = {
   workspace: (providerId: ProviderId) => [...providerKeys.all, 'workspace', providerId] as const,
   keys: (providerId: ProviderId) => [...providerKeys.all, 'keys', providerId] as const,
   optionSchemas: (providerId?: ProviderId, family?: ModelFamily) =>
-    [...providerKeys.all, 'option-schemas', providerId ?? 'all', family ?? 'all'] as const
+    [...providerKeys.all, 'option-schemas', providerId ?? 'all', family ?? 'all'] as const,
+  reasoning: (providerId?: ProviderId, family?: ModelFamily) =>
+    [...providerKeys.all, 'reasoning', providerId ?? 'all', family ?? 'all'] as const
 }

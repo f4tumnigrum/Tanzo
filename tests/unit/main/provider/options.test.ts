@@ -19,7 +19,7 @@ describe('main/provider/options', () => {
       family: 'language',
       providerKey: 'openai'
     })
-    expect(openaiLanguage[0].fields.map((field) => field.path)).toContain('reasoningEffort')
+    expect(openaiLanguage[0].fields.map((field) => field.path)).not.toContain('reasoningEffort')
     expect(listOptionSchemas('openai-compatible', 'language')[0]).toMatchObject({
       providerId: 'openai-compatible',
       family: 'language',
@@ -100,8 +100,7 @@ describe('main/provider/options', () => {
     })
   })
 
-  it('builds reasoning-effort overlays from the schema role annotation', () => {
-    // Flat path providers write into their own namespace.
+  it('builds reasoning-effort overlays from the provider reasoning capability', () => {
     expect(reasoningEffortOverlay('openai', 'high')).toEqual({
       openai: { reasoningEffort: 'high' }
     })
@@ -111,29 +110,21 @@ describe('main/provider/options', () => {
     expect(reasoningEffortOverlay('deepseek', 'low')).toEqual({
       deepseek: { reasoningEffort: 'low' }
     })
-    // Zhipu/MiniMax use free-form (string) reasoning-effort fields.
     expect(reasoningEffortOverlay('zhipu', 'high')).toEqual({
       zhipu: { reasoningEffort: 'high' }
     })
     expect(reasoningEffortOverlay('minimax', 'medium')).toEqual({
       minimax: { reasoningEffort: 'medium' }
     })
-    // Nested path (google) expands into the object shape.
     expect(reasoningEffortOverlay('google', 'medium')).toEqual({
       google: { thinkingConfig: { thinkingLevel: 'medium' } }
     })
-    // Canonicalized provider key.
     expect(reasoningEffortOverlay('openai-compatible', 'minimal')).toEqual({
       openaiCompatible: { reasoningEffort: 'minimal' }
     })
-    // Strict select fields reject values outside their choices — an effort
-    // inherited across providers must be dropped, not sent to the API.
     expect(reasoningEffortOverlay('openai', 'max')).toBeUndefined()
     expect(reasoningEffortOverlay('google', 'xhigh')).toBeUndefined()
-    // Free-form (string control) fields accept vendor-specific values.
-    expect(reasoningEffortOverlay('openai-compatible', 'ultra-think')).toEqual({
-      openaiCompatible: { reasoningEffort: 'ultra-think' }
-    })
+    expect(reasoningEffortOverlay('openai-compatible', 'ultra-think')).toBeUndefined()
   })
 
   it('deep-merges provider option overrides without mutating inputs', () => {

@@ -168,6 +168,14 @@ export function registerProviderIpc(ipcMain: IpcMain, service: ProviderService):
         )
     ],
     [
+      PROVIDER_CHANNELS.getReasoning,
+      (providerId: unknown, family?: unknown) =>
+        service.getReasoning(
+          providerIdSchema.parse(providerId) as ProviderId,
+          family === undefined ? undefined : (familySchema.parse(family) as ModelFamily)
+        )
+    ],
+    [
       PROVIDER_CHANNELS.syncModels,
       (providerId: unknown, family: unknown) =>
         service.syncModels(

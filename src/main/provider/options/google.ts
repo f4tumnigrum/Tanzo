@@ -12,14 +12,6 @@ export const googleOptionSchemas: ProviderOptionSchema[] = [
     label: 'Google language options',
     fields: [
       {
-        path: 'thinkingConfig.thinkingLevel',
-        label: 'Thinking level',
-        control: 'select',
-        role: 'reasoningEffort',
-        default: 'high',
-        choices: ['minimal', 'low', 'medium', 'high'].map((value) => ({ value, label: value }))
-      },
-      {
         path: 'thinkingConfig.thinkingBudget',
         label: 'Thinking budget',
         control: 'number',
