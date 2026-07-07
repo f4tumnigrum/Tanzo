@@ -64,8 +64,6 @@ export function ChannelDetailView({ channelId }: { channelId: ChannelId }): Reac
   const [dirty, setDirty] = useState(false)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle')
 
-  // Adopt server config without an effect (React "adjust state while rendering"), guarded by
-  // identity so each distinct payload is adopted once and user edits win.
   const [syncedFrom, setSyncedFrom] = useState<ChannelConfig | null>(null)
   if (serverConfig && !dirty && syncedFrom !== serverConfig) {
     setSyncedFrom(serverConfig)
@@ -79,8 +77,7 @@ export function ChannelDetailView({ channelId }: { channelId: ChannelId }): Reac
     setForm((prev) => ({ ...prev, [key]: value }))
     setDirty(true)
   }
-  // Patch a channel-specific settings field. Typed loosely here; each form supplies the exact
-  // key/value pair matching its own settings shape.
+
   const patchSettings = (key: string, value: unknown): void => {
     setForm((prev) => ({ ...prev, settings: { ...prev.settings, [key]: value } }))
     setDirty(true)
@@ -146,7 +143,7 @@ export function ChannelDetailView({ channelId }: { channelId: ChannelId }): Reac
   const hasPendingSecret = secretDraft.length > 0
   const saveOrSecretPending = saveConfig.isPending || setSecret.isPending
   const nothingToSave = !dirty && !hasPendingSecret
-  // Count pending edits for the floating save bar: changed top-level config keys + a pending secret.
+
   const changeCount = useMemo(() => {
     let n = hasPendingSecret ? 1 : 0
     if (serverConfig) {
@@ -159,7 +156,6 @@ export function ChannelDetailView({ channelId }: { channelId: ChannelId }): Reac
     return n
   }, [form, serverConfig, dirty, hasPendingSecret])
 
-  // Auto-reset the transient success/error state back to idle, mirroring the provider save bar.
   useEffect(() => {
     if (saveStatus !== 'success' && saveStatus !== 'error') return
     const timer = setTimeout(() => setSaveStatus('idle'), 2000)

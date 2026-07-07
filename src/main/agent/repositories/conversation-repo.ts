@@ -40,7 +40,7 @@ export interface ConversationRepo {
   listChildren(parentChatId: string, relation?: ConversationParentRelation): ConversationSummary[]
   deleteWorkspace(workspaceId: string): void
   delete(chatId: string): void
-  /** Detach fork children so deleting a parent never cascades into them. */
+
   detachForks(parentChatId: string): void
   touch(chatId: string, updatedAt: number): void
   setTitle(chatId: string, title: string): void
@@ -244,11 +244,7 @@ export function createConversationRepo(db: SqlDatabase, fallbackCwd: string): Co
     setPinnedAt(chatId, pinnedAt) {
       setPinnedAtRow.run({ id: chatId, pinned_at: pinnedAt })
     },
-    // depthOf/rootOf express *execution* lineage: how deep an agent runs below
-    // the conversation that owns its policy mode, task registry, and delegation
-    // budget. A 'fork' edge is pure UI ancestry — the fork behaves as an
-    // independent root — so the walk stops there and only follows 'subagent'
-    // edges upward.
+
     depthOf(chatId) {
       let depth = 0
       let current: string | null = chatId

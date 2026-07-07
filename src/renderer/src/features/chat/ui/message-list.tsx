@@ -34,18 +34,12 @@ export interface MessageListProps {
   className?: string
 }
 
-/**
- * Distance (px) from the true bottom within which the list still counts as
- * "at bottom". Generous on purpose so that per-frame streaming growth cannot
- * flip the state off before the follow-up re-pin lands.
- */
 const BOTTOM_EPSILON = 48
 
-/** Messages mounted on first paint (the visible tail of the thread). */
 const INITIAL_MOUNT_COUNT = 30
-/** Older messages mounted per idle/scroll batch. */
+
 const MOUNT_BATCH_SIZE = 50
-/** Scroll distance (px) from the top that triggers an eager batch mount. */
+
 const TOP_MOUNT_THRESHOLD = 600
 
 function requestIdle(callback: () => void): () => void {
@@ -57,10 +51,6 @@ function requestIdle(callback: () => void): () => void {
   return () => clearTimeout(handle)
 }
 
-/**
- * One row = one subscription. Streaming deltas notify only the row whose
- * message changed; every other row's `memo` sees identical props and skips.
- */
 const MessageRow = memo(function MessageRow({
   session,
   messageId,
@@ -90,21 +80,6 @@ const MessageRow = memo(function MessageRow({
   )
 })
 
-/**
- * Plain scroller — no virtualization. Off-screen messages are skipped by the
- * compositor via `content-visibility: auto`, which is enough for
- * conversation-sized lists and removes the whole class of measurement /
- * scroll-correction bugs a virtualizer brings.
- *
- * Long threads mount progressively: the visible tail renders on the first
- * frame, older messages back-fill in idle batches (or eagerly when the user
- * scrolls near the top), so switch latency is decoupled from thread length.
- *
- * Sticky-bottom is a single writer: a ResizeObserver on the content box
- * re-pins `scrollTop` whenever content grows while the user is at the bottom.
- * Native scroll anchoring is disabled (`overflow-anchor: none`) so the
- * browser never competes with that writer.
- */
 export const MessageList = memo(function MessageList({
   session,
   activeStreamingMessageId,
@@ -120,16 +95,14 @@ export const MessageList = memo(function MessageList({
   const order = useMessageOrder(session)
   const scrollerRef = useRef<HTMLDivElement | null>(null)
   const contentRef = useRef<HTMLDivElement | null>(null)
-  // Threads open pinned to the bottom, so start true.
+
   const atBottomRef = useRef(true)
   const [atBottom, setAtBottom] = useState(true)
 
-  // Progressive mounting state: number of messages hidden at the TOP of the
-  // thread. New messages append at the bottom and never change this.
   const [hiddenCount, setHiddenCount] = useState(() =>
     Math.max(0, order.length - INITIAL_MOUNT_COUNT)
   )
-  // Anchor compensation for batches mounted above the viewport.
+
   const anchorRef = useRef<number | null>(null)
 
   const mountOlderBatch = useCallback(() => {
@@ -156,7 +129,6 @@ export const MessageList = memo(function MessageList({
     scroller?.scrollTo({ top: scroller.scrollHeight, behavior })
   }, [])
 
-  // Open at the bottom whenever the thread changes; reset progressive mount.
   useLayoutEffect(() => {
     atBottomRef.current = true
     setAtBottom(true)
@@ -165,14 +137,11 @@ export const MessageList = memo(function MessageList({
     if (scroller) scroller.scrollTop = scroller.scrollHeight
   }, [threadId, session])
 
-  // Back-fill older messages during idle time until the whole thread is
-  // mounted, keeping the scroll position visually anchored.
   useEffect(() => {
     if (hiddenCount === 0) return
     return requestIdle(mountOlderBatch)
   }, [hiddenCount, mountOlderBatch])
 
-  // Apply anchor compensation synchronously after a batch mounts above.
   useLayoutEffect(() => {
     const anchor = anchorRef.current
     anchorRef.current = null
@@ -181,10 +150,6 @@ export const MessageList = memo(function MessageList({
     scroller.scrollTop += scroller.scrollHeight - anchor
   }, [hiddenCount])
 
-  // Sticky-bottom: whenever the content box changes size (streamed tokens,
-  // images, syntax-highlight reflow, footer changes, `content-visibility`
-  // estimate corrections) while the user is at the bottom, re-pin. Scrolling
-  // away flips `atBottomRef` via the scroll handler, which silences the pin.
   useLayoutEffect(() => {
     const scroller = scrollerRef.current
     const content = contentRef.current

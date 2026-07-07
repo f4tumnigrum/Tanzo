@@ -197,8 +197,7 @@ function normalizePetScale(value: unknown): number {
 
 function normalizeDisabledTools(value: unknown): string[] {
   if (!Array.isArray(value)) return []
-  // Keep known toggleable ids plus dynamic MCP tool ids (mcp__server__tool).
-  // Stale builtin ids from older versions and locked tool ids are dropped.
+
   const known = new Set(TOGGLEABLE_TOOL_IDS)
   const seen = new Set<string>()
   const result: string[] = []
@@ -211,11 +210,6 @@ function normalizeDisabledTools(value: unknown): string[] {
   return result
 }
 
-/**
- * The browser capability used to be a per-tool toggle (`disabledTools:
- * ['browserOpen']`). Carry that intent over: when the new preference is absent
- * but the old per-tool disable is present, treat browser automation as off.
- */
 function normalizeBrowserAutomation(value: unknown, disabledTools: unknown): boolean {
   if (typeof value === 'boolean') return value
   if (Array.isArray(disabledTools) && disabledTools.includes('browserOpen')) return false
@@ -239,7 +233,6 @@ function normalizeWallpaperAsset(value: unknown): WallpaperAsset | null {
 function normalizeWallpaper(value: unknown): WallpaperSettings {
   const parsed = isRecord(value) ? value : {}
 
-  // ── legacy migration: assetPath → single-asset library ──────────────────
   let assets: WallpaperAsset[]
   let activeId: string | null
   if (Array.isArray(parsed.assets)) {
@@ -255,7 +248,6 @@ function normalizeWallpaper(value: unknown): WallpaperSettings {
         ? parsed.activeId
         : (assets[0]?.id ?? null)
   } else {
-    // v1 format: single assetPath field
     const legacyPath =
       typeof parsed.assetPath === 'string' && parsed.assetPath.trim().length > 0
         ? parsed.assetPath.trim()
@@ -309,7 +301,6 @@ function normalizeWallpaper(value: unknown): WallpaperSettings {
   }
 }
 
-/** Font sizes from the pre-typography fontSizePresetId preference. */
 const LEGACY_FONT_SIZE_PRESETS: Record<string, number> = {
   small: 14,
   default: 16,
@@ -320,8 +311,7 @@ function normalizeFontStack(value: unknown): string | null {
   if (typeof value !== 'string') return null
   const trimmed = value.trim()
   if (!trimmed || trimmed.length > 512) return null
-  // Font stacks are injected into CSS custom properties; reject values that
-  // could escape the declaration or smuggle in extra rules.
+
   if (/[;{}<>]|url\s*\(/i.test(trimmed)) return null
   return trimmed
 }

@@ -34,12 +34,6 @@ const PLAN_EXIT_NUDGE =
   'genuine decision still blocks the plan, call askQuestion instead. Do not reply with another ' +
   'text-only plan.'
 
-/**
- * True when the transcript's trailing assistant message carries a tool call
- * that has not produced output yet (awaiting approval, just approved, or
- * streaming). Injecting a user message after it would interleave between the
- * call and its result.
- */
 function hasUnexecutedToolCall(messages: TanzoUIMessage[]): boolean {
   const last = messages.at(-1)
   if (!last || last.role !== 'assistant') return false
@@ -86,11 +80,7 @@ export interface TurnLoop {
     }
   ): Promise<AgentStreamFinalState>
   startGoalContinuation(chatId: string, scheduledGeneration?: number): Promise<void>
-  /**
-   * Abandon a change-set capture that a turn left pending while waiting for tool
-   * approval. Called on cancel/delete so a deferred preview can never leak past
-   * the turn it belongs to. No-op when nothing is pending for the chat.
-   */
+
   discardPendingChangeCapture(chatId: string): void
 }
 
@@ -106,11 +96,6 @@ export function createTurnLoop(
 ): TurnLoop {
   const { engine, runPersistence, compaction, turnFinalizer, steerQueue } = collaborators
 
-  // Change-set capture is scoped to a logical turn, but a turn can span several
-  // run() calls when it pauses for tool approval. Carry the in-progress capture
-  // id across those pauses (keyed by chat) so the change preview is finalized
-  // exactly once — when the turn truly ends — instead of prematurely surfacing
-  // (and then duplicating) while an approval card is still pending.
   const pendingChangeCapture = new Map<string, string>()
 
   const isInflight = (chatId: string): boolean => engine.isRunning(chatId)
@@ -223,10 +208,7 @@ export function createTurnLoop(
           onFinally: async (state) => {
             finalState = state
             const wasOwner = handle.release()
-            // Always reconcile steering on stream end. Terminal dispatch (queued
-            // messages / goal continuation) is driven once by the run() loop for
-            // deferred top-level turns. Non-deferred runs (sub-agent tasks) have
-            // no such loop, so they dispatch per-run here.
+
             try {
               turnFinalizer.reconcile({ chatId: opts.chatId, wasOwner, state })
               if (!opts.deferTerminal && wasOwner) {
@@ -255,9 +237,7 @@ export function createTurnLoop(
             safeFinishPersistence(opts.chatId, opts.runId)
             throw error
           }
-          // onFinally already ran, so the terminal state is settled; the throw
-          // bypassed the stream's onError (e.g. iterator teardown). Log it so
-          // it is not silently lost.
+
           deps.logger?.warn('chat stream threw after settling', {
             chatId: opts.chatId,
             runId: opts.runId,
@@ -270,25 +250,17 @@ export function createTurnLoop(
   }
 
   interface ChangeCapture {
-    /** The capture id for this logical turn (stable across approval-pause resumes). */
     runId: string
-    /** True while a before-checkpoint is live and must be finalized or discarded. */
+
     started: boolean
     cwd: string | undefined
     carried: boolean
-    /** Set once settleChangeCapture ran; repeat calls return the cached verdict. */
+
     settled?: boolean
-    /** Worktree verdict: true/false when verified, null when unavailable. */
+
     verdict?: boolean | null
   }
 
-  /**
-   * Begin (or resume) the change-set capture for a turn. A capture carried over
-   * from an approval pause already has a before-checkpoint, so it is not
-   * re-captured. Returns the capture state the run() finally uses to finalize,
-   * defer, or discard the preview. A failed before-capture leaves `started`
-   * false so nothing is finalized later.
-   */
   async function beginChangeCapture(chatId: string): Promise<ChangeCapture> {
     const carriedId = pendingChangeCapture.get(chatId)
     const capture: ChangeCapture = {
@@ -314,17 +286,6 @@ export function createTurnLoop(
     return capture
   }
 
-  /**
-   * Finalize the change-set capture at the true end of a turn. When the turn
-   * paused for approval, the before-checkpoint is carried to the resuming run()
-   * instead of being finalized. Otherwise the preview is captured once (or
-   * discarded on failure). Idempotent: the terminal path settles before goal
-   * dispatch to obtain the worktree verdict (invariant I5); the run() finally
-   * re-invokes it as a safety net and gets the cached verdict.
-   *
-   * Returns the worktree verdict: true (changed), false (verified unchanged),
-   * or null (no capture / deferred / failed).
-   */
   async function settleChangeCapture(
     chatId: string,
     capture: ChangeCapture,
@@ -337,9 +298,6 @@ export function createTurnLoop(
       return null
     }
     if (turnAwaitingApproval) {
-      // Deferred: keep the before-checkpoint alive for the resuming run(). A
-      // cancel/delete clears it explicitly via discardPendingChangeCapture, so
-      // a paused capture can never leak past the turn it belongs to.
       pendingChangeCapture.set(chatId, capture.runId)
       capture.settled = true
       capture.verdict = null
@@ -385,8 +343,6 @@ export function createTurnLoop(
     let messages = stripIncompleteInputToolParts(incoming)
     const changeCapture = await beginChangeCapture(chatId)
     if (changeCapture.started && !changeCapture.carried && stopIfPreparationCancelled()) {
-      // A brand-new before-checkpoint was just taken but preparation was already
-      // cancelled: discard it here since the run() finally will not execute.
       deps.changeSet?.discard(changeCapture.runId)
       releaseActiveRun()
       return
@@ -399,9 +355,7 @@ export function createTurnLoop(
     let planExitPasses = 0
     let forceExitPlanMode = false
     let injectedThisTurn = false
-    // Set only when the turn ends naturally with an unresolved approval request,
-    // i.e. it will resume in a later run(). Any abort/failure/early-return leaves
-    // this false so the capture is finalized (or discarded) like before.
+
     let turnAwaitingApproval = false
     try {
       for (;;) {
@@ -410,15 +364,6 @@ export function createTurnLoop(
         const def = await deps.store.resolveAgentDefinition(chatId)
         if (stopIfPreparationCancelled()) return
 
-        // Persist the volatile context injection (datetime, git snapshot, goal
-        // nudge, hook context) as a synthetic user message at turn start — the
-        // model transcript stays append-only within the run and the persisted
-        // history matches what the model actually saw (invariant I1). Only once
-        // per logical turn: plan-exit retry passes reuse the injected message.
-        // Skipped while a tool call awaits approval or execution (the approval
-        // resume path): a user message must not be interleaved between a tool
-        // call and its result. Goal continuations (settled assistant tail) do
-        // inject — that is how the continuation prompt reaches the model.
         if (
           !injectedThisTurn &&
           deps.contextEngine &&
@@ -461,10 +406,6 @@ export function createTurnLoop(
             ...(forceExitPlanMode ? { forceExitPlanMode: true } : {})
           })
         } catch (error) {
-          // An abort can surface as an AbortError throw from preparation or
-          // stream teardown; report it as a cancellation instead of a failure.
-          // (run-engine already finished the stream session with the correct
-          // status on throw, so this only keeps pendingTerminal consistent.)
           const aborted = error instanceof Error && error.name === 'AbortError'
           pendingTerminal = aborted
             ? { runId, status: 'aborted' }
@@ -480,9 +421,6 @@ export function createTurnLoop(
         }
         const status = streamStatus(state)
 
-        // Reconcile an in-stream compaction against the persisted transcript:
-        // archive the head under the summary the fork already produced (no
-        // second summarization).
         if (state.inlineCompaction && !state.aborted) {
           try {
             await compaction.reconcileInline(chatId, def, state.inlineCompaction, {
@@ -519,23 +457,15 @@ export function createTurnLoop(
           }
         }
 
-        // A turn that stops to wait for tool approval is not actually over — it
-        // resumes in a fresh run() once the user responds — so flag it to defer
-        // the change preview instead of surfacing it under the approval card.
         turnAwaitingApproval =
           !state.aborted && !state.streamFailed && (await turnPausedForApproval(chatId))
 
-        // Settle the change capture before terminal dispatch so the goal
-        // evaluation reads the real worktree verdict (invariant I5). The
-        // finally-side settle becomes a no-op afterwards.
         state.worktreeChanged = await settleChangeCapture(
           chatId,
           changeCapture,
           turnAwaitingApproval
         )
 
-        // Terminal turn: dispatch queued work / goal continuation exactly once.
-        // The plan-exit retry path `continue`s above and never reaches here.
         await runTerminalDispatch(chatId, state)
 
         pendingTerminal = {
@@ -570,8 +500,6 @@ export function createTurnLoop(
     }
   }
 
-  /** Capture the after-checkpoint and attach the preview. Returns the preview
-   *  (null = worktree unchanged or nothing to attach). */
   async function finalizeChangeSet(
     chatId: string,
     runId: string
@@ -618,13 +546,6 @@ export function createTurnLoop(
     chatId: string,
     scheduledGeneration?: number
   ): Promise<void> {
-    // Guard on the CANCEL clock, not the epoch. A goal continuation is scheduled
-    // through the mailbox and may execute after other legitimate run activity has
-    // begun on this chat. We only want to abandon it if the user explicitly
-    // cancelled between scheduling and execution — which is exactly what
-    // cancelGeneration tracks. Using the epoch clock here would also drop the
-    // continuation whenever any normal run started in the gap. See the RunEngine
-    // "two generation clocks" contract note.
     if (
       scheduledGeneration !== undefined &&
       engine.currentCancelGeneration(chatId) !== scheduledGeneration

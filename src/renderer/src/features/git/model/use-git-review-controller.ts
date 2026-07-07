@@ -93,14 +93,6 @@ export interface GitReviewControllerOptions {
 
 const GIT_REFRESH_DEBOUNCE_MS = 350
 
-/**
- * Assembles the git review controller from three focused pieces: server state
- * via React Query (`useGitQueries`), write actions (`useGitMutations`), and a
- * small amount of local UI intent (selection + commit message). Selection is
- * stored as intent and resolved against the latest data inside `useGitQueries`,
- * which removes the manual race guards and cascading effects the previous
- * implementation needed.
- */
 export function useGitReviewController(
   target: GitTargetRef | null,
   options: GitReviewControllerOptions = {}

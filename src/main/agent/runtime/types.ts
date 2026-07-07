@@ -39,7 +39,7 @@ export interface BuildToolsContext {
   depth: number
   mode: PermissionMode
   messages?: readonly TanzoUIMessage[]
-  /** Run id of the stream this tool set is built for (block-attempt dedupe). */
+
   runId?: string
 }
 

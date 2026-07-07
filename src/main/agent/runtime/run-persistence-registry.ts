@@ -17,7 +17,7 @@ export interface ChatRunPersistenceContext {
 
 interface ConsumedSteer {
   message: TanzoUIMessage
-  /** 0-based step the steer was drained before (prepareStep's stepNumber). */
+
   stepNumber: number
 }
 
@@ -27,13 +27,7 @@ interface RunPersistenceSession {
   baseMessages: TanzoUIMessage[]
   consumedSteers: ConsumedSteer[]
   context: ChatRunPersistenceContext
-  /**
-   * In-memory view of the persisted transcript, hydrated lazily on the first
-   * persist call. The run is the single writer for its conversation while it
-   * is active (run/persistence choreography in run-session-registry.ts), so
-   * subsequent steps merge against this view instead of re-reading the whole
-   * conversation from SQLite on every streaming step.
-   */
+
   persistedView: TanzoUIMessage[] | null
 }
 
@@ -105,15 +99,6 @@ function persistableMessages(messages: TanzoUIMessage[]): TanzoUIMessage[] {
   return messages.filter((message) => message.parts.length > 0)
 }
 
-/**
- * Splice consumed steering into the persisted transcript as close as possible
- * to the position the model saw it (D6-2). Generated assistant messages carry
- * `metadata.steps[0].stepNumber`; a steer drained before step `s` inserts
- * before the first generated message whose steps start at `s + 1` or later.
- * With one aggregated row per reply this degrades to before/after the reply:
- * pre-run steers (step 0) go before it, mid-run steers after it. Fallback for
- * transcripts without step metadata: the first generated boundary.
- */
 function withConsumedSteering(
   session: RunPersistenceSession,
   messages: TanzoUIMessage[]
@@ -147,8 +132,7 @@ function withConsumedSteering(
       const stepNumber = message.metadata?.steps?.[0]?.stepNumber
       if (typeof stepNumber === 'number' && stepNumber >= steer.stepNumber + 1) return i
     }
-    // Steer consumed before the run started → before the first generated
-    // message; consumed after the last persisted step → at the end.
+
     return steer.stepNumber === 0 ? firstGeneratedBoundary() : result.length
   }
   for (const steer of missingSteers) {
@@ -197,8 +181,7 @@ async function persistRunMessages(
   if (!allowed) return false
   const incoming = persistableMessages(withConsumedSteering(session, messages))
   if (incoming.length === 0) return false
-  // First persist hydrates the view from the store; later steps merge against
-  // the in-memory view (the run is the single writer while it is active).
+
   const current = session.persistedView ?? context.store.loadUnvalidated(session.chatId)
   const persisted = mergeGeneratedMessages(session, current, incoming)
   context.store.save(session.chatId, persisted)

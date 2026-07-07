@@ -8,10 +8,6 @@ import { gitKeys } from './git-query-keys'
 
 type GitMutationOptions<T> = Omit<T, 'cwd'>
 
-/**
- * Every distinct write action. Tracked individually so the UI can show which
- * button is busy instead of graying out the whole dialog behind one boolean.
- */
 export type GitActionKind =
   | 'init'
   | 'stage'
@@ -67,7 +63,6 @@ function optional(value: string | undefined): string | undefined {
   return trimmed ? trimmed : undefined
 }
 
-/** Turn a sync outcome into a short, honest success message. */
 function syncMessage(result: GitSyncResult): string {
   const t = i18n.t
   if (result.hasConflicts) return t('gitReview.sync.result.conflicts')
@@ -83,12 +78,6 @@ function syncMessage(result: GitSyncResult): string {
   return t('gitReview.sync.result.pulled', { count: result.received })
 }
 
-/**
- * All git write actions. Each runs the IPC call, then invalidates every query
- * scoped to the repository's cwd so React Query refetches the active views —
- * the cache-aware replacement for the controller's old manual `refresh()`.
- * `pendingAction` records which action is in flight for per-button busy state.
- */
 export function useGitMutations(
   target: GitTargetRef | null,
   commitMessage: string,

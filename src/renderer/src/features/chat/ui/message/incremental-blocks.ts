@@ -1,34 +1,11 @@
 import { splitMarkdownBlocks } from './markdown-blocks'
 
-/**
- * Incremental block splitting for streamed markdown.
- *
- * The legacy pipeline re-ran math-delimiter normalization, the XML-tag scan
- * and remark parsing over the FULL accumulated text on every delta — O(n)
- * per delta, O(n²) per stream. This module freezes completed blocks so each
- * delta only reprocesses the short unfrozen tail:
- *
- *  - Frozen segments are append-only and their content never changes, so the
- *    per-segment React elements keep stable identity and `memo` prevents any
- *    re-parse.
- *  - The freeze boundary only advances at a blank-line boundary where the
- *    frozen prefix is *stable*: no open code fence, no unclosed recognized
- *    XML tag, and balanced math delimiters. Under those conditions the
- *    frozen prefix's rendering can never be affected by later appends, and
- *    per-region processing is equivalent to the legacy whole-text pipeline
- *    (which already split on blank lines via {@link splitMarkdownBlocks}).
- *  - If the input stops being an append (message edited / replaced), the
- *    splitter resets and reprocesses from scratch — worst case is exactly
- *    the legacy behavior.
- */
-
 export type MarkdownSegment =
   { kind: 'md'; content: string } | { kind: 'xml'; tag: string; body: string }
 
 export interface IncrementalBlocksResult {
-  /** Append-only list of finalized segments; identities are stable. */
   frozen: readonly MarkdownSegment[]
-  /** Raw (unnormalized) source after the freeze boundary. */
+
   tail: string
 }
 
@@ -54,11 +31,6 @@ function looksLikeStandaloneMath(content: string): boolean {
   return STANDALONE_MATH_HINT.test(content)
 }
 
-/**
- * Convert LaTeX-style `\[...\]` / `\(...\)` delimiters (and bare standalone
- * `[ ... ]` math lines) into remark-math's `$$` / `$` forms, leaving fenced
- * code untouched. Moved verbatim from the legacy markdown renderer.
- */
 export function normalizeMathDelimiters(content: string): string {
   if (!content) return content
   const segments = content.split(/(```[\s\S]*?```|~~~[\s\S]*?~~~)/g)
@@ -90,11 +62,6 @@ export function normalizeMathDelimiters(content: string): string {
     .join('')
 }
 
-/**
- * Split normalized text into renderable segments: recognized XML tag blocks
- * interleaved with markdown blocks. Equivalent to the legacy
- * `renderMarkdownSegments` scan, expressed as data.
- */
 export function splitSegments(content: string): MarkdownSegment[] {
   const segments: MarkdownSegment[] = []
   let cursor = 0
@@ -129,18 +96,12 @@ function countOccurrences(line: string, token: string): number {
   return count
 }
 
-/**
- * Single forward pass over `text` that returns the byte offset of the last
- * *safe* freeze boundary (start of a non-blank line preceded by a blank
- * line, with no open fence, unclosed XML tag, or unbalanced math delimiter
- * before it). Returns 0 when no safe boundary exists.
- */
 export function findFreezeBoundary(text: string): number {
   let fenceChar: '`' | '~' | null = null
   let fenceLen = 0
-  let displayMathBalance = 0 // \[ minus \]
-  let inlineMathBalance = 0 // \( minus \)
-  let dollarPairTokens = 0 // count of '$$' tokens
+  let displayMathBalance = 0
+  let inlineMathBalance = 0
+  let dollarPairTokens = 0
   const xmlBalance = new Map<string, number>()
 
   let lastSafe = 0
@@ -189,14 +150,14 @@ export function findFreezeBoundary(text: string): number {
     }
 
     previousBlank = blank
-    pos += line.length + 1 // account for the split '\n'
+    pos += line.length + 1
   }
 
   return lastSafe
 }
 
 export function createIncrementalSplitter(): IncrementalSplitter {
-  let consumed = '' // raw source prefix already frozen
+  let consumed = ''
   let frozen: MarkdownSegment[] = []
 
   const reset = (): void => {

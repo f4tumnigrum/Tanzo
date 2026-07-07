@@ -383,10 +383,6 @@ CREATE TABLE policy_modes (
 );
 `
 
-// Per-plugin enable/install state. Identity is the `<plugin>@<marketplace>`
-// config key, mirroring Codex's PluginId. The plugin's cached artifacts and
-// manifest live on disk under `<userData>/plugins/`; this table only overlays
-// durable enable/install bookkeeping.
 const PLUGIN_STATES_SCHEMA = `
 CREATE TABLE IF NOT EXISTS plugin_states (
   config_key       TEXT PRIMARY KEY,
@@ -401,11 +397,6 @@ CREATE TABLE IF NOT EXISTS plugin_states (
 );
 `
 
-// Registered marketplace sources. A marketplace is either a local directory
-// (referenced in place, never copied) or a git repository cloned into a
-// Tanzo-owned install root. Identity is the marketplace `name` read from the
-// cloned/local `marketplace.json`. Mirrors Codex's `[marketplaces.<name>]`
-// config blocks, but persisted in SQLite rather than config.toml.
 const PLUGIN_MARKETPLACES_SCHEMA = `
 CREATE TABLE IF NOT EXISTS plugin_marketplaces (
   name          TEXT PRIMARY KEY,
@@ -419,12 +410,6 @@ CREATE TABLE IF NOT EXISTS plugin_marketplaces (
 );
 `
 
-// Rebuild provider tables so their CHECK constraints accept the
-// 'openai-chat' provider id (Chat Completions API alongside Responses API).
-// SQLite cannot alter CHECK constraints in place, so each table is recreated
-// and data copied over. provider_default_models rows are backed up and
-// restored around the provider_models rebuild because dropping the parent
-// table cascades into it.
 const PROVIDER_IDS_V21 =
   "('openai', 'openai-chat', 'anthropic', 'google', 'deepseek', 'openai-compatible')"
 
@@ -530,12 +515,6 @@ DROP TABLE provider_defaults;
 ALTER TABLE provider_defaults_new RENAME TO provider_defaults;
 `
 
-// Rebuild provider tables so their CHECK constraints accept the 'zhipu' and
-// 'minimax' provider ids (Zhipu/GLM and MiniMax via OpenAI-compatible). As
-// with v21, SQLite cannot alter CHECK constraints in place, so each provider
-// table is recreated and data copied over. provider_default_models rows are
-// backed up and restored around the provider_models rebuild because dropping
-// the parent table cascades into it.
 const PROVIDER_IDS_V27 =
   "('openai', 'openai-chat', 'anthropic', 'google', 'deepseek', 'zhipu', 'minimax', 'openai-compatible')"
 
@@ -670,15 +649,11 @@ export const tanzoMigrations: ModuleMigrations = {
       up: (db) => migratePerStepMessages(db)
     },
     {
-      // Rollback of 22: per-step rows gave one reply two identities (live SDK
-      // message vs. persisted fragments); storage returns to one row per reply.
       version: 23,
       name: 'merge_step_message_rows',
       up: (db) => mergeStepMessageRows(db)
     },
     {
-      // Reasoning effort becomes a per-conversation setting (same scope as
-      // model_ref) instead of a provider-wide default.
       version: 24,
       name: 'conversation_reasoning_effort',
       up: (db) => {
@@ -690,8 +665,6 @@ export const tanzoMigrations: ModuleMigrations = {
       }
     },
     {
-      // Goal v2: same-run dedupe for rejected block attempts (blocker streak
-      // gate). See docs/design/goal-v2.md §3.2.
       version: 25,
       name: 'goal_blocker_last_run_id',
       up: (db) => {
@@ -703,8 +676,6 @@ export const tanzoMigrations: ModuleMigrations = {
       }
     },
     {
-      // Sidebar pinning: pinned_at is a timestamp (not a flag) so pinned
-      // conversations keep a stable most-recently-pinned-first order.
       version: 26,
       name: 'conversation_pinned_at',
       up: (db) => {
@@ -716,8 +687,6 @@ export const tanzoMigrations: ModuleMigrations = {
       }
     },
     {
-      // Accept the 'zhipu' and 'minimax' provider ids in provider table CHECK
-      // constraints (Zhipu/GLM and MiniMax via OpenAI-compatible surfaces).
       version: 27,
       name: 'provider_zhipu_minimax',
       up: (db) => db.exec(PROVIDER_TABLES_V27)

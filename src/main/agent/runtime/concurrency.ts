@@ -70,12 +70,6 @@ export interface KeyedSemaphores {
   acquire(key: string, signal?: AbortSignal): Promise<() => void>
 }
 
-/**
- * One semaphore per key, each capped at `perKey`. Unlike createDepthPools the
- * key space is unbounded (e.g. conversation ids), so each pool is reference
- * counted and evicted once no acquisition is in flight or queued — keeping the
- * map from growing for the lifetime of the process.
- */
 export function createKeyedSemaphores(perKey: number): KeyedSemaphores {
   const pools = new Map<string, { semaphore: Semaphore; refs: number }>()
   return {

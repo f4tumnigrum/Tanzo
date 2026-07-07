@@ -63,12 +63,6 @@ export function ToolbarButton({
   )
 }
 
-/**
- * A single browser tab: owns one `<webview>` and all of its navigation, picker
- * and error state. Stays mounted while inactive (hidden by the parent) so the
- * page, scroll position and history survive tab switches. Live metadata (url,
- * title, loading) is pushed up to the store so the tab strip can render it.
- */
 export function BrowserView({ tab }: { tab: BrowserTab }): React.JSX.Element {
   const { t } = useTranslation()
   const setMaximized = useBrowserUiStore((s) => s.setMaximized)
@@ -92,7 +86,6 @@ export function BrowserView({ tab }: { tab: BrowserTab }): React.JSX.Element {
   const [picked, setPicked] = useState<PickedElementRaw | null>(null)
   const [navSeq, setNavSeq] = useState(0)
 
-  // Wire guest navigation events to local chrome state and the store.
   useEffect(() => {
     const view = webviewRef.current
     if (!view) return undefined
@@ -131,8 +124,7 @@ export function BrowserView({ tab }: { tab: BrowserTab }): React.JSX.Element {
       updateTab(tabId, { loading: false })
       syncNav()
     }
-    // `did-fail-load` fires for aborts too; ignore ERR_ABORTED (-3) and
-    // sub-frame failures so only real main-frame errors surface.
+
     const handleFail = (event: Event): void => {
       const e = event as unknown as {
         errorCode?: number
@@ -163,11 +155,6 @@ export function BrowserView({ tab }: { tab: BrowserTab }): React.JSX.Element {
     }
   }, [tabId, updateTab])
 
-  // Navigation actions must work even while a previous page is still loading
-  // (or stuck). `loadURL` only throws before the webview is attached to the DOM,
-  // not mid-load, so guard on attachment (`isConnected`) rather than the
-  // first-`dom-ready` `ready` flag — otherwise a never-loading page would wedge
-  // the address bar. Wrapped in try/catch because the throw is synchronous.
   const callView = useCallback((fn: (view: WebviewElement) => void): void => {
     const view = webviewRef.current
     if (!view || !view.isConnected) return
@@ -193,12 +180,6 @@ export function BrowserView({ tab }: { tab: BrowserTab }): React.JSX.Element {
   const goForward = useCallback(() => callView((view) => view.goForward()), [callView])
   const reload = useCallback(() => callView((view) => view.reload()), [callView])
 
-  // Pick mode is a toggle. The button flips `picking`; this effect owns the
-  // whole session. While on, it re-injects the picker after each selection so
-  // the user can sample several elements without re-arming. The guest has no
-  // preload, so it runs entirely through executeJavaScript: each injection
-  // resolves with the clicked element's computed style, or null on Esc — which
-  // exits pick mode. Turning the toggle off (or unmounting) runs the stop hook.
   useEffect(() => {
     if (!picking) return undefined
     const view = webviewRef.current

@@ -358,18 +358,6 @@ function renderSegment(segment: MarkdownSegment, key: string): ReactNode {
   return <MarkdownBlock key={key} content={segment.content} />
 }
 
-/**
- * Streaming-aware markdown renderer.
- *
- * Completed regions of the text are frozen into segments whose content — and
- * therefore whose memoized React elements — never change again; each delta
- * only re-normalizes and re-parses the short unfrozen tail. This turns the
- * per-delta rendering cost from O(total text) into O(tail), which is what
- * keeps long streamed replies smooth.
- *
- * The splitter lives on a ref keyed by the component instance, so a static
- * (non-streaming) message pays the same one-shot cost as before.
- */
 export const Markdown = memo(
   function Markdown({ content, className }: MarkdownProps): React.JSX.Element | null {
     const splitterRef = useRef<IncrementalSplitter | null>(null)

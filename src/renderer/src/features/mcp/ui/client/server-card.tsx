@@ -132,8 +132,6 @@ export function ServerCard({ server, onClick }: ServerCardProps) {
 
   function handleToggle(checked: boolean) {
     if (isBuiltin) {
-      // The built-in server mirrors the browser-automation capability switch;
-      // there is no database row to toggle. Same preference as Settings → Tools.
       void patchPreferences({ browserAutomation: checked }).then(() => {
         void queryClient.invalidateQueries({ queryKey: serverKeys.lists() })
         void queryClient.invalidateQueries({ queryKey: mcpClientKeys.connectionStates() })

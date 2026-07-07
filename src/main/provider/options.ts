@@ -35,14 +35,8 @@ export const OPTION_SCHEMAS: ProviderOptionSchema[] = [
   ...openaiCompatibleOptionSchemas
 ]
 
-/** Every namespace the AI SDK understands at the top level of providerOptions. */
 const KNOWN_PROVIDER_KEYS = new Set(OPTION_SCHEMAS.map((schema) => schema.providerKey))
 
-/**
- * Users may address a namespace by provider id (e.g. 'openai-compatible');
- * the SDK expects the schema's providerKey (e.g. 'openaiCompatible').
- * Derived from OPTION_SCHEMAS — no hardcoded aliases.
- */
 const CANONICAL_PROVIDER_KEYS = new Map<string, string>(
   OPTION_SCHEMAS.filter((schema) => schema.providerId !== schema.providerKey).map((schema) => [
     schema.providerId,
@@ -60,15 +54,6 @@ export function listOptionSchemas(
   )
 }
 
-/**
- * Build a providerOptions overlay that sets a provider's reasoning-effort
- * field (located via the schema `role`, not a hardcoded path) to the given
- * value. Returns undefined when the provider has no such field, or when the
- * value is not accepted by a strict (select) field — an effort inherited
- * across providers (e.g. anthropic 'max' → openai) must be dropped rather
- * than sent as an invalid API value. Free-form (string) fields accept any
- * value.
- */
 export function reasoningEffortOverlay(
   providerId: ProviderId,
   effort: string
@@ -129,18 +114,6 @@ export function normalizeStoredDefaults(
   return normalizeDefaults(value)
 }
 
-/**
- * Build the effective providerOptions for one provider+family from stored
- * defaults. Routing rules:
- *
- * 1. `defaults.providerOptions` keys naming a known provider namespace
- *    (any schema `providerKey`, provider ids canonicalized) pass through at
- *    the top level; all remaining keys are scoped under this provider's own
- *    namespace. So `{ reasoningEffort: 'high' }` saved on openai becomes
- *    `{ openai: { reasoningEffort: 'high' } }`.
- * 2. `defaults.rawProviderOptions` is deep-merged on top verbatim (escape
- *    hatch — no scoping), so raw values win over scoped ones.
- */
 export function mergeProviderOptions(
   defaults: ProviderDefaultsState,
   providerId: ProviderId,

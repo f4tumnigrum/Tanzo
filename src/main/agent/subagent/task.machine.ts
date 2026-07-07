@@ -1,27 +1,3 @@
-/**
- * Subagent task state machine (pure core). See the machine contract in ../runtime/machine/types.ts.
- *
- * State graph (status field of SubagentTask):
- *
- *   pending ──start──▶ running ──surface-approvals──▶ blocked(approval)
- *      │ └─fail──▶ failed              │  ▲                  │
- *      │                               │  └─clear-approvals──┘
- *      │                          ┌────┼────┬──────────┐
- *      │                      complete  fail     cancel   (terminal)
- *      └─(spawn with unmet deps)─▶ pending(block:dependency)
- *
- * Guards: terminal states are absorbing — only `retry` and `reset-dependency`
- * (both explicitly from failed/cancelled) leave them. `resume`/`redefine` are
- * no-ops on terminal tasks, and `resume` is a no-op on dependency-blocked
- * tasks (the dependency gate may not be bypassed by steering).
- *
- * The pure transition produces the next task object plus effect descriptions
- * (persist, notify-settled). Imperative pre-steps that some callers run before a
- * transition (aborting controllers, saving messages, starting the driver) stay
- * in the interpreter shell (task-service.ts); they are not modeled here.
- *
- * `now` is supplied via event payloads to keep the transition pure.
- */
 import type { SubagentTask, SubagentTaskApproval, SubagentTaskResult } from '@shared/subagent-task'
 import { next, stay, type Transition } from '../runtime/machine/types'
 
@@ -37,8 +13,7 @@ export type TaskEvent =
       kind: 'fail'
       message: string
       failureKind?: 'app-restart' | 'logic-error'
-      /** Structured root cause when the failure came from a dependency (see
-       *  SubagentTaskResult.failedDependencyId). */
+
       failedDependencyId?: string
       now: number
     }
@@ -124,8 +99,6 @@ export function taskTransition(
     }
 
     case 'resume':
-      // Guards: a settled task's result is final (awaiters may have consumed
-      // it), and a dependency-blocked task must not start before its deps.
       if (isTaskTerminal(task.status)) return stay(task)
       if (task.block?.kind === 'dependency') return stay(task)
       return next(
@@ -138,8 +111,6 @@ export function taskTransition(
       )
 
     case 'redefine': {
-      // Same terminal guard as resume: redefining a settled task would
-      // silently overwrite a result the parent may already have consumed.
       if (isTaskTerminal(task.status)) return stay(task)
       const restarted: SubagentTask = {
         ...withoutBlock(task),
@@ -178,16 +149,12 @@ export function taskTransition(
       )
 
     case 'set-result':
-      // Terminal guard: a late set-result (e.g. an async report() landing after
-      // the task already completed/failed/was cancelled) must not overwrite the
-      // terminal result that awaiters have already observed.
       if (isTaskTerminal(task.status)) return stay(task)
       return next({ ...task, result: event.result }, PERSIST)
 
     case 'reset-dependency': {
       if (task.status !== 'failed' && task.status !== 'cancelled') return stay(task)
-      // Reset back to pending so maybeUnblockDependents can restart it once all
-      // deps are done. Clears result/phase so the UI shows a clean slate.
+
       const reset: SubagentTask = {
         ...withoutBlock(task),
         status: 'pending',

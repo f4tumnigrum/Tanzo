@@ -3,8 +3,6 @@ import { usePreferences } from '@/common/preferences'
 import { useTheme } from '@/components/theme/theme-provider'
 import type { WallpaperFit, WallpaperOverlay, WallpaperSettings } from '@shared/preferences'
 
-// Base solid-color percentage for each surface at surfaceOpacity = 1.
-// Lowering surfaceOpacity towards 0 makes surfaces increasingly see-through.
 const SURFACE_BASE: Array<[string, string, number]> = [
   ['--main-surface-bg', 'var(--background)', 80],
   ['--sidebar-surface-bg', 'var(--sidebar)', 55],
@@ -65,7 +63,6 @@ export function WallpaperLayer(): React.JSX.Element | null {
   const wallpaper: WallpaperSettings = usePreferences().wallpaper
   const { resolvedTheme } = useTheme()
 
-  // Pick the correct asset for the current color mode.
   const assetId =
     resolvedTheme === 'dark' && wallpaper.darkAssetId != null
       ? wallpaper.darkAssetId

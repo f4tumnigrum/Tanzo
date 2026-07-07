@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { PetSummary } from '@shared/pet'
 import { PET_SCALE_MAX, PET_SCALE_MIN } from '@shared/preferences'
+import { petClient } from '@/platform/electron/pet-client'
 import { patchPreferences, usePreferences } from '@/common/preferences'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -21,7 +22,7 @@ export function SettingsPetTab(): React.JSX.Element {
 
   useEffect(() => {
     let cancelled = false
-    void window.electron.pet.list().then((list) => {
+    void petClient.list().then((list) => {
       if (!cancelled) setPets(list)
     })
     return () => {

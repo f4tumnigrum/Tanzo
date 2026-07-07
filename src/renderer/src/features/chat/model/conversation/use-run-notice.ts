@@ -12,11 +12,6 @@ function clearRetry(previous: RunNotice | null): RunNotice | null {
   return previous?.kind === 'retry' ? null : previous
 }
 
-/**
- * Maps a ChatRunError code (the degraded run-state error channel) back to a
- * telemetry error kind so the fallback path shows an accurate heading instead
- * of a generic "Run failed".
- */
 export function errorKindFromCode(code: string | undefined): RunNoticeError['kind'] {
   switch (code) {
     case ERROR_CODES.AISDK_API_CALL_ERROR:
@@ -53,7 +48,7 @@ export function reduceRunNotice(
     case 'retry-exhausted':
     case 'operation-error':
       if (!event.error) return clearRetry(previous)
-      // A terminal abort classification is a cancellation, not a failure.
+
       if (event.error.kind === 'abort') return { kind: 'aborted' }
       return { kind: 'error', error: event.error }
     default:

@@ -90,13 +90,6 @@ const taskApprovalResponseSchema = z
   })
   .strict()
 
-/**
- * Defense-in-depth for the read-only sub-agent drill-down: even though the UI
- * never renders a composer for an executor conversation, no renderer entry
- * point may write a user message into one — that would trigger resumeByChat
- * semantics and corrupt the task lifecycle. Steering goes through the dedicated
- * steer-task channel instead.
- */
 function rejectSubagentWrite(deps: AgentIpcDeps, chatId: string): void {
   const conversation = deps.store.getConversation(chatId)
   if (conversation?.parentRelation === 'subagent') {

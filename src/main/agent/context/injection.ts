@@ -2,16 +2,6 @@ import { randomUUID } from 'node:crypto'
 import type { TanzoUIMessage } from '@shared/agent-message'
 import type { BuildInput, ContextSection } from './section'
 
-/**
- * Render the `injection` channel sections into a persisted synthetic user
- * message (v2). Volatile per-turn content (datetime, git snapshot, goal
- * nudges, plugin focus, hook context) enters the transcript exactly once, at
- * turn start — so the prompt prefix stays append-only within a run and the
- * persisted history always matches what the model actually saw.
- *
- * The message carries a `data-context-injection` part so the renderer can
- * collapse it; the text part is what reaches the model.
- */
 export async function renderContextInjection(
   registry: ContextSection[],
   input: BuildInput
@@ -48,7 +38,6 @@ export function isContextInjectionMessage(message: TanzoUIMessage): boolean {
   return message.parts.some((part) => part.type === 'data-contextInjection')
 }
 
-/** Section ids that actually rendered into an injection message (I6). */
 export function renderedSectionIds(message: TanzoUIMessage): Set<string> {
   for (const part of message.parts) {
     if (part.type === 'data-contextInjection') {

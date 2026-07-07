@@ -25,8 +25,7 @@ import {
 export interface ContextEngineDeps extends SectionDeps {
   resolveModelMetadata: ModelMetadataResolver
   extraSections?: ContextSection[]
-  /** Sections read the goal; the engine additionally consumes the one-shot
-   *  injection state — only when the goal section actually rendered (I6). */
+
   goal: SectionDeps['goal'] & {
     peekInjection(chatId: string): GoalInjection | null
     takeInjection(chatId: string): GoalInjection | null
@@ -51,14 +50,6 @@ export interface BuiltContext {
 }
 
 export interface ContextEngine {
-  /**
-   * Assemble the per-step prompt: system sections + leading-user block +
-   * canonicalized history. Pure with respect to per-chat state — the same
-   * transcript yields the same prompt (append-only prefix invariant). When a
-   * runId is given, section rendering is frozen for that run (invariant I7):
-   * mid-run changes to instruction files, skills, plan mode, or the goal
-   * cannot rewrite the prompt prefix until the next run.
-   */
   build(
     def: AgentDefinition,
     chatId: string,
@@ -67,24 +58,20 @@ export interface ContextEngine {
     stepNumber: number,
     runId?: string
   ): Promise<BuiltContext>
-  /**
-   * Render the volatile per-turn injection (datetime, git snapshot, goal,
-   * plugin focus, hook context) as a persistable synthetic user message.
-   * Consumes one-shot injection state (goal injection, plugin mentions).
-   */
+
   renderInjection(
     def: AgentDefinition,
     chatId: string,
     cwd: string,
     options: { isFirstTurn: boolean }
   ): Promise<TanzoUIMessage | null>
-  /** Ledger-based measurement of a persisted transcript. */
+
   measure(def: AgentDefinition, chatId: string, messages: TanzoUIMessage[]): TranscriptMeasure
   shouldCompact(def: AgentDefinition, chatId: string, messages: TanzoUIMessage[]): boolean
   snapshot(def: AgentDefinition, chatId: string, messages: TanzoUIMessage[]): ContextSnapshot
   compactionPolicy(def: AgentDefinition): CompactionPolicy
   capabilitiesFor(modelRef: string): ModelCapabilities
-  /** Record step usage for cache hit-ratio reporting. */
+
   observeStep(chatId: string, usage: LanguageModelUsage | undefined): void
   clear(chatId: string): void
 }
@@ -96,11 +83,6 @@ function cacheHitRatio(usage: LanguageModelUsage | undefined): number | undefine
   return cached / input
 }
 
-/**
- * After compaction the transcript is `[summary, ...tail]`, so a compaction
- * summary — when present — is always the first history message and the only
- * assistant message a transcript can start with.
- */
 function summaryIndexOf(history: ModelMessage[]): number {
   return history[0]?.role === 'assistant' ? 0 : -1
 }
@@ -111,9 +93,6 @@ export function createContextEngine(deps: ContextEngineDeps): ContextEngine {
   const lastUsage = new Map<string, LanguageModelUsage>()
   const sectionSnapshots = new Map<string, { runId: string; rendered: RenderedSection[] }>()
 
-  /** Run-level section snapshot (I7): first build of a run renders and
-   *  freezes; later steps (and the compaction fork, which passes the same
-   *  runId for byte-identical prefix reuse) get the frozen snapshot. */
   async function renderForRun(input: BuildInput, runId?: string): Promise<RenderedSection[]> {
     if (!runId) return renderSections(registry, input)
     const cached = sectionSnapshots.get(input.chatId)
@@ -171,9 +150,7 @@ export function createContextEngine(deps: ContextEngineDeps): ContextEngine {
       pluginMention,
       isFirstTurn: options.isFirstTurn
     })
-    // Settle one-shot injection state per section (invariant I6): consume only
-    // what actually rendered into the message. A goal cleared between peek and
-    // render must not lose its injection to a message that never carried it.
+
     if (message) {
       const kept = renderedSectionIds(message)
       if (goalInjection && kept.has('goal')) deps.goal.takeInjection(chatId)

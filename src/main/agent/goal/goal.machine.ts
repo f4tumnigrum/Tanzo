@@ -1,44 +1,21 @@
-/**
- * Goal state machine (pure core). See the machine contract in ../runtime/machine/types.ts.
- *
- * State graph (status derived via deriveStatus):
- *
- *   active ──user-paused──▶ paused ──user-resumed──▶ active
- *      │                                               ▲
- *      ├─turn-evaluated(budget)─▶ budget_limited ──────┘ (resume)
- *      ├─usage-limited─────────▶ usage_limited ─────────┘ (resume)
- *      ├─outcome-marked────────▶ complete | blocked ────┘ (resume/objective)
- *      └─objective-updated─────▶ active (reset)
- *
- * Rules live here, not in prose (invariant I2): the block threshold
- * (BLOCK_ATTEMPTS_REQUIRED) is enforced by the machine — tool descriptions and
- * templates merely reference it. Every turn decision carries a reason so the
- * interpreter/UI can explain why continuation stopped.
- *
- * `transition` is pure: it never reads the clock, randomness, or I/O. The
- * interpreter (goal/service.ts) stamps `updatedAt` and performs persistence /
- * broadcast based on the returned effects.
- */
 import type { GoalDecisionReason, GoalInjection, GoalOutcome, ThreadGoal } from '@shared/goal'
 import { next, stay, type Transition } from '../runtime/machine/types'
 
 export const IDLE_STREAK_LIMIT = 2
 
-/** Block attempts required before `blocked` sticks. Single source of truth —
- *  referenced by the updateGoal tool description and goal templates. */
 export const BLOCK_ATTEMPTS_REQUIRED = 3
 
 export interface GoalTurnInput {
   isGoalContinuation: boolean
-  /** Did the worktree actually change this turn? null = signal unavailable. */
+
   worktreeChanged: boolean | null
-  /** Fallback signal: an edit/exec-kind tool call ran this turn. */
+
   producedWorkToolCall: boolean
   turnTokens: number
   turnSeconds: number
   isPlanMode: boolean
   suppressContinuation: boolean
-  /** False for failed/aborted turns: account tokens, never continue. */
+
   outcomeEligible: boolean
 }
 
@@ -81,12 +58,6 @@ function resetForResume(goal: ThreadGoal): ThreadGoal {
   }
 }
 
-/**
- * Work evidence (invariant I5): trust the worktree diff when available; fall
- * back to the (corrected) tool-kind signal only when no diff could be taken.
- * A turn with a verified-unchanged worktree counts as idle even if exec-kind
- * tools ran — `ls` loops no longer reset the streak.
- */
 function hasWorkEvidence(turn: GoalTurnInput): boolean {
   if (turn.worktreeChanged === true) return true
   if (turn.worktreeChanged === null && turn.producedWorkToolCall) return true
@@ -102,7 +73,7 @@ function evaluateTurn(goal: ThreadGoal, turn: GoalTurnInput): Transition<ThreadG
     tokensUsed: goal.tokensUsed + Math.max(0, turn.turnTokens),
     timeUsedSeconds: goal.timeUsedSeconds + Math.max(0, turn.turnSeconds),
     idleStreak,
-    // A turn with real work evidence breaks the "same blocker persists" streak.
+
     blockerStreak: workEvidence ? 0 : goal.blockerStreak
   }
 
@@ -113,7 +84,6 @@ function evaluateTurn(goal: ThreadGoal, turn: GoalTurnInput): Transition<ThreadG
   ): Transition<ThreadGoal, GoalEffect> =>
     next(state, [...PERSIST_BROADCAST, { kind: 'decision', continue: cont, reason }])
 
-  // Accounting is always persisted, even for non-active or failed turns.
   if (accounted.userState !== 'active' || accounted.outcome || accounted.limit) {
     return decided(accounted, false, 'not-active')
   }
@@ -140,8 +110,6 @@ function markOutcome(
   runId: string | undefined
 ): Transition<ThreadGoal, GoalEffect> {
   if (outcome === 'blocked') {
-    // Same-run dedupe: a repeated blocked call within one run neither
-    // increments the streak nor changes the answer.
     const alreadyCounted = runId !== undefined && goal.blockerLastRunId === runId
     const attempts = alreadyCounted ? goal.blockerStreak : goal.blockerStreak + 1
     if (attempts < BLOCK_ATTEMPTS_REQUIRED) {
@@ -183,10 +151,6 @@ function markOutcome(
   )
 }
 
-/**
- * Pure transition for an existing goal. Lifecycle concerns that throw or return
- * null (create, no-goal guards) live in the interpreter, not here.
- */
 export function goalTransition(
   goal: ThreadGoal,
   event: GoalEvent

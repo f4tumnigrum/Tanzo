@@ -1,13 +1,8 @@
-/**
- * Minimal external store: one state object, whole-state subscription.
- * Used for the low-frequency run-control and sidecar planes so their
- * consumers never re-render on transcript deltas.
- */
 export interface StateStore<T> {
   subscribe(listener: () => void): () => void
   getState(): T
   setState(patch: Partial<T>): void
-  /** Functional update for read-modify-write transitions. */
+
   update(updater: (state: T) => Partial<T>): void
   dispose(): void
 }

@@ -1,30 +1,6 @@
 import type { TanzoUIMessage } from '@shared/agent-message'
 import { stabilizeMessage } from './stabilize'
 
-/**
- * High-frequency transcript plane with per-message subscriptions.
- *
- * The store separates subscription granularities so a streaming delta only
- * wakes the component rendering the affected message:
- *
- *  - `subscribeOrder`: fires only when messages are added/removed/reordered.
- *    `getOrder()` returns an identity-stable array of ids.
- *  - `subscribeMessage(id)`: fires only when that message's content changes.
- *  - `subscribeChanges`: coarse commit feed for derived state (todos,
- *    compaction reconciliation) — one call per commit with the changed ids.
- *
- * Writers batch through a frame pump: `upsert`/`replaceAll` enqueue and
- * schedule a single animation-frame commit, so no matter how many chunks the
- * IPC layer delivers, at most one notification wave (one React commit)
- * happens per animation frame. When the document is hidden — or outside a
- * browser environment — the pump degrades to a timer so background chats
- * keep absorbing frames without rendering work. `flushSync` commits
- * immediately for callers that need read-after-write semantics.
- *
- * Message objects pass through {@link stabilizeMessage} on commit, so parts
- * that did not change keep their previous object identity and downstream
- * `memo` boundaries hold during streaming.
- */
 export interface TranscriptStore {
   subscribeOrder(listener: () => void): () => void
   getOrder(): readonly string[]
@@ -34,13 +10,13 @@ export interface TranscriptStore {
   subscribeChanges(
     listener: (changedIds: ReadonlySet<string>, orderChanged: boolean) => void
   ): () => void
-  /** Insert or update one streamed message; batched via the frame pump. */
+
   upsert(message: TanzoUIMessage): void
-  /** Replace the whole transcript (history load / settle refresh); batched. */
+
   replaceAll(messages: readonly TanzoUIMessage[]): void
-  /** Apply pending writes synchronously. */
+
   flushSync(): void
-  /** Stop the pump and drop listeners. */
+
   dispose(): void
 }
 
@@ -60,14 +36,12 @@ export function createTranscriptStore(initial?: readonly TanzoUIMessage[]): Tran
   const messageListeners = new Map<string, Set<() => void>>()
   const changeListeners = new Set<(ids: ReadonlySet<string>, orderChanged: boolean) => void>()
 
-  // Full replacement takes precedence over accumulated upserts.
   let pendingReplaceAll: TanzoUIMessage[] | null = null
   const pendingUpserts = new Map<string, TanzoUIMessage>()
   let scheduled: number | ReturnType<typeof setTimeout> | null = null
   let scheduledKind: 'raf' | 'timer' | null = null
   let disposed = false
 
-  // Cached `getMessages()` result; invalidated by commits that change content.
   let messagesCache: TanzoUIMessage[] | null = initial ? [...initial] : []
 
   const cancelScheduled = (): void => {
@@ -197,8 +171,6 @@ export function createTranscriptStore(initial?: readonly TanzoUIMessage[]): Tran
     },
     upsert(message) {
       if (pendingReplaceAll) {
-        // Fold into the pending replacement so ordering stays deterministic
-        // (replaceAll wins over upserts queued before it, not after it).
         const at = pendingReplaceAll.findIndex((existing) => existing.id === message.id)
         if (at === -1) pendingReplaceAll.push(message)
         else pendingReplaceAll[at] = message

@@ -244,21 +244,16 @@ export interface GitCommitResult {
 
 export type GitSyncKind = 'fetch' | 'pull' | 'push'
 
-/**
- * Outcome of a fetch/pull/push. Carries the refreshed status snapshot plus a
- * structured summary so the UI can give real positive feedback ("pulled 3
- * commits", "already up to date", "created conflicts") instead of silence.
- */
 export interface GitSyncResult {
   readonly kind: GitSyncKind
   readonly snapshot: GitStatusSnapshot
-  /** Commits the local branch moved forward by (pull/fetch), if determinable. */
+
   readonly received: number
-  /** Commits published to the remote (push), if determinable. */
+
   readonly published: number
-  /** True when the operation left conflicts in the working tree. */
+
   readonly hasConflicts: boolean
-  /** True when nothing changed (already up to date / nothing to push). */
+
   readonly noop: boolean
 }
 

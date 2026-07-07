@@ -111,10 +111,11 @@ function FontCombobox({
       value === null
         ? null
         : (bundled.find((font) => font.value === value) ??
-          localFiltered.find((font) => font.value === value) ??
-            // A saved font missing from both lists (e.g. uninstalled) stays
-            // visible and selectable so the preference is never silently lost.
-            { value, label: value.split(',')[0].replace(/'/g, ''), kind: 'sans' as const }),
+          localFiltered.find((font) => font.value === value) ?? {
+            value,
+            label: value.split(',')[0].replace(/'/g, ''),
+            kind: 'sans' as const
+          }),
     [bundled, localFiltered, value]
   )
 

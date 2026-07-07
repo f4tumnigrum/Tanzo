@@ -6,10 +6,6 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { TanzoUIMessage } from '@shared/agent-message'
 import type { Logger } from './types'
 
-/**
- * Base directory for externalized pasted-text attachments. Registered as a
- * read root on the workspace fs so fileRead can access it in sandboxed modes.
- */
 export const PASTED_TEXT_DIR = join(tmpdir(), 'tanzo-pasted')
 
 const DATA_URL_PATTERN = /^data:text\/plain(?:;[^,]*)?;base64,([A-Za-z0-9+/=]*)$/
@@ -32,13 +28,6 @@ function isExternalizedPastedText(
   return part.type === 'file' && part.mediaType === 'text/plain' && part.url.startsWith('file://')
 }
 
-/**
- * Persists long pasted-text attachments (text/plain data URLs produced by the
- * composer paste handler) to temp .txt files, rewriting each part's url to the
- * file:// location. The transcript keeps the file part (so the UI renders an
- * attachment chip); `resolvePastedTextPointers` swaps it for a fileRead
- * pointer at model-conversion time.
- */
 export async function externalizePastedTextParts(
   message: TanzoUIMessage,
   options: { chatId: string; baseDir?: string; logger?: Logger }
@@ -67,12 +56,6 @@ export async function externalizePastedTextParts(
   return { ...message, parts }
 }
 
-/**
- * Replaces externalized pasted-text file parts with a text pointer telling the
- * model to read the temp .txt with fileRead. Applied to the UI transcript just
- * before convertToModelMessages so the stored messages keep their attachment
- * chips.
- */
 export function resolvePastedTextPointers(messages: TanzoUIMessage[]): TanzoUIMessage[] {
   return messages.map((message) => {
     if (message.role !== 'user') return message

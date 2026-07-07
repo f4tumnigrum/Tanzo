@@ -18,25 +18,6 @@ import { hasProviderOptions, resolveLanguageModelConfig } from '../../runtime/mo
 import type { AgentRuntimeDeps, Logger } from '../../runtime/types'
 import { extractPartialSummary } from './prompt'
 
-/**
- * Compaction summarization fork (v2). Two paths:
- *
- * A. Prefix reuse (default, no dedicated compaction model, caller provides the
- *    main run's tool set): the request keeps the exact system sections, tools
- *    and leading-user block of the main conversation and appends only the
- *    summarization instruction as the last user message. The stable cache
- *    breakpoints (system / leading-user / summary) match the main run's, so
- *    the head — the most expensive prompt of the whole run — hits the provider
- *    KV cache. (The moving 5m history-tail marker lands on a different message
- *    than in the main request; only the tail past the last stable breakpoint
- *    re-tokenizes.)
- *
- * B. Standalone summarizer (dedicated compaction model, or head exceeds the
- *    fork model's window): a plain summarizer system prompt over a
- *    text-serialized transcript, chunked map-reduce (rolling summary) when the
- *    head does not fit in one call. No tools, no cache markers.
- */
-
 export interface SummarizeForkInput {
   chatId: string
   def: AgentDefinition
@@ -44,7 +25,7 @@ export interface SummarizeForkInput {
   runId: string
   head: ModelMessage[]
   prompt: string
-  /** Main-run tool set — enables the prefix-reuse path. */
+
   tools?: ToolSet
   telemetry?: TelemetryOptions
   abortSignal?: AbortSignal
@@ -175,7 +156,6 @@ function contentToText(content: unknown): string {
   return out.join('\n')
 }
 
-/** Serialize model messages as a plain-text transcript (path B input). */
 export function renderTranscriptText(messages: ModelMessage[]): string {
   const lines: string[] = []
   for (const message of messages) {
@@ -256,10 +236,7 @@ async function streamSummary(call: StreamSummaryCall): Promise<SummarizeForkResu
       ...(call.toolChoice ? { toolChoice: call.toolChoice } : {}),
       ...(call.instructions ? { instructions: call.instructions } : {}),
       stopWhen: [isStepCount(1)],
-      // Internal summarization call: inherit only the retry policy. The
-      // remaining user call settings (temperature, stopSequences,
-      // maxOutputTokens, …) are tuned for the interactive conversation and
-      // could truncate or distort the summary.
+
       ...(call.model.callSettings.maxRetries !== undefined
         ? { maxRetries: call.model.callSettings.maxRetries }
         : {}),
@@ -270,9 +247,6 @@ async function streamSummary(call: StreamSummaryCall): Promise<SummarizeForkResu
       messages: call.messages,
       ...(call.abortSignal ? { abortSignal: call.abortSignal } : {}),
       onError: ({ error }) => {
-        // The AI SDK only surfaces NoOutputGeneratedError from the rejected
-        // promise; every other stream error passes here. Capture the first
-        // real error so the catch below can report it.
         if (streamError === undefined) streamError = error
       },
       onChunk: ({ chunk }) => {
@@ -301,12 +275,6 @@ function providerOf(modelRef: string): string {
   return requireModelRef(modelRef).providerId
 }
 
-/**
- * Strip execute functions so an unexpected tool call from the summarizer can
- * never run a real tool — the SDK stops the loop on a non-executable call.
- * Client-side only: the wire format (name/description/schema) is unchanged,
- * so the provider cache prefix stays byte-identical.
- */
 function withoutExecute(tools: ToolSet): ToolSet {
   const out: ToolSet = {}
   for (const [name, tool] of Object.entries(tools)) {
@@ -332,9 +300,6 @@ export async function runSummarizeFork(
   const headTokens = estimateModelMessagesTokens(input.head) + estimateTextTokens(input.prompt)
   const modelConfig = resolveLanguageModelConfig(deps.providerService, forkRef)
 
-  // Path A — prefix reuse on the main model. The built system messages are
-  // passed verbatim (as SystemModelMessage[]) so provider cache markers are
-  // preserved and the prompt prefix stays byte-identical to the main run's.
   if (!input.def.compactionModelRef && input.tools && headTokens <= forkBudget) {
     const built = await deps.contextEngine.build(
       input.def,
@@ -344,9 +309,7 @@ export async function runSummarizeFork(
       0,
       input.runId
     )
-    // Anthropic serializes tool_choice into the cached prefix — keep it 'auto'
-    // there and rely on the instruction; other providers hash only the message
-    // prefix, so 'none' is free.
+
     const anthropic = providerOf(input.def.modelRef) === 'anthropic'
     return streamSummary({
       model: modelConfig,
@@ -365,7 +328,6 @@ export async function runSummarizeFork(
     { role: 'system', content: SUMMARIZER_SYSTEM }
   ]
 
-  // Path B — standalone summarizer (single-shot when it fits).
   if (headTokens <= forkBudget) {
     return streamSummary({
       model: modelConfig,
@@ -379,7 +341,6 @@ export async function runSummarizeFork(
     })
   }
 
-  // Path B — chunked rolling summary (map-reduce).
   const chunkBudget = Math.floor(forkBudget * CHUNK_FRACTION)
   const chunks = chunkTranscript(input.head, chunkBudget)
   let rolling = ''

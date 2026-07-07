@@ -47,14 +47,14 @@ export interface ConversationSummary {
   agentId: string
   modelRef: string
   subagentModelRef: string
-  /** Per-conversation reasoning-effort override; '' follows provider defaults. */
+
   reasoningEffort: string
   workspaceId: string
   workspaceName?: string
   cwd: string
   parentConversationId: string | null
   parentRelation: ConversationParentRelation | null
-  /** Epoch ms when the conversation was pinned in the sidebar; null when unpinned. */
+
   pinnedAt: number | null
   createdAt: number
   updatedAt: number
@@ -88,12 +88,6 @@ export interface ForkConversationResult {
   conversation: ConversationSummary
 }
 
-/**
- * Maximum number of messages that can wait in a single conversation's dispatch
- * queue. When the queue is full, new enqueue requests are rejected (oldest
- * entries are preserved) so a burst of clicks cannot grow unbounded or amplify
- * disk writes.
- */
 export const QUEUED_MESSAGE_LIMIT = 20
 
 export const CHAT_CHANNELS = {
@@ -160,9 +154,7 @@ export interface ChatRunError {
   message: string
 }
 
-/** Persisted outcome of the most recent run, read back from the runs table. */
 export interface ChatRunOutcomeError {
-  /** 'stream-error' | 'aborted' | 'interrupted' (open for forward compat). */
   kind: string
   message?: string
   code?: string
@@ -184,14 +176,6 @@ export interface ChatRunFrame {
   chunk: InferUIMessageChunk<TanzoUIMessage>
 }
 
-/**
- * Tick-batched run frames. The main process accumulates frames per chat for a
- * short tick window and delivers one batch event, which puts a hard upper
- * bound on the IPC event rate regardless of how fast the model streams.
- * Frames inside a batch keep their individual monotonically increasing `seq`
- * numbers and are ordered — a batch is semantically identical to delivering
- * the contained frames one by one.
- */
 export interface ChatRunFrameBatch {
   kind: 'run-frame-batch'
   chatId: string

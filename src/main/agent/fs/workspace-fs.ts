@@ -97,11 +97,6 @@ export function createWorkspaceFs(root: string, options: WorkspaceFsOptions = {}
     throw new TanzoValidationError('FS_PATH_ESCAPE', `Path escapes workspace sandbox: ${p}`)
   }
 
-  // Guard the write surface in depth: the policy layer has similar rules, but
-  // the fs layer is the actual authority boundary for fileWrite/fileEdit.
-  // Credential paths stay blocked even in dangerous mode (same as reads);
-  // .git writes (hooks = code execution on the next git op) are blocked in
-  // sandbox mode only, since dangerous mode is an explicit full-disk opt-in.
   const assertWritablePath = (p: string, abs: string): void => {
     for (const candidate of [p, relative(normalizedRoot, abs)]) {
       if (!candidate) continue
@@ -398,9 +393,6 @@ export function createWorkspaceFs(root: string, options: WorkspaceFsOptions = {}
         const mismatch =
           !current || current.mtimeMs !== expected.mtimeMs || current.size !== expected.size
         if (!mismatch && expected.contentHash) {
-          // Re-read and hash-compare only when mtime+size appear unchanged;
-          // this is the narrow window that the hash closes: same-length/same-mtime
-          // concurrent writes that would otherwise slip past the stamp check.
           const currentBuf = await readFile(abs).catch(() => null)
           if (
             currentBuf !== null &&

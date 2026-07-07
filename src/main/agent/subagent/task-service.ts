@@ -22,21 +22,10 @@ import type { StartStreamInput } from '../runtime/turn-loop'
 import type { CompactionCoordinator } from '../runtime/compaction-coordinator'
 import type { PolicyEngine } from '../policy/types'
 
-// Global ceiling across every conversation, so the process never runs an
-// unbounded number of sub-agent streams at once.
 const MAX_CONCURRENT_BACKGROUND = 100
-// Per-root cap, so one conversation cannot occupy every global slot and starve
-// the others. Each root (top-level chat) gets its own pool of this size.
+
 const MAX_CONCURRENT_PER_ROOT = 20
 
-/**
- * Thrown to unwind a task driver when its run is no longer current. `reason`
- * is diagnostic only: the catch site (see runTask spawn wiring) treats
- * 'cancelled' and 'superseded' identically — both silently unwind without
- * marking the task failed. The distinction reflects *why* the run stopped
- * (explicit cancel vs. a newer run taking the epoch) but does not drive control
- * flow, so the abort-vs-supersede ordering does not affect terminal status.
- */
 class TaskInterrupted extends Error {
   constructor(
     readonly chatId: string,
@@ -87,9 +76,8 @@ interface TaskRuntimeCallbacks {
 }
 
 export interface TaskServiceLimits {
-  /** Global ceiling across all conversations. Default: 100. */
   global?: number
-  /** Per-root-conversation cap. Default: 20. */
+
   perRoot?: number
 }
 
@@ -102,9 +90,7 @@ export function createTaskService(
   const backgroundSlots = createSemaphore(limits.global ?? MAX_CONCURRENT_BACKGROUND)
   const rootSlots = createKeyedSemaphores(limits.perRoot ?? MAX_CONCURRENT_PER_ROOT)
   const controllers = new Map<string, AbortController>()
-  // Tracks the Promise for each running driver so instruct/redefine can await
-  // the old driver's full teardown before starting a new one, preventing two
-  // concurrent drivers writing to the same chat simultaneously.
+
   const driverDone = new Map<string, Promise<void>>()
   const settleWaiters = new Map<string, Set<() => void>>()
   const approvalWaiters = new Map<string, () => void>()
@@ -152,11 +138,6 @@ export function createTaskService(
 
   const isTerminal = isTaskTerminal
 
-  /**
-   * Interpreter shell for the task state machine: run the pure transition, then
-   * apply its effects (persist + broadcast, notify awaiters). Returns the next
-   * task object, or null when the task is gone.
-   */
   function dispatch(rootChatId: string, taskId: string, event: TaskEvent): SubagentTask | null {
     const task = deps.store.tasks.get(rootChatId, taskId)
     if (!task) return null
@@ -183,8 +164,7 @@ export function createTaskService(
     const child = deps.store.createConversation({
       agentId: def.id,
       ...(subagentModelRef ? { modelRef: subagentModelRef, subagentModelRef } : {}),
-      // Inherit the parent's reasoning effort; the runtime overlay validates
-      // it against the child model's provider schema and drops it if invalid.
+
       ...(parent.reasoningEffort ? { reasoningEffort: parent.reasoningEffort } : {}),
       ...(parent.workspaceId ? { workspaceId: parent.workspaceId } : {}),
       ...(parent.cwd ? { cwd: parent.cwd } : {}),
@@ -220,10 +200,7 @@ export function createTaskService(
     const rootChatId = deps.store.rootOf(input.parentChatId)
     const def = deps.identity.resolveAgentType(input.agentType)
     if (!def) throw new Error(`Unknown subagent type "${input.agentType}".`)
-    // Static dependency errors are rejected BEFORE any writes so a bad spawn
-    // leaves no orphaned executor conversation or task row behind. Depending
-    // on a settled-but-failed task is not a static error — that case creates
-    // the task and fail-fasts below, keeping it retryable via cascade-retry.
+
     const id = readableId(rootChatId, input.agentType)
     const dependsOn = input.dependsOn ?? []
     if (dependsOn.includes(id)) {
@@ -278,9 +255,7 @@ export function createTaskService(
           `Dependency '${blocker}' failed: ${dep?.result?.errorMessage ?? 'did not complete successfully'}`
         )
       }
-      // Every settle edge reevaluates the graph: if this spawn fail-fasted,
-      // anything already depending on it must fail fast too. Re-read from the
-      // store — failDependency dispatches a new object; the local `task` is stale.
+
       const fresh = deps.store.tasks.get(rootChatId, task.id)
       if (fresh && isTerminal(fresh.status)) {
         task = fresh
@@ -294,9 +269,7 @@ export function createTaskService(
   function startDriver(task: SubagentTask): void {
     const controller = new AbortController()
     controllers.set(task.chatId, controller)
-    // Mark the task as "queued" immediately so the agent and UI can tell the
-    // difference between "waiting for a semaphore slot" and "actively running".
-    // The first report() call from the sub-agent will overwrite this phase.
+
     setPhase(task.rootChatId, task.id, 'queued: waiting for capacity')
     const done = runTask(task.id, task.rootChatId, task.chatId, controller.signal)
       .catch((error) => {
@@ -326,11 +299,14 @@ export function createTaskService(
       if (candidate.status !== 'pending') continue
       const blocker = dependencyUnsatisfiable(candidate)
       if (blocker) {
-        // Propagate the root-cause error message so the parent agent can diagnose
-        // without needing to inspect the dependency task separately.
         const blockerTask = deps.store.tasks.get(rootChatId, blocker)
         const reason = blockerTask?.result?.errorMessage ?? 'did not complete successfully'
-        failDependency(rootChatId, candidate.id, blocker, `Dependency '${blocker}' failed: ${reason}`)
+        failDependency(
+          rootChatId,
+          candidate.id,
+          blocker,
+          `Dependency '${blocker}' failed: ${reason}`
+        )
         continue
       }
       if (!dependenciesSatisfied(candidate)) continue
@@ -343,8 +319,6 @@ export function createTaskService(
     dispatch(rootChatId, taskId, { kind: 'fail', message, now: Date.now() })
   }
 
-  /** Fail a task because one of its dependencies failed/cancelled/vanished,
-   *  recording the dep id structurally for cascadeRetryDependents. */
   function failDependency(
     rootChatId: string,
     taskId: string,
@@ -358,13 +332,6 @@ export function createTaskService(
     dispatch(rootChatId, taskId, { kind: 'set-phase', phase, now: Date.now() })
   }
 
-  /**
-   * Acquire the per-root slot before the global one: this bounds each
-   * conversation's share and avoids holding a scarce global slot while queued
-   * behind a busy root. Returns a single `release` that frees both in reverse
-   * order. On abort during either acquire, rolls back any slot already held and
-   * throws TaskInterrupted so the caller treats it as a cancellation.
-   */
   async function acquireRunSlots(
     rootChatId: string,
     chatId: string,
@@ -391,12 +358,6 @@ export function createTaskService(
     }
   }
 
-  /**
-   * Run a single stream pass while holding the concurrency slots, draining the
-   * progress queue until the run settles. Slots are always released in the
-   * finally. `onEpoch` is called if the underlying run reports a new epoch on
-   * start, so the caller can keep its supersede check current.
-   */
   async function runStreamPass(params: {
     chatId: string
     def: AgentDefinition
@@ -483,7 +444,6 @@ export function createTaskService(
         return
       }
 
-      // Reconcile an in-stream compaction against the persisted transcript.
       if (finalState?.inlineCompaction) {
         try {
           const compacted = await collaborators.compaction.reconcileInline(
@@ -505,10 +465,7 @@ export function createTaskService(
         completeTask(rootChatId, taskId, reloaded)
         return
       }
-      // Register waiters BEFORE surfacing: surfaceApprovals persists and
-      // broadcasts the block, after which a response can arrive at any moment.
-      // A response that lands before its waiter is registered would resolve
-      // nothing, and the later-registered waiter would hang forever.
+
       const waits = pending.map((p) => waitApproval(p.approvalId, signal))
       surfaceApprovals(rootChatId, taskId, pending)
       await Promise.all(waits)
@@ -519,14 +476,11 @@ export function createTaskService(
   function completeTask(rootChatId: string, taskId: string, messages: TanzoUIMessage[]): void {
     const task = deps.store.tasks.get(rootChatId, taskId)
     if (!task || isTerminal(task.status)) return
-    // Prefer an explicitly submitted result; fall back to the last assistant text.
-    // Track which path was used so the parent and UI can gauge result confidence.
+
     const hasExplicitResult = Boolean(task.result && !task.result.failed)
     const summary = hasExplicitResult ? task.result!.summary : lastAssistantText(messages)
     const resultSource: 'explicit' | 'inferred' = hasExplicitResult ? 'explicit' : 'inferred'
-    // An empty inferred deliverable is a failure, not a success: the sub-agent
-    // never called report(result) and produced no final text. Completing with
-    // an empty summary would hand the parent a silent nothing.
+
     if (resultSource === 'inferred' && summary.trim() === '') {
       dispatch(rootChatId, taskId, {
         kind: 'fail',
@@ -650,9 +604,6 @@ export function createTaskService(
       const resolve = approvalWaiters.get(response.approvalId)
       approvalWaiters.delete(response.approvalId)
       if (!resolve) {
-        // Regression sentinel: waiters are registered before approvals are
-        // surfaced, so a missing waiter means either the task was cancelled
-        // (fine) or the register-before-surface ordering broke (a bug).
         deps.logger?.warn('subagent approval response had no registered waiter', {
           approvalId: response.approvalId,
           chatId: task.chatId
@@ -734,17 +685,10 @@ export function createTaskService(
     callbacks.abortRun(task.chatId)
     callbacks.clearTransientChatState(task.chatId)
     dispatch(rootChatId, taskId, { kind: 'cancel', now: Date.now() })
-    // cancelTree reevaluates the dependency graph at its root, so dependents
-    // of a cancelled pending task (which has no driver finally) fail fast.
+
     cancelTree(task.chatId)
   }
 
-  /**
-   * Steering guard shared by instruct/redefine: settled results are final and
-   * the dependency gate may not be bypassed. Mirrors the machine-level stay()
-   * guards, but rejects *before* aborting the old driver — the machine guard
-   * alone would leave the task aborted-but-not-restarted.
-   */
   function steerGuard(task: SubagentTask | undefined): SteerTaskOutcome | null {
     if (!task) return { ok: false, reason: 'not-found' }
     if (isTerminal(task.status)) return { ok: false, reason: 'terminal' }
@@ -795,16 +739,13 @@ export function createTaskService(
   async function resumeByChat(chatId: string): Promise<void> {
     const task = deps.store.tasks.getByChat(chatId)
     if (!task || isTerminal(task.status)) return
-    // Await the old driver's teardown before starting a new one, matching
-    // instruct/redefine. Without this, aborting the controller and immediately
-    // dispatching a resume can overlap two drivers writing the same chat.
+
     const oldDone = driverDone.get(task.chatId)
     controllers.get(task.chatId)?.abort()
     callbacks.abortRun(task.chatId)
     await oldDone
     const resumed = dispatch(task.rootChatId, task.id, { kind: 'resume', now: Date.now() })
-    // The machine keeps dependency-blocked tasks pending (stay); only start a
-    // driver when the transition actually moved the task to running.
+
     if (resumed?.status === 'running') startDriver(resumed)
   }
 
@@ -812,23 +753,14 @@ export function createTaskService(
     const task = deps.store.tasks.get(rootChatId, taskId)
     if (!task) return
     if (task.status !== 'failed' && task.status !== 'cancelled') return
-    // No teardown await needed: retry only runs from a terminal (failed/cancelled)
-    // state, so the prior driver has already settled and driverDone is cleared.
+
     writeObjective(task.chatId, task.objective)
     const restarted = dispatch(rootChatId, taskId, { kind: 'retry', now: Date.now() })
     if (restarted) startDriver(restarted)
-    // Cascade: reset any tasks that failed *because* this dep failed, so they can
-    // restart automatically when this task completes (via maybeUnblockDependents).
+
     cascadeRetryDependents(rootChatId, taskId)
   }
 
-  /**
-   * When a dependency is retried, find all tasks that failed because of it and
-   * reset them back to pending-blocked so they auto-start once the dep finishes.
-   * Matches on the structured failedDependencyId; falls back to the legacy
-   * quoted-id error-message format for rows persisted before that field existed.
-   * Failures with independent root causes are left alone.
-   */
   function cascadeRetryDependents(rootChatId: string, retriedTaskId: string): void {
     for (const candidate of deps.store.tasks.listByRoot(rootChatId)) {
       if (candidate.status !== 'failed') continue
@@ -846,16 +778,6 @@ export function createTaskService(
     }
   }
 
-  /**
-   * On process start, tasks persisted as pending/running/blocked have no live
-   * driver behind them — the in-memory run loop and AbortControllers died with
-   * the previous process. Mark them failed so the UI stops showing a spinner and
-   * any future await resolves instead of hanging forever. Called once at startup,
-   * before any new run can attach.
-   *
-   * Uses failureKind:'app-restart' so the UI can distinguish these from genuine
-   * logic failures and offer targeted "retry interrupted tasks" recovery.
-   */
   function reconcileOrphans(): number {
     const orphans = deps.store.tasks.listUnsettled()
     for (const task of orphans) {
@@ -885,8 +807,6 @@ export function createTaskService(
       }
     }
     if (isRoot) {
-      // Cancelled pending tasks never had a driver; reevaluate once for the
-      // whole tree so their dependents fail fast instead of hanging.
       maybeUnblockDependents(rootChatId)
       broadcastTasks(rootChatId)
     }

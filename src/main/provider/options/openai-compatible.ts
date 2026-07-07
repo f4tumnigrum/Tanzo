@@ -15,8 +15,7 @@ export const openaiCompatibleOptionSchemas: ProviderOptionSchema[] = [
       {
         path: 'reasoningEffort',
         label: 'Reasoning effort',
-        // Free-form: compatible endpoints accept vendor-specific values.
-        // Choices are suggestions for quick pickers (e.g. the composer badge).
+
         control: 'string',
         role: 'reasoningEffort',
         default: 'high',

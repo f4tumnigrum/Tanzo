@@ -1,26 +1,3 @@
-/**
- * Marketplace install lifecycle: add / remove / upgrade and root resolution.
- *
- * Wire-compatible with Codex (`codex-rs/core-plugins/src/marketplace_add.rs`,
- * `marketplace_remove.rs`, `marketplace_upgrade.rs`):
- * - A `local` source is referenced in place and never copied; only its source
- *   record is persisted.
- * - A `git` source is cloned into a staging dir, validated, then atomically
- *   moved into a Tanzo-owned install root at `<installRoot>/<name>`.
- * - Adds are idempotent: re-adding the same `(sourceType, source, ref,
- *   sparsePaths)` refreshes the record and reports `alreadyAdded`.
- * - Upgrades apply to git sources only: compare the remote revision against the
- *   recorded one, and re-clone + atomically activate when it changed.
- * - Removal deletes the persisted record and the managed install root, but
- *   never touches a local source directory.
- *
- * Codex stores marketplace metadata in `config.toml`; Tanzo persists it in the
- * `plugin_marketplaces` table via `MarketplaceSourceStore`. Codex also writes a
- * `.codex-marketplace-install.json` for cross-process upgrade guarding; Tanzo
- * is single-process with a SQLite-backed `last_revision`, so that file is
- * unnecessary.
- */
-
 import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { TanzoNotFoundError, TanzoValidationError } from '@shared/errors'
@@ -40,17 +17,15 @@ import {
 } from './marketplace-source'
 import type { MarketplaceSourceRecord, MarketplaceSourceStore } from './marketplace-source-db'
 
-/** Reserved marketplace names that may not be added from an external source. */
 const RESERVED_MARKETPLACE_NAMES = new Set<string>()
 
 const STAGING_DIR = '.staging'
 
 export interface AddMarketplaceInput {
-  /** Raw source string: `owner/repo`, a git URL/SSH, or a local path. */
   source: string
-  /** Explicit ref (branch/tag/SHA); git sources only. */
+
   refName?: string
-  /** Sparse-checkout paths; git sources only. */
+
   sparsePaths?: string[]
 }
 
@@ -58,27 +33,25 @@ export interface AddMarketplaceOutcome {
   name: string
   sourceType: 'git' | 'local'
   sourceDisplay: string
-  /** Absolute root that holds the marketplace manifest. */
+
   installedRoot: string
   alreadyAdded: boolean
 }
 
 export interface UpgradeMarketplaceOutcome {
   name: string
-  /** True when a new revision was cloned and activated. */
+
   updated: boolean
   revision: string | null
 }
 
-/** Injection seam for tests — mirrors Codex's `clone_source` closure argument. */
 export interface MarketplaceInstallerDeps {
-  /** Absolute root under which git marketplaces are materialized. */
   installRoot: string
   store: MarketplaceSourceStore
   logger: Logger
-  /** Override the git clone (returns the checked-out revision). */
+
   cloneGitSource?: typeof defaultCloneGitSource
-  /** Override the remote-revision probe. */
+
   gitRemoteRevision?: typeof defaultGitRemoteRevision
 }
 
@@ -86,9 +59,9 @@ export interface MarketplaceInstaller {
   add(input: AddMarketplaceInput): Promise<AddMarketplaceOutcome>
   remove(name: string): void
   upgrade(name: string): Promise<UpgradeMarketplaceOutcome>
-  /** All registered marketplaces' roots, for discovery (skips missing roots). */
+
   resolveRoots(): string[]
-  /** The persisted source records, newest registration first. */
+
   list(): MarketplaceSourceRecord[]
 }
 
@@ -97,7 +70,6 @@ export function createMarketplaceInstaller(deps: MarketplaceInstallerDeps): Mark
   const cloneGitSource = deps.cloneGitSource ?? defaultCloneGitSource
   const gitRemoteRevision = deps.gitRemoteRevision ?? defaultGitRemoteRevision
 
-  /** Read + validate the marketplace name from a root directory. */
   function marketplaceNameAt(root: string): string {
     const manifestPath = findMarketplacePath(root)
     if (!manifestPath) {
@@ -124,7 +96,6 @@ export function createMarketplaceInstaller(deps: MarketplaceInstallerDeps): Mark
     return join(installRoot, name)
   }
 
-  /** Resolve a record's on-disk root (local source path, or managed root). */
   function recordRoot(record: MarketplaceSourceRecord): string {
     return record.sourceType === 'local' ? record.source : managedRoot(record.name)
   }
@@ -138,7 +109,6 @@ export function createMarketplaceInstaller(deps: MarketplaceInstallerDeps): Mark
     }
   }
 
-  /** Reject a name already registered from a different source. */
   function assertNoConflictingSource(name: string, source: MarketplaceSource): void {
     const existing = store.get(name)
     if (!existing || sourceMatchesRecord(source, existing)) return
@@ -204,7 +174,6 @@ export function createMarketplaceInstaller(deps: MarketplaceInstallerDeps): Mark
 
     const destination = managedRoot(name)
     if (existsSync(destination)) {
-      // Same identity → idempotent refresh; otherwise it's a name conflict.
       rmSync(staged, { recursive: true, force: true })
       assertNoConflictingSource(name, source)
       store.record({
@@ -243,7 +212,6 @@ export function createMarketplaceInstaller(deps: MarketplaceInstallerDeps): Mark
         installedAt: Date.now()
       })
     } catch (error) {
-      // Roll back the activated root so a failed record write leaves no orphan.
       rmSync(destination, { recursive: true, force: true })
       throw error
     }
@@ -277,7 +245,7 @@ export function createMarketplaceInstaller(deps: MarketplaceInstallerDeps): Mark
         throw new TanzoNotFoundError('MARKETPLACE_NOT_FOUND', `Marketplace "${name}" is not added.`)
       }
       store.remove(name)
-      // Only ever delete the Tanzo-managed install root; local sources stay put.
+
       if (hasManaged) {
         rmSync(root, { recursive: true, force: true })
       }
@@ -326,8 +294,6 @@ export function createMarketplaceInstaller(deps: MarketplaceInstallerDeps): Mark
         throw error
       }
 
-      // Back up the existing root, swap in the new one, and only then drop the
-      // backup so a failed activation can be rolled back.
       const backup = existsSync(destination)
         ? join(stagingRoot, `marketplace-backup-${Date.now().toString(36)}`)
         : null
@@ -360,7 +326,6 @@ export function createMarketplaceInstaller(deps: MarketplaceInstallerDeps): Mark
   }
 }
 
-/** Whether a parsed source has the same identity as a persisted record. */
 function sourceMatchesRecord(source: MarketplaceSource, record: MarketplaceSourceRecord): boolean {
   if (source.kind === 'local') {
     return record.sourceType === 'local' && record.source === source.path

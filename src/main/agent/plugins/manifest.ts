@@ -1,16 +1,3 @@
-/**
- * Parse and validate a plugin's `plugin.json` manifest.
- *
- * Wire-compatible with Codex (`codex-rs/core-plugins/src/manifest.rs`):
- * - The manifest lives at `.codex-plugin/plugin.json`, with a compatibility
- *   fallback to `.claude-plugin/plugin.json`.
- * - Contribution paths (`skills`, `mcpServers`, `apps`, `hooks`) are required to
- *   be relative, start with `./`, contain no `..`, and resolve to a location
- *   inside the plugin root. Anything else is dropped with a warning.
- * - The `interface` block is presentation-only metadata; `defaultPrompt` keeps
- *   at most 3 entries, each at most 128 characters, whitespace-collapsed.
- */
-
 import { existsSync, readFileSync } from 'node:fs'
 import { isAbsolute, join, normalize, sep } from 'node:path'
 import type { Logger } from '../logging'
@@ -21,13 +8,12 @@ const MAX_DEFAULT_PROMPT_COUNT = 3
 const MAX_DEFAULT_PROMPT_LEN = 128
 
 export interface PluginManifestPaths {
-  /** Absolute path to the skills directory, if declared and valid. */
   skills: string | null
-  /** Absolute path to the MCP servers config file, if declared and valid. */
+
   mcpServers: string | null
-  /** Absolute path to the apps config file, if declared and valid. */
+
   apps: string | null
-  /** Absolute path to the hooks config file, if declared and valid. */
+
   hooks: string | null
 }
 
@@ -69,7 +55,6 @@ interface RawManifest {
   interface?: unknown
 }
 
-/** Resolve the manifest file path for a plugin root, honoring the fallback. */
 export function findManifestPath(pluginRoot: string): string | null {
   for (const relative of DISCOVERABLE_MANIFEST_PATHS) {
     const candidate = join(pluginRoot, relative)
@@ -78,10 +63,6 @@ export function findManifestPath(pluginRoot: string): string | null {
   return null
 }
 
-/**
- * Load and validate a plugin manifest. Returns `null` when no manifest file
- * exists or the JSON is unparseable; never throws.
- */
 export function loadPluginManifest(pluginRoot: string, logger: Logger): PluginManifest | null {
   const manifestPath = findManifestPath(pluginRoot)
   if (!manifestPath) return null
@@ -95,7 +76,7 @@ export function loadPluginManifest(pluginRoot: string, logger: Logger): PluginMa
   }
 
   const rawName = typeof raw.name === 'string' ? raw.name.trim() : ''
-  // Codex falls back to the plugin root's directory name when `name` is blank.
+
   const name = rawName || basename(pluginRoot)
   const version =
     typeof raw.version === 'string' && raw.version.trim() ? raw.version.trim() : undefined
@@ -127,11 +108,6 @@ function basename(p: string): string {
   return parts.length > 0 ? parts[parts.length - 1] : p
 }
 
-/**
- * Validate and resolve a manifest-declared relative path against the plugin
- * root. Enforces Codex's rules: must start with `./`, must not contain `..`,
- * must stay inside the plugin root. Returns the absolute path or `null`.
- */
 export function resolveManifestPath(
   pluginRoot: string,
   field: string,
@@ -163,8 +139,9 @@ export function resolveManifestPath(
   }
 
   const resolved = join(pluginRoot, relative)
-  const rootWithSep = pluginRoot.endsWith(sep) ? pluginRoot : pluginRoot + sep
-  if (isAbsolute(relative) || (!resolved.startsWith(rootWithSep) && resolved !== pluginRoot)) {
+  const normalizedRoot = normalize(pluginRoot)
+  const rootWithSep = normalizedRoot.endsWith(sep) ? normalizedRoot : normalizedRoot + sep
+  if (isAbsolute(relative) || (!resolved.startsWith(rootWithSep) && resolved !== normalizedRoot)) {
     logger.warn(`ignoring plugin ${field}: path must stay within the plugin root`)
     return null
   }

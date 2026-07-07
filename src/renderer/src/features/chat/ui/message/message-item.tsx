@@ -23,8 +23,7 @@ export const MessageItem = memo(function MessageItem({
   const compactionPart = message.parts.find((part) => part.type === 'data-compaction')
   if (compactionPart?.type === 'data-compaction')
     return <CompactionMessage {...compactionPart.data} />
-  // Synthetic per-turn context injection (datetime, git snapshot, goal, hooks):
-  // part of the transcript for the model, but noise for the user — hide it.
+
   if (message.parts.some((part) => part.type === 'data-contextInjection')) return null
   if (message.role === 'user')
     return <UserMessage message={message} {...(onEdit ? { onEdit } : {})} />

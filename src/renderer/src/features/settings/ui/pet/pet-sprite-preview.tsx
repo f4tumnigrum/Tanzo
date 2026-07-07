@@ -1,16 +1,16 @@
 import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { CODEX_PET_ANIMATIONS, CODEX_PET_ATLAS, type PetAsset } from '@shared/pet'
+import { isPetApiAvailable, petClient } from '@/platform/electron/pet-client'
 
 const assetCache = new Map<string, PetAsset>()
 
 async function loadAsset(id: string): Promise<PetAsset | null> {
   const cached = assetCache.get(id)
   if (cached) return cached
-  const api = window.electron?.pet
-  if (!api) return null
+  if (!isPetApiAvailable()) return null
   try {
-    const asset = await api.get(id)
+    const asset = await petClient.get(id)
     if (asset) assetCache.set(id, asset)
     return asset
   } catch {

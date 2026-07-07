@@ -33,9 +33,9 @@ export const WALLPAPER_SCHEME = 'tanzo-asset'
 const WALLPAPER_HOST = 'wallpaper'
 const WALLPAPER_DIR = 'wallpapers'
 const ALLOWED_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif'])
-/** Resize imported images so the long edge does not exceed this value (px). */
+
 const MAX_DIMENSION = 3840
-/** Skip native resize for files larger than this (bytes) to avoid OOM. */
+
 const MAX_RESIZE_INPUT_BYTES = 80 * 1024 * 1024
 
 function wallpaperDir(): string {
@@ -71,7 +71,6 @@ export function registerWallpaperProtocol(): void {
   })
 }
 
-/** Delete files in the wallpaper dir that are no longer referenced in prefs. */
 async function pruneUnused(): Promise<void> {
   const dir = wallpaperDir()
   let entries: string[]
@@ -97,10 +96,6 @@ async function pruneUnused(): Promise<void> {
   )
 }
 
-/**
- * Copy a source image into the wallpaper store, resizing it down if it exceeds
- * MAX_DIMENSION on the long edge. GIFs are copied unchanged (animation support).
- */
 async function importFile(sourcePath: string): Promise<WallpaperAsset> {
   const ext = extname(sourcePath).toLowerCase()
   const id = randomBytes(8).toString('hex')
@@ -223,6 +218,5 @@ export function registerWallpaperIpc(
   target.handle(PREFERENCES_CHANNELS.removeWallpaper, (_event, id: string) => removeAsset(id))
   target.handle(PREFERENCES_CHANNELS.clearWallpaper, () => clearAll())
 
-  // Best-effort cleanup of orphaned files on startup.
   pruneUnused().catch((err) => log.warn('pruneUnused failed', err))
 }

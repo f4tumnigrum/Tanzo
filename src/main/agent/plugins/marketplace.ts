@@ -1,18 +1,3 @@
-/**
- * Parse a `marketplace.json` catalog.
- *
- * Wire-compatible with Codex (`codex-rs/core-plugins/src/marketplace.rs`):
- * - The catalog lives at `<root>/.agents/plugins/marketplace.json`, with a
- *   compatibility fallback to `<root>/.claude-plugin/marketplace.json`.
- * - `plugins[]` entries carry a `name`, a `source`, a `policy`, and a display
- *   `category`. Only `local` sources are supported here (the project scope
- *   excludes git/remote); entries with any other source are skipped.
- * - A local `source.path` (or the bare-string shorthand) must start with `./`,
- *   contain only normal path segments (no `..`), and resolve relative to the
- *   marketplace *root* — i.e. the directory the manifest-relative suffix is
- *   stripped from, not the directory the manifest file sits in.
- */
-
 import { existsSync, readFileSync } from 'node:fs'
 import { join, normalize, sep } from 'node:path'
 import type { Logger } from '../logging'
@@ -27,18 +12,16 @@ const MARKETPLACE_MANIFEST_RELATIVE_PATHS = [
 export type MarketplaceInstallPolicy = 'NOT_AVAILABLE' | 'AVAILABLE' | 'INSTALLED_BY_DEFAULT'
 export type MarketplaceAuthPolicy = 'ON_INSTALL' | 'ON_USE'
 
-/** Resolved plugin source. Only local sources are supported in this scope. */
 export interface MarketplacePluginLocalSource {
   kind: 'local'
-  /** Absolute path to the local plugin source directory. */
+
   path: string
 }
 
 export interface MarketplacePlugin {
-  /** Plugin name; matches the plugin folder and its `plugin.json` `name`. */
   name: string
   source: MarketplacePluginLocalSource
-  /** Version read from the resolved plugin's own `plugin.json`, if present. */
+
   localVersion?: string
   installation: MarketplaceInstallPolicy
   authentication: MarketplaceAuthPolicy
@@ -47,7 +30,7 @@ export interface MarketplacePlugin {
 
 export interface Marketplace {
   name: string
-  /** Absolute path to the marketplace.json file. */
+
   path: string
   displayName?: string
   plugins: MarketplacePlugin[]
@@ -73,10 +56,6 @@ const INSTALL_POLICIES = new Set<MarketplaceInstallPolicy>([
 ])
 const AUTH_POLICIES = new Set<MarketplaceAuthPolicy>(['ON_INSTALL', 'ON_USE'])
 
-/**
- * Find the marketplace manifest under a root directory, honoring the fallback
- * path. Returns the absolute manifest path, or null when none exists.
- */
 export function findMarketplacePath(root: string): string | null {
   for (const relative of MARKETPLACE_MANIFEST_RELATIVE_PATHS) {
     const candidate = join(root, relative)
@@ -85,10 +64,6 @@ export function findMarketplacePath(root: string): string | null {
   return null
 }
 
-/**
- * Given a marketplace.json path, derive the marketplace root by stripping the
- * known manifest-relative suffix. Local plugin paths resolve against this root.
- */
 export function marketplaceRootDir(marketplacePath: string): string | null {
   const normalized = normalize(marketplacePath)
   for (const relative of MARKETPLACE_MANIFEST_RELATIVE_PATHS) {
@@ -125,12 +100,7 @@ function resolveLocalSourcePath(
   return join(marketplaceRoot, relative)
 }
 
-/**
- * Resolve a plugin entry's `source` to a local source path, or null when the
- * source is unsupported (git/remote) or malformed.
- */
 function resolveSource(marketplaceRoot: string, source: unknown, logger: Logger): string | null {
-  // Bare-string shorthand: `"source": "./plugins/foo"`.
   if (typeof source === 'string') {
     return resolveLocalSourcePath(marketplaceRoot, source, logger)
   }
@@ -139,7 +109,7 @@ function resolveSource(marketplaceRoot: string, source: unknown, logger: Logger)
     if (obj.source === 'local' && typeof obj.path === 'string') {
       return resolveLocalSourcePath(marketplaceRoot, obj.path, logger)
     }
-    // `url` / `git-subdir` sources are intentionally unsupported in this scope.
+
     logger.warn('skipping marketplace plugin with unsupported (non-local) source')
     return null
   }
@@ -162,11 +132,6 @@ function parsePolicy(value: unknown): {
   return { installation, authentication }
 }
 
-/**
- * Load and parse a marketplace.json. Returns null when the file is missing or
- * unparseable, or when it lacks a usable `name`. Invalid plugin entries are
- * skipped with a warning rather than failing the whole catalog.
- */
 export function loadMarketplace(marketplacePath: string, logger: Logger): Marketplace | null {
   let raw: RawMarketplace
   try {
@@ -204,8 +169,7 @@ export function loadMarketplace(marketplacePath: string, logger: Logger): Market
         logger.warn(`skipping marketplace plugin with no name in ${marketplacePath}`)
         continue
       }
-      // The plugin name doubles as a PluginId segment and a cache directory
-      // name, so it must satisfy the same strict charset.
+
       const nameError = validatePluginSegment(pluginName, 'plugin name')
       if (nameError) {
         logger.warn(`skipping marketplace plugin in ${marketplacePath}: ${nameError}`)

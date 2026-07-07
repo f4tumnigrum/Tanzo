@@ -1,6 +1,7 @@
 import * as React from 'react'
 import type { ElectronColorScheme } from '@shared/system'
 import { TanzoInvariantError } from '@shared/errors'
+import { isSystemApiAvailable, systemClient } from '@/platform/electron/system-client'
 import { ThemeInitializer, resolveThemeMode } from '@/common/theme'
 import { patchPreferences, usePreferences } from '@/common/preferences'
 import type { ThemeMode } from '@shared/preferences'
@@ -25,7 +26,8 @@ export function ThemeProvider({
     React.useState<ElectronColorScheme>(initialSystemColorScheme)
 
   React.useEffect(() => {
-    return window.electron?.onSystemPreferencesChanged((preferences) => {
+    if (!isSystemApiAvailable()) return
+    return systemClient.onSystemPreferencesChanged((preferences) => {
       setSystemTheme(preferences.colorScheme)
     })
   }, [])

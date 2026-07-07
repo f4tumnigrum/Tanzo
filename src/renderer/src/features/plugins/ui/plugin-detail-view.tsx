@@ -24,9 +24,8 @@ export function PluginDetailView({
   onToggle,
   onUninstall
 }: {
-  /** Always present (from the snapshot); drives the header instantly. */
   plugin: PluginSummary
-  /** Full detail (path, keywords, MCP names); arrives after a fetch. */
+
   detail: PluginDetail | null
   onBack: () => void
   onToggle: (enabled: boolean) => void
@@ -168,7 +167,9 @@ export function PluginDetailView({
               ) : null}
               {root ? (
                 <InfoRow icon={FolderOpen} label={t('plugins.detail.path')}>
-                  <span className="break-all font-mono text-[length:var(--code-font-size-sm)]">{root}</span>
+                  <span className="break-all font-mono text-[length:var(--code-font-size-sm)]">
+                    {root}
+                  </span>
                 </InfoRow>
               ) : null}
               {keywords.length > 0 ? (

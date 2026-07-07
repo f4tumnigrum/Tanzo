@@ -39,11 +39,7 @@ export interface HookServiceDeps {
   userDir?: string
   sessionMeta: (chatId: string) => HookSessionMeta | undefined
   logger?: { warn(msg: string, meta?: Record<string, unknown>): void }
-  /**
-   * Lazily provides hook config files contributed by active plugins. Evaluated
-   * on every refresh so plugin enable/disable/install takes effect. These are
-   * registered as `managed` sources and therefore run without manual trust.
-   */
+
   pluginSources?: () => { source: HookSource; path: string }[]
 }
 

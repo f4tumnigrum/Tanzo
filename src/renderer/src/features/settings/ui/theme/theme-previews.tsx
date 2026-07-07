@@ -159,4 +159,3 @@ export function ColorThemePreview({ theme }: { theme: ColorThemeDefinition }) {
     </div>
   )
 }
-

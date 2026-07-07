@@ -1,3 +1,4 @@
+import { isAbsolute } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   marketplaceSourceDisplay,
@@ -96,7 +97,7 @@ describe('main/agent/plugins/marketplace-source', () => {
   it('parses a relative local path to an absolute directory', () => {
     const source = parseOk('./local-market')
     expect(source.kind).toBe('local')
-    if (source.kind === 'local') expect(source.path.startsWith('/')).toBe(true)
+    if (source.kind === 'local') expect(isAbsolute(source.path)).toBe(true)
   })
 
   it('treats `.` as a local path', () => {

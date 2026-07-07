@@ -7,7 +7,7 @@ const log = createLogger('updater')
 
 let state: UpdaterState = { ...INITIAL_UPDATER_STATE }
 let getWindow: () => BrowserWindow | null = () => null
-/** True once the update feed is wired up (packaged builds only). */
+
 let feedReady = false
 
 function setState(next: Partial<UpdaterState>): void {
@@ -26,22 +26,6 @@ function runCheck(): void {
   })
 }
 
-/**
- * Wire up manual auto-update.
- *
- * Unlike a silent updater, this never downloads on its own: it checks the feed,
- * and when a newer version exists it surfaces an `available` state to the
- * renderer. The user starts the download and the install explicitly.
- *
- * On macOS the feed is still wired up so the "check for updates" button reports
- * whether a newer version exists, but the app is skipped for automatic
- * install: `electron-updater` refuses to apply updates on macOS unless the app
- * is code-signed, and this build ships unsigned. macOS users update by
- * downloading a new DMG from the GitHub release.
- *
- * Only packaged builds check for updates; in development there is no update feed
- * and no installed app to replace.
- */
 export function initAutoUpdater(
   getMainWindow: () => BrowserWindow | null,
   target: IpcMain = ipcMain

@@ -178,11 +178,6 @@ export function createAgentStore(
     return summary
   }
 
-  /**
-   * Ensure a conversation with a caller-provided id exists, creating it if absent. Used by
-   * external drivers (e.g. the chat bridge) that address conversations by a stable external
-   * id (`qq:group:{id}`) rather than a generated UUID. Idempotent.
-   */
   function ensureConversation(id: string, input: NewConversationInput = {}): ConversationSummary {
     const existing = conversations.get(id)
     if (existing) return existing
@@ -214,8 +209,6 @@ export function createAgentStore(
   function deleteConversation(chatId: string): void {
     requireConversation(chatId, 'CHAT_CONVERSATION_NOT_FOUND')
     db.transaction(() => {
-      // Forks survive their parent: detach them first so the FK cascade only
-      // removes subagent children. Detached forks become root conversations.
       conversations.detachForks(chatId)
       messages.deleteAll(chatId)
       conversations.delete(chatId)
@@ -272,8 +265,7 @@ export function createAgentStore(
 
   function setConversationPinned(chatId: string, pinned: boolean): ConversationSummary {
     const existing = requireConversation(chatId, 'CHAT_CONVERSATION_NOT_FOUND')
-    // Pinning is sidebar-only metadata; leave updated_at untouched so it does
-    // not reshuffle activity-based ordering.
+
     const pinnedAt = pinned ? Date.now() : null
     conversations.setPinnedAt(chatId, pinnedAt)
     return { ...existing, pinnedAt }
@@ -324,9 +316,7 @@ export function createAgentStore(
           parentRelation: 'fork'
         })
         writeActiveMessages(forked.id, forkMessages)
-        // Carry the source's compaction state across so the fork starts with
-        // the same context projection (summary + tail) instead of the full
-        // uncompacted history.
+
         messages.copyOverlaysForFork(source.id, forked.id)
       })
 

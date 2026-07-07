@@ -21,8 +21,6 @@ export type McpTransportType = 'stdio' | 'sse' | 'http'
 export type McpHttpRedirectMode = 'follow' | 'error'
 export type McpServerStatus = 'connected' | 'disconnected' | 'connecting' | 'error'
 
-/** Name of the app-contributed browser-automation server. Shared so the
- * renderer can group its tools under the browser-automation section. */
 export const BUILTIN_BROWSER_SERVER_NAME = 'chrome-devtools'
 
 export interface McpImplementationInfo {
@@ -44,11 +42,7 @@ export interface McpServerConfig {
   redirect?: McpHttpRedirectMode
   env?: Record<string, string>
   enabled: boolean
-  /**
-   * True for servers the app itself contributes (e.g. the built-in browser
-   * automation server). Built-in servers are not editable or deletable; their
-   * enabled state is derived from an app preference, not the database.
-   */
+
   builtin?: boolean
   created_at?: string
   updated_at?: string

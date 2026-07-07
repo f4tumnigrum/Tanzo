@@ -1,11 +1,3 @@
-/**
- * Lightweight main-window bounds persistence. No external dependency.
- *
- * Persists `{ x, y, width, height, isMaximized }` to
- * `<userData>/window-state.json`. On load, saved bounds are validated against
- * the current displays so an off-screen position (e.g. after unplugging a
- * monitor) falls back to a centered default.
- */
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { app, screen, type BrowserWindow } from 'electron'
@@ -14,9 +6,9 @@ import { createLogger } from './logger'
 const log = createLogger('window-state')
 
 const FILE_NAME = 'window-state.json'
-/** Minimum overlap (px) with a display work area for saved bounds to be accepted. */
+
 const MIN_VISIBLE = 80
-/** Debounce for persisting bounds during resize/move (ms). */
+
 const SAVE_DEBOUNCE_MS = 600
 
 interface WindowState {
@@ -27,7 +19,6 @@ interface WindowState {
   isMaximized: boolean
 }
 
-/** Bounds passed to the BrowserWindow constructor plus the size constraints. */
 export interface InitialWindowState {
   x?: number
   y?: number
@@ -46,7 +37,6 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
 }
 
-/** Screen-derived default size and min constraints (matches the pre-persistence sizing). */
 function computeDefaults(): { width: number; height: number; minWidth: number; minHeight: number } {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize
   const maxWidth = Math.min(1480, width > 1072 ? width - 48 : width)
@@ -65,7 +55,6 @@ function isValidNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value)
 }
 
-/** Parse and validate the persisted state; returns null when unusable. */
 function readState(): WindowState | null {
   let raw: string
   try {
@@ -91,10 +80,6 @@ function readState(): WindowState | null {
   }
 }
 
-/**
- * True when the bounds keep at least MIN_VISIBLE px of overlap with some
- * display's work area, so the title bar stays reachable.
- */
 function isOnScreen(state: WindowState): boolean {
   return screen.getAllDisplays().some(({ workArea }) => {
     const overlapX =
@@ -105,10 +90,6 @@ function isOnScreen(state: WindowState): boolean {
   })
 }
 
-/**
- * Resolve the bounds to open the window with: restored from disk when present
- * and still on-screen, otherwise a centered screen-derived default.
- */
 export function getInitialWindowState(): InitialWindowState {
   const defaults = computeDefaults()
   const saved = readState()
@@ -132,18 +113,12 @@ export function getInitialWindowState(): InitialWindowState {
   }
 }
 
-/**
- * Persist bounds on resize/move (debounced) and immediately on maximize,
- * unmaximize, and close. When maximized, the normal bounds are preserved so
- * restoring later returns to the pre-maximize size.
- */
 export function manageWindowState(window: BrowserWindow): void {
   let timer: NodeJS.Timeout | null = null
 
   const persist = (): void => {
     if (window.isDestroyed()) return
-    // getNormalBounds returns the restored (non-maximized) bounds even while
-    // the window is maximized or in fullscreen.
+
     const bounds = window.getNormalBounds()
     const state: WindowState = {
       x: bounds.x,

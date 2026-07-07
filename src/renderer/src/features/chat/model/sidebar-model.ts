@@ -14,7 +14,7 @@ export interface SidebarConversationFamilyModel {
   mainSession: SidebarSessionRowModel
   branchCount: number
   branches: SidebarSessionRowModel[]
-  /** Stable id arrays so memoized rows keep referential equality across renders. */
+
   familySessionIds: string[]
   branchSessionIds: string[]
 }

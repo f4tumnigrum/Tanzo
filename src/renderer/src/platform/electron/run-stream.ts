@@ -66,10 +66,7 @@ export function createMessageSink(handlers: {
     try {
       for await (const message of readUIMessageStream<TanzoUIMessage>({
         stream,
-        // The AI SDK reports native `error` chunks only through this callback
-        // (processUIMessageStream calls onError?.() — without it they are
-        // silently dropped). The terminal run-state event is the primary error
-        // channel, so just forward these to the same handler.
+
         onError: (error) => handlers.onError?.(error),
         ...(handlers.seedMessage ? { message: handlers.seedMessage } : {})
       })) {
@@ -184,10 +181,7 @@ export async function connectRun(
           gate = createFrameGate()
           gate.lock(expected.runId)
           live = true
-          // The main process is running this turn but its snapshot isn't queryable
-          // yet. Notify onRunStart anyway (with empty base messages, which merge to
-          // keep the current display) so the consumer can build its message sink;
-          // otherwise live frames replayed below would be silently dropped.
+
           handlers.onRunStart?.({
             chatId,
             runId: expected.runId,
@@ -245,10 +239,7 @@ export async function connectRun(
       }
       return
     }
-    // The main process delivers frames tick-batched (`run-frame-batch`); a
-    // batch is semantically identical to its frames delivered one by one, and
-    // each contained frame passes the same seq gate. Single `run-frame`
-    // events are still accepted for compatibility.
+
     if (event.kind !== 'run-frame' && event.kind !== 'run-frame-batch') return
     const frames = event.kind === 'run-frame' ? [event] : event.frames
     if (live) {

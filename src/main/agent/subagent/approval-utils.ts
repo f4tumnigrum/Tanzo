@@ -29,14 +29,6 @@ function lastAssistant(messages: TanzoUIMessage[]): TanzoUIMessage | undefined {
   return undefined
 }
 
-/**
- * Assistant messages belonging to the current turn — everything after the last
- * user message. A turn normally pauses at the first approval, so this is usually
- * one message, but scanning the whole turn is robust if the SDK splits assistant
- * output across messages. Bounding by the last user message also means approvals
- * abandoned by an instruct/abort (which appends a new user message) are correctly
- * ignored rather than re-surfaced.
- */
 function currentTurnAssistants(messages: TanzoUIMessage[]): TanzoUIMessage[] {
   let lastUserIndex = -1
   for (let i = messages.length - 1; i >= 0; i--) {

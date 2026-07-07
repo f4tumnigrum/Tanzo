@@ -63,7 +63,6 @@ export function applyThemeSettings({
   if (overrides?.radius == null) root.style.setProperty('--radius', radiusPreset.value)
   if (overrides?.spacing == null) root.style.setProperty('--spacing', densityPreset.spacing)
 
-  // User typography wins over theme overrides: applied last, same inline scope.
   root.style.setProperty('--font-size-base', `${typography.fontSize}px`)
   root.style.setProperty('--code-font-size', `${typography.codeFontSize}px`)
   root.style.setProperty('--content-line-height', `${typography.lineHeight}`)
@@ -115,7 +114,6 @@ export function useThemeSettings() {
     setColorThemeId: (id: ColorThemeId) => patchPreferences({ colorThemeId: id }),
     setRadiusPresetId: (id: RadiusPresetId) => patchPreferences({ radiusPresetId: id }),
     setDensityPresetId: (id: DensityPresetId) => patchPreferences({ densityPresetId: id }),
-    patchTypography: (patch: Partial<TypographySettings>) =>
-      patchPreferences({ typography: patch })
+    patchTypography: (patch: Partial<TypographySettings>) => patchPreferences({ typography: patch })
   }
 }

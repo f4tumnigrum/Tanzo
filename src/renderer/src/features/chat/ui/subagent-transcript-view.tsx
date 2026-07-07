@@ -10,7 +10,6 @@ import {
   useRunState
 } from '../model/conversation/use-chat-session'
 
-/** Status-dot tone mirrors the task panel so the header reads at a glance. */
 const STATUS_DOT_TONE: Record<SubagentTask['status'], string> = {
   pending: 'bg-muted-foreground/40',
   running: 'bg-primary',
@@ -20,20 +19,10 @@ const STATUS_DOT_TONE: Record<SubagentTask['status'], string> = {
   cancelled: 'bg-muted-foreground/40'
 }
 
-/** "explore" -> "Explore". Falls back gracefully for empty/odd values. */
 function agentLabel(agentType: string): string {
   return agentType ? agentType.charAt(0).toUpperCase() + agentType.slice(1) : agentType
 }
 
-/**
- * Full-screen, read-only view of a sub-agent's executor conversation. Rendered
- * in place of the main ActiveChat (same footprint), with its own header styled
- * to match the app header (titlebar height, back button, title) and a back
- * action that returns to the main conversation.
- *
- * Read-only is enforced structurally (no composer, no fork/edit props) and in
- * the main process (ipc/chat.ts rejects message writes into a sub-agent chat).
- */
 export function SubagentTranscriptView({
   task,
   onBack

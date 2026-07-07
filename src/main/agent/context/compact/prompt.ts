@@ -14,18 +14,6 @@ Cover, in order:
 
 Be specific and complete. Preserve exact identifiers, signatures, and paths. Do not invent facts not present in the transcript.`
 
-/**
- * Extract the durable summary text from raw model output.
- *
- * The current prompt asks for plain text, so this is usually a passthrough.
- * Tag handling is kept defensively for models that still emit the legacy
- * <analysis>/<summary> structure (e.g. summaries produced by older prompts
- * that remain in conversation history):
- * - completed and trailing-unterminated <analysis> blocks are dropped so
- *   private reasoning can never leak into the persisted summary
- * - if a <summary> tag is present, its content is used (up to </summary>,
- *   or end-of-text when the stream was cut off before the closing tag)
- */
 function extractSummaryText(text: string): string {
   const cleaned = text
     .replace(/<analysis>[\s\S]*?<\/analysis>/gi, '')
@@ -34,7 +22,6 @@ function extractSummaryText(text: string): string {
   return match ? match[1] : cleaned
 }
 
-/** Streaming preview variant: trims only the start so the live view is stable while text grows. */
 export function extractPartialSummary(text: string): string {
   return extractSummaryText(text).trimStart()
 }

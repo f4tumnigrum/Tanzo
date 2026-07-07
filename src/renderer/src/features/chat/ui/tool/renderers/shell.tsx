@@ -209,7 +209,10 @@ function ShellOutputComp({ context }: { context: ToolRenderContext }): React.JSX
         ) : (
           <div className="space-y-1">
             {output.sessions.map((session) => (
-              <div key={session.sessionId} className="min-w-0 font-mono text-[length:var(--code-font-size-sm)]">
+              <div
+                key={session.sessionId}
+                className="min-w-0 font-mono text-[length:var(--code-font-size-sm)]"
+              >
                 <div className="flex items-center gap-1.5">
                   <ToolBadge
                     text={session.status}

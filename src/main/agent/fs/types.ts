@@ -4,16 +4,6 @@ export interface FileMeta {
   bom: boolean
 }
 
-/**
- * A snapshot of a file's on-disk identity captured at read time and re-checked
- * before an edit writes back. Used to detect that the file changed underneath
- * an edit tool between read and write (concurrent/external modification).
- *
- * `contentHash` is the hex-encoded SHA-256 of the raw file buffer. It guards
- * against the false-positive window in mtime+size comparison: two writes that
- * land within the mtime resolution AND produce the same byte length (e.g. a
- * same-length reformatting by an external tool) now still trigger FS_STALE_WRITE.
- */
 export interface FileStamp {
   mtimeMs: number
   size: number
@@ -55,11 +45,6 @@ export interface WorkspaceFs {
   readDir(path: string, signal?: AbortSignal): Promise<string[]>
   writeAtomic(path: string, content: string, signal?: AbortSignal): Promise<void>
 
-  /**
-   * Write `content` with the given format metadata. When `expected` is provided,
-   * the file's current stamp is re-checked first and the write is refused with
-   * an `FS_STALE_WRITE` error if it no longer matches.
-   */
   writeTextMeta(
     path: string,
     content: string,

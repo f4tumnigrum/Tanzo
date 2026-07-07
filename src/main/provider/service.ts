@@ -893,8 +893,7 @@ export function createProviderService(store: ProviderStore, codec: SecretCodec):
         const defaults = input.byFamily[family]
         if (!defaults) continue
         const normalized = normalizeDefaults(defaults)
-        // Strict on write: reject unknown keys / mistyped values so the UI
-        // reports them instead of the runtime silently dropping them.
+
         parseCallSettings(normalized.callDefaults)
         store.saveDefaults({
           providerId: input.providerId,
@@ -934,7 +933,6 @@ export function createProviderService(store: ProviderStore, codec: SecretCodec):
       )
     },
     getCallSettings(providerId, family) {
-      // Lenient on read: rows may predate save-time validation.
       return coerceCallSettings(
         normalizeStoredDefaults(store.getDefaults(providerId, family)?.defaults).callDefaults
       )

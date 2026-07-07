@@ -76,11 +76,13 @@ describe('main/agent/plugins/loader', () => {
     expect(outcome.plugins).toHaveLength(1)
     const plugin = outcome.plugins[0]
     expect(plugin.error).toBeUndefined()
-    expect(plugin.skillRoot).toBe(store.activePluginRoot(id('linear'))! + '/skills')
+    expect(plugin.skillRoot).toBe(join(store.activePluginRoot(id('linear'))!, 'skills'))
     expect(plugin.mcpServers).toEqual([
       { name: 'linear', type: 'stdio', command: 'linear-mcp', args: ['--serve'] }
     ])
-    expect(plugin.hooksPath).toBe(store.activePluginRoot(id('linear'))! + '/hooks/hooks.json')
+    expect(plugin.hooksPath).toBe(
+      join(store.activePluginRoot(id('linear'))!, 'hooks', 'hooks.json')
+    )
   })
 
   it('namespaces skill roots by manifest name and dedupes first-wins', () => {
@@ -164,7 +166,7 @@ describe('main/agent/plugins/loader', () => {
     const outcome = loadPlugins([{ id: id('cwd'), enabled: true }], store, silentLogger)
 
     expect(outcome.plugins[0].mcpServers[0].cwd).toBe(
-      store.activePluginRoot(id('cwd'))! + '/sub/dir'
+      join(store.activePluginRoot(id('cwd'))!, 'sub', 'dir')
     )
   })
 })

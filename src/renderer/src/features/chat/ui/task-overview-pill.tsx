@@ -31,7 +31,6 @@ const STATUS_ICON_TONE: Record<SubagentTask['status'], string> = {
   cancelled: 'text-muted-foreground/70'
 }
 
-/** App-restart interruptions get a softer visual treatment than genuine failures. */
 const INTERRUPTED_ICON_TONE = 'text-muted-foreground/55'
 
 function statusIcon(
@@ -42,7 +41,6 @@ function statusIcon(
     case 'done':
       return { Icon: CircleCheckBig }
     case 'failed':
-      // App-restart interruptions: use PowerOff icon with muted tone instead of red CircleAlert.
       if (failureKind === 'app-restart')
         return { Icon: PowerOff, overrideTone: INTERRUPTED_ICON_TONE }
       return { Icon: CircleAlert }
@@ -71,8 +69,6 @@ export function TaskOverviewPill({ chatId }: { chatId: string }): React.JSX.Elem
   const hasBlocked = active.some((task) => task.status === 'blocked')
   const activeCount = active.length
 
-  // Opening the full-screen transcript closes the popover and hands the task to
-  // the page-level view store.
   const openTranscript = (task: SubagentTask): void => {
     setOpen(false)
     viewSubagentTask(task)
@@ -187,13 +183,12 @@ function TaskRow({
   const settled = task.status === 'done' || task.status === 'cancelled'
   const isActive = ACTIVE_STATUSES.has(task.status)
   const canRetry = task.status === 'failed' || task.status === 'cancelled'
-  // Steering a dependency-blocked task is rejected by the service; only offer
-  // it for tasks that actually run.
+
   const canSteer = task.status === 'running' || task.status === 'blocked'
 
   function run(action: () => Promise<void>): void {
     setBusy(true)
-    // State transitions come back over data-task; busy only bridges the IPC gap.
+
     void action()
       .catch(() => {
         // Already reported via reportError in the session; keep the row usable.

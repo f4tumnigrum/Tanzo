@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { isWindowControlsAvailable, systemClient } from '@/platform/electron/system-client'
 import { cn } from '@/lib/utils'
 
 const ICON_PROPS = {
@@ -34,27 +35,16 @@ const ariaMap = {
   restore: 'common.window.restore'
 } as const
 
-/**
- * Single source of truth for whether the custom traffic-light overlay renders
- * on this platform. macOS hides its native buttons and Windows is frameless, so
- * both draw the custom controls; Linux keeps its native frame and draws nothing.
- * Anything that needs to reserve space for the overlay (e.g. a header inset)
- * should gate on this so it never reserves space where no controls exist.
- *
- * Platform comes from the synchronous preload bridge, so this is a plain
- * computation — no IPC round-trip, no re-render.
- */
 export function useWindowControlsVisible(): boolean {
-  const electron = window.electron
-  if (!electron?.windowControls) return false
-  const platform = electron.platformInfo.platform
+  if (!isWindowControlsAvailable()) return false
+  const platform = systemClient.platformInfo()?.platform
   return platform === 'darwin' || platform === 'win32'
 }
 
 export function WindowControls({ className }: { className?: string }) {
   const { t } = useTranslation()
   const [maximized, setMaximized] = useState(false)
-  const controls = window.electron?.windowControls
+  const controls = isWindowControlsAvailable() ? systemClient.windowControls : null
   const visible = useWindowControlsVisible()
 
   useEffect(() => {

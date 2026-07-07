@@ -16,11 +16,6 @@ import type { MCPClient } from '@ai-sdk/mcp'
 export type McpAiSdkToolSet = Awaited<ReturnType<MCPClient['tools']>>
 
 export interface McpService {
-  /**
-   * Servers to surface in settings: user-configured servers plus any built-in
-   * servers not shadowed by a user server of the same name. Built-ins carry
-   * `builtin: true` and are not editable or deletable.
-   */
   listServers(): McpServerConfig[]
   createServer(input: NewMcpServerInput): Promise<McpServerConfig>
   updateServer(id: string, partial: Partial<McpServerConfig>): Promise<McpServerConfig | undefined>
@@ -40,20 +35,9 @@ export interface McpService {
   reconnectServer(serverName: string): Promise<void>
   toolsForServer(serverName: string): Promise<McpAiSdkToolSet>
   onConnectionStatesChanged(listener: (states: McpConnectionState[]) => void): () => void
-  /**
-   * Register a lazy provider of MCP servers contributed by active plugins.
-   * Late-bound because the plugin manager is created after the MCP service.
-   * Merged into the connection set on every sync; user-configured servers win
-   * on name collision (a plugin server is dropped when a database-backed server
-   * already claims the same name).
-   */
+
   setPluginServers(provider: () => McpServerConfig[]): void
-  /**
-   * Register a lazy provider of built-in servers the app itself contributes
-   * (e.g. the browser-automation server bound to the embedded browser). Merged
-   * with the lowest priority: a user or plugin server of the same name wins, so
-   * users can override or disable the built-in by defining their own.
-   */
+
   setBuiltinServers(provider: () => McpServerConfig[]): void
   syncFromStore(): Promise<void>
   dispose(): Promise<void>
@@ -69,7 +53,7 @@ export function createMcpService(store: McpStore, client: McpClient): McpService
     const builtinServers = builtinServersProvider?.() ?? []
     const claimed = new Set(userServers.map((server) => server.name))
     const merged = [...userServers]
-    // User servers win over plugins, plugins win over built-ins.
+
     for (const server of [...pluginServers, ...builtinServers]) {
       if (claimed.has(server.name)) continue
       claimed.add(server.name)
@@ -82,8 +66,6 @@ export function createMcpService(store: McpStore, client: McpClient): McpService
     await client.syncServers(mergedServers())
   }
 
-  /** User servers plus unshadowed built-ins; plugin servers stay out of the
-   * settings list (they are surfaced by the plugins UI instead). */
   function listableServers(): McpServerConfig[] {
     const userServers = store.getAll()
     const claimed = new Set(userServers.map((server) => server.name))

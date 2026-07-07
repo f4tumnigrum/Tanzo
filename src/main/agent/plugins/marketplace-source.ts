@@ -1,19 +1,3 @@
-/**
- * Parse a marketplace *source* string into a typed source.
- *
- * Wire-compatible with Codex (`codex-rs/core-plugins/src/marketplace_add/source.rs`):
- * - Local paths (`./`, `../`, `~/`, absolute, Windows drive/UNC, `.`/`..`) become
- *   `local` sources resolved to an absolute directory.
- * - SSH (`ssh://`, `git@host:...`) and `http(s)://` URLs become `git` sources.
- * - A bare `owner/repo` GitHub shorthand expands to `https://github.com/owner/repo.git`.
- * - A `#ref` suffix (any source) or `@ref` suffix (non-URL sources) selects a
- *   branch/tag/SHA; an explicit ref overrides a parsed one.
- *
- * Unlike Codex's CLI parser this returns a discriminated result rather than
- * throwing, matching `marketplace.ts`'s parse-and-skip style. Filesystem
- * existence is *not* checked here — the add orchestrator validates that.
- */
-
 import { homedir } from 'node:os'
 import { isAbsolute, resolve } from 'node:path'
 
@@ -26,7 +10,7 @@ export interface GitMarketplaceSource {
 
 export interface LocalMarketplaceSource {
   kind: 'local'
-  /** Absolute path to the local marketplace directory. */
+
   path: string
 }
 
@@ -36,15 +20,11 @@ export type ParseMarketplaceSourceResult =
   { ok: true; source: MarketplaceSource } | { ok: false; error: string }
 
 export interface ParseMarketplaceSourceOptions {
-  /** Explicit `--ref`, overriding any ref parsed from the source string. */
   refName?: string
-  /** Sparse-checkout paths; only valid for git sources. */
+
   sparsePaths?: string[]
 }
 
-/**
- * Parse a user-supplied marketplace source plus optional ref/sparse options.
- */
 export function parseMarketplaceSource(
   rawSource: string,
   options: ParseMarketplaceSourceOptions = {}
@@ -99,7 +79,6 @@ export function parseMarketplaceSource(
   }
 }
 
-/** Render a source back to a display string (`url#ref`, or the local path). */
 export function marketplaceSourceDisplay(source: MarketplaceSource): string {
   if (source.kind === 'local') return source.path
   return source.refName ? `${source.url}#${source.refName}` : source.url

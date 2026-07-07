@@ -36,7 +36,7 @@ const CATEGORY_ICONS: Record<ToolCategoryId, LucideIcon> = {
   agent: Sparkles,
   subagents: GitBranch,
   core: Bot,
-  // Rendered by the dedicated BrowserAutomationSection, not the category list.
+
   browser: Globe
 }
 
@@ -52,7 +52,7 @@ interface ToolRowProps {
   description?: string
   readOnly?: boolean
   locked?: boolean
-  /** Grey out the switch without the "required" badge (e.g. master switch off). */
+
   switchDisabled?: boolean
   enabled: boolean
   onToggle: (enabled: boolean) => void
@@ -175,14 +175,6 @@ function SectionHeader({
   )
 }
 
-/**
- * Browser automation is a capability with a master switch that governs the
- * browserOpen tool, the built-in chrome-devtools MCP server, and the browser
- * skill together — "off" really means the agent cannot touch the browser.
- * Expanded, it lists every tool inside the capability (browserOpen plus the
- * chrome-devtools MCP tools) for individual fine-tuning while the master
- * switch stays on.
- */
 function BrowserAutomationSection(): React.JSX.Element {
   const { t } = useTranslation()
   const preferences = usePreferences()
@@ -191,9 +183,6 @@ function BrowserAutomationSection(): React.JSX.Element {
   const enabled = preferences.browserAutomation
   const disabled = new Set(preferences.disabledTools)
 
-  // Only the app-contributed server's tools belong here. When a user server
-  // shadows the builtin by name, it is a regular server managed in the MCP
-  // sections below instead.
   const { data: servers } = useServers()
   const builtinBrowserServer = (servers ?? []).find((server) => server.builtin === true)
   const { state } = useServerConnectionState(builtinBrowserServer?.name ?? '')
@@ -219,8 +208,7 @@ function BrowserAutomationSection(): React.JSX.Element {
 
   const setEnabled = async (next: boolean): Promise<void> => {
     await patchPreferences({ browserAutomation: next })
-    // The built-in chrome-devtools MCP server follows this preference; refresh
-    // the MCP views so its card reflects the new state immediately.
+
     void queryClient.invalidateQueries({ queryKey: serverKeys.lists() })
     void queryClient.invalidateQueries({ queryKey: mcpClientKeys.connectionStates() })
   }
@@ -291,8 +279,6 @@ function BrowserAutomationSection(): React.JSX.Element {
   )
 }
 
-/** One MCP server's tools, each individually toggleable. Rendered per server so
- * each section owns its own tools query. */
 function McpServerSection({
   server,
   disabled,
@@ -309,8 +295,6 @@ function McpServerSection({
   const { data } = useServerTools(server.name, connected)
   const tools = data?.tools ?? []
 
-  // Nothing to manage while the server is disconnected or has no tools; the
-  // MCP settings page still shows the server itself.
   if (!connected || tools.length === 0) return null
 
   const ids = tools.map((tool) => mcpToolId(server.name, tool.name))
@@ -381,8 +365,6 @@ function McpToolsSections(): React.JSX.Element | null {
     void patchPreferences({ disabledTools: [...next] })
   }
 
-  // The builtin browser server's tools live in the Browser automation section
-  // above; listing them here too would show the same switches twice.
   const enabledServers = (servers ?? []).filter(
     (server) => server.enabled && server.builtin !== true
   )
@@ -412,7 +394,7 @@ export function SettingsToolsTab(): React.JSX.Element {
   const { t } = useTranslation()
   const preferences = usePreferences()
   const disabled = new Set(preferences.disabledTools)
-  // Categories start collapsed; the user expands what they want to inspect.
+
   const [expanded, setExpanded] = useState<Set<ToolCategoryId>>(() => new Set())
 
   const setDisabled = (next: Set<string>): void => {

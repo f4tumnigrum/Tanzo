@@ -60,13 +60,6 @@ function errorText(error: unknown, fallbackKey: string): string | null {
   return error instanceof Error ? error.message : i18n.t(fallbackKey)
 }
 
-/**
- * Drives every server-backed git query off React Query. Queries are scoped by
- * `cwd`, so switching repositories swaps cache entries instead of needing manual
- * request-id race guards. Repository-level queries are gated on the overview
- * reporting a real repository; selection-derived queries (diff, commit, commit
- * diff) are keyed on the *resolved* selection computed via the pure helpers.
- */
 export function useGitQueries(target: GitTargetRef | null, intent: GitIntent): GitQueries {
   const cwd = target?.cwd ?? ''
   const hasTarget = Boolean(target)

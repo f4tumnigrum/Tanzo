@@ -12,7 +12,6 @@ export interface ChatBridgeIpcDeps {
 const channelIdSchema = z.enum(['qq', 'wechat', 'lark', 'discord'])
 const permissionModeSchema = z.enum(['default', 'plan', 'yolo'])
 
-// Ids are opaque per-platform identifiers (openids, snowflakes, chat ids).
 const allowlistSchema = z.object({
   groups: z.array(z.string().min(1).max(128)).max(200),
   users: z.array(z.string().min(1).max(128)).max(200)
@@ -49,7 +48,6 @@ const wechatSettings = z.object({
   env: z.enum(['online', 'debug'])
 })
 
-// A channel config, discriminated by `id` so the correct settings shape is enforced.
 const channelConfigSchema = z.discriminatedUnion('id', [
   z.object({ id: z.literal('qq'), settings: qqSettings, ...commonFields }),
   z.object({ id: z.literal('discord'), settings: discordSettings, ...commonFields }),

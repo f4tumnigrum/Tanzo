@@ -41,7 +41,6 @@ export function usePluginsPageController() {
 
   const installedIds = useMemo(() => new Set(plugins.map((plugin) => plugin.id)), [plugins])
 
-  // Marketplace entries not yet installed locally.
   const available = useMemo(
     () => marketplace.filter((entry) => !installedIds.has(entry.id)),
     [marketplace, installedIds]
@@ -67,8 +66,6 @@ export function usePluginsPageController() {
     )
   }, [available, searchValue])
 
-  // Group the available catalog by marketplace so each source renders as its
-  // own collapsible, paginated section.
   const availableByMarketplace = useMemo(() => {
     const groups = new Map<
       string,
@@ -123,8 +120,7 @@ export function usePluginsPageController() {
     if (!deleteTarget) return
     try {
       await mutations.uninstall.mutateAsync(deleteTarget.id)
-      // Clear a detail-view selection pointing at the now-removed plugin so a
-      // later reinstall of the same id does not silently reopen the detail page.
+
       if (selectedPluginId === deleteTarget.id) setSelectedPluginId(null)
       setDeleteTarget(null)
       toast.success(t('plugins.toast.uninstalled'))
@@ -173,7 +169,6 @@ export function usePluginsPageController() {
     }
   }
 
-  // A selected plugin still present in the snapshot routes to the detail view.
   const selectedPlugin = useMemo(
     () =>
       selectedPluginId ? (plugins.find((plugin) => plugin.id === selectedPluginId) ?? null) : null,
@@ -201,7 +196,7 @@ export function usePluginsPageController() {
     installPlugin,
     confirmUninstall,
     reload,
-    // Marketplace source registration (git / local).
+
     marketplaceSources: sourcesQuery.data ?? EMPTY_SOURCES,
     addMarketplaceOpen,
     setAddMarketplaceOpen,

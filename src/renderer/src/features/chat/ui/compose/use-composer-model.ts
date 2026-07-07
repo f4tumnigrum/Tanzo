@@ -50,8 +50,6 @@ export function useComposerModel({
   const modelRef = storedModel?.id ?? defaultModelRef
   const activeModel = useMemo(() => findModelOption(models, modelRef), [models, modelRef])
 
-  // Reasoning effort is a per-conversation setting (same scope as modelRef);
-  // when unset the badge shows what the provider defaults would apply.
   const effortControl = useReasoningEffortControl(
     activeModel,
     activeConversation?.reasoningEffort ?? null

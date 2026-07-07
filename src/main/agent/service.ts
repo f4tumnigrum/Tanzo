@@ -46,7 +46,6 @@ export function createAgentService(deps: AgentServiceDeps): AgentService {
   const messageQueue = createChatKeyedQueue<QueuedMessage>({
     onChange: (chatId, items) => {
       try {
-        // Persist only ordered text; the `id` is a transient UI handle.
         deps.store.saveQueuedMessages(
           chatId,
           items.map((item) => item.text)
@@ -141,7 +140,7 @@ export function createAgentService(deps: AgentServiceDeps): AgentService {
       submitUserMessage: submitUserMessageQueued,
       instructTask: (chatId, text) => {
         void text
-        // Best-effort background resume; the inbox does not await it.
+
         void tasks.resumeByChat(chatId)
       },
       ...(deps.recordPluginMentions ? { recordPluginMentions: deps.recordPluginMentions } : {})
@@ -149,17 +148,6 @@ export function createAgentService(deps: AgentServiceDeps): AgentService {
   )
 
   function cancel(chatId: string): void {
-    // An explicit user cancel advances BOTH clocks: bumpCancelGeneration marks
-    // the intent (so any scheduled goal continuation for the prior generation is
-    // dropped in startGoalContinuation), and abort advances the epoch + aborts
-    // the active/preparing controllers (so in-flight runs and sub-agent tasks
-    // observe the supersede/cancel). A plain abort() alone would NOT drop a
-    // pending goal continuation — see the RunEngine clock contract.
-    //
-    // Deliberately does NOT cancel the sub-agent task tree: stopping the
-    // parent turn leaves spawned tasks running in the background. Their
-    // results persist and can be awaited in a later turn; the user stops
-    // individual tasks from the task panel instead.
     engine.bumpCancelGeneration(chatId)
     engine.abort(chatId)
     turnLoop.discardPendingChangeCapture(chatId)
@@ -168,19 +156,13 @@ export function createAgentService(deps: AgentServiceDeps): AgentService {
 
   function deleteConversation(chatId: string): void {
     cancel(chatId)
-    // Unlike a plain cancel, deletion must tear down the whole task tree:
-    // orphaned executor runs would otherwise keep writing to a deleted chat.
+
     tasks.cancelTree(chatId)
     messageQueue.clear(chatId)
     deps.store.deleteConversation(chatId)
   }
 
-  async function forkConversation(
-    input: ForkConversationInput
-  ): Promise<ForkConversationResult> {
-    // Snapshot the mode that actually governs the source right now (its
-    // execution root), then pin it on the fork so behavior carries over even
-    // though the fork is an independent execution root from here on.
+  async function forkConversation(input: ForkConversationInput): Promise<ForkConversationResult> {
     const sourceMode = deps.policy.getMode(deps.store.rootOf(input.sourceChatId))
     const result = await deps.store.forkConversation(input)
     deps.policy.setMode(sourceMode, result.conversation.id)

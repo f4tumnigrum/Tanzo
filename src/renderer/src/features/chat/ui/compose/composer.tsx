@@ -63,9 +63,6 @@ export function Composer({ chatId }: ComposerProps): React.JSX.Element {
   const isCompactionRun = runState.activeRunKind === 'compaction'
   const handleStop = useCallback(() => session.stop(), [session])
 
-  // Derived transcript subscription: recomputes on transcript commits but
-  // notifies only when the todo list itself changes, so streamed text deltas
-  // never re-render the composer.
   const todos = useTranscriptSelector(session, selectLatestTodos, todosEqual)
 
   const activeConversation = useMemo(

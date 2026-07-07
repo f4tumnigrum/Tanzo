@@ -1,20 +1,5 @@
-/**
- * Assemble a plugin's contributions (skills, MCP servers, hooks) from its
- * installed cache root.
- *
- * Wire-compatible with Codex (`codex-rs/core-plugins/src/loader.rs` +
- * `codex-rs/plugin/src/load_outcome.rs`):
- * - Only *active* plugins (enabled and error-free) contribute.
- * - Skill roots are deduplicated; when two plugins declare the same root, the
- *   first-seen plugin owns it (sorted by path for determinism).
- * - MCP server names collide first-wins; later duplicates are dropped.
- * - A plugin's default contribution paths are supplemented by its manifest:
- *   `skills` defaults to `<root>/skills`, `mcpServers` to `<root>/.mcp.json`,
- *   `hooks` to `<root>/hooks/hooks.json`, each overridable by the manifest.
- */
-
 import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 import type { Logger } from '../logging'
 import { loadPluginManifest, type PluginManifest } from './manifest'
 import { pluginIdKey, type PluginId } from './plugin-id'
@@ -24,10 +9,9 @@ const DEFAULT_SKILLS_DIR = 'skills'
 const DEFAULT_MCP_CONFIG = '.mcp.json'
 const DEFAULT_HOOKS_CONFIG = join('hooks', 'hooks.json')
 
-/** A single MCP server declared by a plugin, in a transport-agnostic shape. */
 export interface PluginMcpServer {
   name: string
-  /** Codex `.mcp.json` transport tag (`stdio` | `http` | `streamable_http` | ...). */
+
   type?: string
   command?: string
   args?: string[]
@@ -37,32 +21,28 @@ export interface PluginMcpServer {
   headers?: Record<string, string>
 }
 
-/** A skills directory contributed by a plugin, tagged with its namespace. */
 export interface PluginSkillRoot {
-  /** Absolute path to the skills directory. */
   path: string
-  /** The plugin's `<plugin>@<marketplace>` config key. */
+
   pluginId: string
-  /** Namespace prefix for the plugin's skills (its manifest name). */
+
   namespace: string
-  /** Absolute path to the plugin root. */
+
   pluginRoot: string
 }
 
-/** A plugin resolved from disk, with its assembled contributions. */
 export interface LoadedPlugin {
-  /** `<plugin>@<marketplace>` config key. */
   configKey: string
   id: PluginId
-  /** Active version's plugin root, or null when not installed. */
+
   root: string | null
   enabled: boolean
   manifestName?: string
   manifestDescription?: string
-  /** Absolute skills directory, when one exists. */
+
   skillRoot: string | null
   mcpServers: PluginMcpServer[]
-  /** Absolute hooks config path, when one exists. */
+
   hooksPath: string | null
   error?: string
 }
@@ -74,11 +54,11 @@ export interface ConfiguredPlugin {
 
 export interface PluginLoadOutcome {
   plugins: LoadedPlugin[]
-  /** Namespaced skill roots from active plugins, deduped first-wins by path. */
+
   effectiveSkillRoots(): PluginSkillRoot[]
-  /** MCP servers from active plugins, first-wins on name collision. */
+
   effectiveMcpServers(): PluginMcpServer[]
-  /** Hook config paths from active plugins. */
+
   effectiveHookPaths(): string[]
 }
 
@@ -86,11 +66,6 @@ function isActive(plugin: LoadedPlugin): boolean {
   return plugin.enabled && plugin.error === undefined && plugin.root !== null
 }
 
-/**
- * Read a plugin's `.mcp.json`, accepting both the `{ mcpServers: {...} }`
- * wrapper and a bare `{ name: config }` map. Relative `cwd` values are resolved
- * against the plugin root, mirroring Codex's normalization.
- */
 export function loadPluginMcpServers(
   pluginRoot: string,
   mcpConfigPath: string,
@@ -128,8 +103,7 @@ export function loadPluginMcpServers(
     const headers = stringRecord(obj.headers)
     if (headers) server.headers = headers
     if (typeof obj.cwd === 'string') {
-      // Resolve a relative cwd against the plugin root (Codex behavior).
-      server.cwd = obj.cwd.startsWith('/') ? obj.cwd : join(pluginRoot, obj.cwd)
+      server.cwd = isAbsolute(obj.cwd) ? obj.cwd : join(pluginRoot, obj.cwd)
     }
 
     servers.push(server)
@@ -146,7 +120,6 @@ function stringRecord(value: unknown): Record<string, string> | undefined {
   return Object.keys(out).length > 0 ? out : undefined
 }
 
-/** Resolve a manifest-declared path or fall back to a default under the root. */
 function contributionPath(
   pluginRoot: string,
   manifestPath: string | null,
@@ -156,7 +129,6 @@ function contributionPath(
   return existsSync(candidate) ? candidate : null
 }
 
-/** Resolve and assemble one configured plugin's contributions. */
 export function loadPlugin(
   configured: ConfiguredPlugin,
   store: PluginStore,
@@ -203,13 +175,11 @@ export function loadPlugin(
   }
 }
 
-/** Load all configured plugins and expose their effective aggregate contributions. */
 export function loadPlugins(
   configured: ConfiguredPlugin[],
   store: PluginStore,
   logger: Logger
 ): PluginLoadOutcome {
-  // Sort by config key so collision resolution (first-wins) is deterministic.
   const sorted = [...configured].sort((a, b) => {
     const ka = pluginIdKey(a.id)
     const kb = pluginIdKey(b.id)

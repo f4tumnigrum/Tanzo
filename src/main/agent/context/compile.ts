@@ -31,13 +31,6 @@ function messageProvenance(rendered: RenderedSection[]): ContextMessageProvenanc
   return rendered.length ? [{ sections: rendered.map(sectionProvenance) }] : []
 }
 
-/**
- * Render the `system` and `leading-user` channels (v2). Split from assembly so
- * the engine can freeze the rendered sections for the duration of a run
- * (invariant I7): section stability becomes structural, not declarative — a
- * mid-run AGENTS.md edit, skill toggle, or goal change cannot rewrite the
- * prompt prefix until the next run.
- */
 export async function renderSections(
   registry: ContextSection[],
   input: BuildInput
@@ -53,11 +46,6 @@ export async function renderSections(
   return results.filter((r): r is RenderedSection => r !== null)
 }
 
-/**
- * Assemble rendered sections plus canonicalized history into the compiled
- * plan. Pure with respect to the rendered snapshot — the same snapshot and
- * history yield the same prompt (append-only prefix invariant).
- */
 export function assembleContext(
   rendered: RenderedSection[],
   history: ModelMessage[]
@@ -93,11 +81,6 @@ export function assembleContext(
   }
 }
 
-/**
- * Compile the `system` and `leading-user` channels in one step (no snapshot).
- * `injection` channel sections are rendered separately (see injection.ts) and
- * persisted into the transcript.
- */
 export async function compileSections(
   registry: ContextSection[],
   input: BuildInput,

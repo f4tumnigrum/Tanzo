@@ -8,8 +8,6 @@ import type { ToolRenderer } from '../renderer-types'
 import { renderToolError } from './render-error'
 import { isToolError } from './shared'
 
-/** Renders the `browserOpen` tool. All other page interaction is handled by the
- * chrome-devtools-mcp server, whose tools render through the dynamic renderer. */
 function urlOf(context: ToolRenderContext): string {
   const input = (context.input ?? {}) as Record<string, unknown>
   return typeof input.url === 'string' ? input.url : ''

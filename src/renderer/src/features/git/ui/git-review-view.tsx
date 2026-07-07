@@ -180,8 +180,7 @@ export function ReviewView({
   const stageable = unstaged.filter((entry) => !entry.conflicted)
   const stagedPaths = staged.map((entry) => entry.path)
   const stageablePaths = stageable.map((entry) => entry.path)
-  // Discard covers every unstaged change (tracked reverts + untracked deletes);
-  // the backend routes each path to the right recovery.
+
   const discardablePaths = stageablePaths
   const untrackedCount = stageable.filter((entry) => entry.untracked).length
   const selectedEntry = controller.selectedFile

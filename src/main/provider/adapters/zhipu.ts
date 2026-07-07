@@ -11,12 +11,6 @@ function zhipuBaseUrl(credentials: Credentials): string {
   return ensureUrlProtocol(credentials.baseUrl, ZHIPU_DEFAULT_BASE_URL).replace(/\/+$/, '')
 }
 
-/**
- * Zhipu (Z.ai / GLM) exposes an OpenAI-compatible surface at
- * `/api/paas/v4`. We build language models on `@ai-sdk/openai-compatible`
- * (spec v4) rather than the community `zhipu-ai-provider` package, which emits
- * spec-v3 models incompatible with this app's `ai@7` runtime.
- */
 function zhipuProvider(credentials: Credentials) {
   const apiKey = credentialText(credentials.apiKey)
   return createOpenAICompatible({

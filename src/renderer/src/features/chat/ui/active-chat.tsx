@@ -37,8 +37,6 @@ export function ActiveChat({
   const streamingMessageId =
     runState.isStreaming && runState.activeRunKind !== 'compaction' ? (order.at(-1) ?? null) : null
 
-  // Derived subscription (id + role only) so streaming text deltas never
-  // re-render this component tree.
   const editableUserId = useTranscriptSelector(session, trailingUserMessageId, Object.is)
   const editableMessageId = !runState.isStreaming ? editableUserId : null
 

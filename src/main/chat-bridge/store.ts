@@ -11,20 +11,13 @@ import {
 import type { SecretCodec } from '../provider/secret'
 import { createLogger } from '../logger'
 
-/**
- * Persists chat-bridge config to `userData/chat-bridge.json`. Each channel's secret (QQ
- * AppSecret, Discord bot token, Lark app secret, WeChat aesKey) is stored as an opaque string
- * (via the shared secret codec) keyed by channel id, and is never handed back to the renderer.
- * The codec encrypts with the OS keyring when available; on machines without one it falls back
- * to a reversible plaintext encoding (see `createSecretCodec` in module.ts).
- */
 export interface ChatBridgeStore {
   readConfig(): ChatBridgeConfig
-  /** Save a single channel's (non-secret) config; returns the full config. */
+
   writeChannelConfig(config: ChannelConfig): ChatBridgeConfig
-  /** Decrypted secret for a channel, or '' when none is stored. Main-process only. */
+
   readSecret(channelId: ChannelId): string
-  /** Store (encrypted) or clear (empty string) a channel's secret. */
+
   writeSecret(channelId: ChannelId, secret: string): void
   hasSecret(channelId: ChannelId): boolean
 }
@@ -32,7 +25,7 @@ export interface ChatBridgeStore {
 interface PersistShape {
   version: 2
   config: ChatBridgeConfig
-  /** channelId → encrypted secret string (or absent). */
+
   secrets: Partial<Record<ChannelId, string>>
 }
 
@@ -54,18 +47,12 @@ function str(value: unknown, fallback = ''): string {
   return typeof value === 'string' ? value.trim() : fallback
 }
 
-/**
- * Validate + fill defaults for one channel so a hand-edited/partial file can't crash the
- * module. Channel-specific settings are merged over the channel's defaults, so unknown or
- * missing fields fall back safely.
- */
 function normalizeChannel(id: ChannelId, raw: unknown): ChannelConfig {
   const input = (raw ?? {}) as Partial<ChannelConfig>
   const def = DEFAULT_CHAT_BRIDGE_CONFIG.channels[id]
   const allowlist = (input.allowlist ?? {}) as Partial<ChannelConfig['allowlist']>
   const rawSettings = (input.settings ?? {}) as Record<string, unknown>
 
-  // Merge provided settings over defaults, then re-coerce the well-known typed fields.
   const settings = { ...(def.settings as unknown as Record<string, unknown>), ...rawSettings }
   if (id === 'qq') {
     settings.appId = str(settings.appId)

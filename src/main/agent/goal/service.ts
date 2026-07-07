@@ -54,11 +54,6 @@ export function createGoalService(deps: GoalServiceDeps): GoalService {
     deps.broadcast(chatId, goal)
   }
 
-  /**
-   * Interpreter shell: run the pure transition for an existing goal, then apply
-   * its effects (persist with a fresh updatedAt, broadcast). Returns the
-   * resulting goal, the continuation decision, and any rejection.
-   */
   function dispatch(chatId: string, event: GoalEvent): DispatchResult {
     const existing = deps.store.get(chatId)
     if (!existing) {

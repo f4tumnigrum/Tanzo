@@ -15,19 +15,9 @@ interface StoredMessageRow {
   created_at: number
 }
 
-/**
- * Per-conversation in-memory mirror of the persisted message state.
- *
- * Maintained incrementally so that `writeActive` can skip the full-table
- * SELECT on every streaming step and only write rows that actually changed.
- * The mirror is the single source of truth for what is currently in the DB;
- * it is invalidated (deleted from the outer Map) whenever an operation could
- * change row content or sequence numbers outside of `writeActive`.
- */
 interface ChatMirrorState {
-  /** msgId → effective encoded JSON (COALESCE of latest revision or original row) */
   messages: Map<string, string>
-  /** Next seq value to assign to new inserts for this conversation */
+
   nextSeq: number
 }
 
@@ -56,12 +46,7 @@ interface CompactionOverlayRow {
 export interface MessageRepo {
   deleteAll(chatId: string): void
   writeActive(chatId: string, messages: TanzoUIMessage[]): void
-  /**
-   * Copy the source conversation's compaction overlays that are fully covered
-   * by the rows copied into the target (a fork). Coverage seqs are remapped
-   * from source row seqs to target row seqs by message id. Pure inserts — the
-   * compaction pipeline itself is untouched.
-   */
+
   copyOverlaysForFork(sourceChatId: string, targetChatId: string): void
   finalizeCompaction(
     chatId: string,
@@ -70,15 +55,15 @@ export interface MessageRepo {
     next: TanzoUIMessage[],
     expectedActiveIds?: string[]
   ): void
-  /** Context-window projection: latest compaction summary plus messages after its coverage. */
+
   load(chatId: string): Promise<TanzoUIMessage[]>
-  /** Raw append log, without synthetic compaction summaries. */
+
   loadUnvalidated(chatId: string): TanzoUIMessage[]
-  /** Messages covered by a compaction overlay. */
+
   loadArchived(chatId: string, summaryId: string): Promise<TanzoUIMessage[]>
-  /** Full historical log, in seq order. */
+
   loadFullHistory(chatId: string): Promise<TanzoUIMessage[]>
-  /** Full historical log with synthetic overlay markers inserted for UI rendering. */
+
   loadDisplay(chatId: string): Promise<TanzoUIMessage[]>
 }
 
@@ -137,32 +122,10 @@ export function createMessageRepo(db: SqlDatabase, logger: Logger): MessageRepo 
     'SELECT id, seq FROM messages WHERE conversation_id = ? ORDER BY seq'
   )
 
-  // ---------------------------------------------------------------------------
-  // Per-conversation write mirror
-  // ---------------------------------------------------------------------------
-
   const chatMirror = new Map<string, ChatMirrorState>()
 
-  /**
-   * Pure memoization of the `message_json` → validated `TanzoUIMessage` mapping.
-   *
-   * `safeValidateUIMessages` is deterministic: identical `message_json` always
-   * validates to an identical result.  Keying the cache by the full JSON string
-   * means no invalidation is ever required — a revised message produces a new
-   * JSON key and is validated fresh, while the superseded entry simply becomes
-   * unreachable.  `selectLog.all` only ever returns the latest revision per
-   * message, so the live key set is bounded by the number of distinct active
-   * message bodies (a few hundred entries in practice), not by revision count.
-   */
   const validationCache = new Map<string, TanzoUIMessage>()
 
-  /**
-   * Return the mirror for `chatId`, hydrating it from the DB on first access.
-   *
-   * Hydration runs a single `selectLog.all` — the same query `writeActive`
-   * previously executed on every call.  All subsequent `writeActive` calls for
-   * the same conversation skip that query entirely and go straight to writes.
-   */
   function getOrHydrateMirror(chatId: string): ChatMirrorState {
     const cached = chatMirror.get(chatId)
     if (cached) return cached
@@ -268,8 +231,7 @@ export function createMessageRepo(db: SqlDatabase, logger: Logger): MessageRepo 
       })
       deleteMessageById.run([chatId, row.id])
     })
-    // Row was deleted from DB — remove it from the mirror so the next
-    // writeActive call does not treat it as an existing message.
+
     chatMirror.get(chatId)?.messages.delete(row.id)
   }
 
@@ -301,7 +263,6 @@ export function createMessageRepo(db: SqlDatabase, logger: Logger): MessageRepo 
   }
 
   async function validateRows(chatId: string, rows: StoredMessageRow[]): Promise<TanzoUIMessage[]> {
-    // Resolve every row that has already been validated in this session.
     const resolved = new Map<number, TanzoUIMessage>()
     const uncached: number[] = []
     for (let i = 0; i < rows.length; i += 1) {
@@ -310,11 +271,8 @@ export function createMessageRepo(db: SqlDatabase, logger: Logger): MessageRepo 
       else uncached.push(i)
     }
 
-    // Fast path: the whole conversation is cached (steady state after the first
-    // load), so no Zod validation runs at all.
     if (uncached.length === 0) return rows.map((_, i) => resolved.get(i) as TanzoUIMessage)
 
-    // Validate only the rows whose content changed since the last load.
     const decoded = uncached.map((i) => ({
       row: rows[i],
       message: decodeMessage(rows[i].message_json)
@@ -353,11 +311,10 @@ export function createMessageRepo(db: SqlDatabase, logger: Logger): MessageRepo 
         validationCache.set(row.message_json, salvaged)
         resolved.set(uncached[k], salvaged)
       } else {
-        // Quarantined rows are dropped from the output and left uncached.
         quarantine(chatId, row, all.error)
       }
     }
-    // Preserve original row order, skipping quarantined rows.
+
     return rows.map((_, i) => resolved.get(i)).filter((m): m is TanzoUIMessage => m !== undefined)
   }
 
@@ -446,7 +403,7 @@ export function createMessageRepo(db: SqlDatabase, logger: Logger): MessageRepo 
       const targetSeqById = new Map(
         (selectIdSeqs.all([targetChatId]) as Array<IdRow & SeqRow>).map((row) => [row.id, row.seq])
       )
-      // Sort by generation so copied overlays keep their relative order.
+
       const byGeneration = [...overlays].sort((a, b) => a.generation - b.generation)
       let generation = 0
       for (const overlay of byGeneration) {
@@ -454,9 +411,7 @@ export function createMessageRepo(db: SqlDatabase, logger: Logger): MessageRepo 
           (row) => row.seq >= overlay.covers_from_seq && row.seq <= overlay.covers_to_seq
         )
         if (covered.length === 0) continue
-        // The fork copies a prefix of the source log. An overlay whose covered
-        // rows are not all present (fork point inside the covered region)
-        // cannot be represented — skip it.
+
         const targetSeqs = covered.map((row) => targetSeqById.get(row.id))
         if (targetSeqs.some((seq) => seq === undefined)) continue
         generation += 1
@@ -473,9 +428,6 @@ export function createMessageRepo(db: SqlDatabase, logger: Logger): MessageRepo 
       }
     },
     writeActive(chatId, messages) {
-      // Hydrate the mirror before entering the write transaction so the
-      // transaction body only performs writes (the read-only SELECT stays
-      // outside the write-lock window).
       const mirror = getOrHydrateMirror(chatId)
       try {
         db.transaction(() => {
@@ -487,12 +439,10 @@ export function createMessageRepo(db: SqlDatabase, logger: Logger): MessageRepo 
             const json = encodeMessage(message)
             const stored = mirror.messages.get(message.id)
             if (stored !== undefined) {
-              // Already persisted — only write a revision when content changed.
               if (stored === json) continue
               recordRevision(chatId, message, json)
               mirror.messages.set(message.id, json)
             } else {
-              // New message — insert row then record initial revision.
               insertMessage.run(messageParams(chatId, message, mirror.nextSeq))
               recordRevision(chatId, message, json)
               mirror.messages.set(message.id, json)
@@ -501,8 +451,6 @@ export function createMessageRepo(db: SqlDatabase, logger: Logger): MessageRepo 
           }
         })
       } catch (error) {
-        // The transaction was rolled back; mirror may be partially stale.
-        // Discard it so the next call re-hydrates from the actual DB state.
         chatMirror.delete(chatId)
         throw error
       }
@@ -527,12 +475,6 @@ export function createMessageRepo(db: SqlDatabase, logger: Logger): MessageRepo 
           created_at: Date.now()
         })
 
-        // Renumber the whole active tail into a fresh seq block above the
-        // current max, in `next` order. This keeps retained messages ordered
-        // after the summary even when compaction synthesizes a new tail
-        // fragment from a mid-message split (which would otherwise be inserted
-        // at the very end). The fresh block is disjoint from every existing
-        // seq, so moving rows cannot collide with the unique (chat, seq) index.
         const existing = new Set(
           (selectLog.all([chatId]) as StoredMessageRow[]).map((row) => row.id)
         )
@@ -548,8 +490,7 @@ export function createMessageRepo(db: SqlDatabase, logger: Logger): MessageRepo 
           nextSeq += 1
         }
       })
-      // Compaction renumbers seqs and may insert new messages — discard the
-      // mirror so the next writeActive call re-hydrates from the current DB state.
+
       chatMirror.delete(chatId)
     },
     async load(chatId) {

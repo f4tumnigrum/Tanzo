@@ -9,18 +9,18 @@ const nextTabId = (): string => `tab-${Date.now().toString(36)}-${(tabSeq++).toS
 
 export interface BrowserTab {
   id: string
-  /** The URL used to seed the webview's initial load. Never rebound after mount. */
+
   initialUrl: string
-  /** Live committed page URL, kept in sync from the view's navigation events. */
+
   url: string
-  /** Document title, updated from `page-title-updated`. */
+
   title: string
   loading: boolean
 }
 
 interface BrowserUiState {
   open: boolean
-  /** When true the browser fills the content area, collapsing the chat pane. */
+
   maximized: boolean
   tabs: BrowserTab[]
   activeTabId: string | null
@@ -31,13 +31,13 @@ interface BrowserUiActions {
   toggle: () => void
   setMaximized: (maximized: boolean) => void
   toggleMaximized: () => void
-  /** Open the panel and navigate to a URL (e.g. from a link in chat) in a new tab. */
+
   openUrl: (url: string) => void
-  /** Add a blank tab and focus it. Returns the new tab id. */
+
   newTab: (url?: string) => string
   closeTab: (id: string) => void
   setActiveTab: (id: string) => void
-  /** Sync a tab's live metadata from its view. */
+
   updateTab: (id: string, patch: Partial<Pick<BrowserTab, 'url' | 'title' | 'loading'>>) => void
 }
 
@@ -89,7 +89,7 @@ export const useBrowserUiStore = create<BrowserUiStore>()(
             const idx = state.tabs.findIndex((tk) => tk.id === id)
             if (idx === -1) return state
             const tabs = state.tabs.filter((tk) => tk.id !== id)
-            // Closing the last tab leaves a fresh blank one so the panel is never empty.
+
             if (tabs.length === 0) {
               const fresh = makeTab(DEFAULT_HOME)
               return { tabs: [fresh], activeTabId: fresh.id }
@@ -119,7 +119,6 @@ export const useBrowserUiStore = create<BrowserUiStore>()(
   )
 )
 
-// Surface the active tab's URL for callers that still want a single value.
 export function useActiveTabUrl(): string {
   return useBrowserUiStore((s) => s.tabs.find((tk) => tk.id === s.activeTabId)?.url ?? DEFAULT_HOME)
 }

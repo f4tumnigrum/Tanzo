@@ -42,20 +42,16 @@ export interface AgentCallInput {
   shouldStop?: () => boolean
   telemetry?: TelemetryOptions
   toolChoice?: ToolChoice<ToolSet>
-  /** Per-conversation reasoning-effort override (see ModelConfigOverrides). */
+
   reasoningEffort?: string
-  /** Goal budget snapshot (v2, invariant I4): stops the tool loop mid-run once
-   *  the steps' effective tokens exhaust the remaining budget. The state
-   *  machine's end-of-turn evaluation stays the single source of truth — this
-   *  only prevents unbounded overshoot within one turn. */
+
   goalBudget?: { remainingTokens?: number; remainingSeconds?: number }
 }
 
 export interface AgentCall {
   model: ReturnType<ProviderService['resolveLanguageModel']>
   tools: ToolSet
-  /** Deterministic tool serialization order — the provider cache prefix
-   *  includes the tools block, so ordering must be stable across steps. */
+
   toolOrder: readonly string[]
   runtimeContext: { chatId: string; mode: PermissionMode }
   toolApproval: (opts: {
@@ -77,7 +73,7 @@ export function buildAgentCall(input: AgentCallInput): AgentCall {
     input.def.modelRef,
     input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : undefined
   )
-  // v2: compaction happens inline in prepareStep; no compaction stop condition.
+
   const stopWhen: StopCondition<ToolSet>[] = []
   if (input.def.maxSteps !== undefined) stopWhen.push(isStepCount(input.def.maxSteps))
   if (input.shouldStop) {

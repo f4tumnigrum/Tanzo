@@ -17,6 +17,7 @@ import { TaskOverviewPill } from './ui/task-overview-pill'
 import { StartComposer } from './ui/compose/start-composer'
 import { GitReviewDialog, WorkspaceGitPill } from '@/features/git/ui'
 import { useGitReviewController } from '@/features/git/model'
+import { gitClient } from '@/platform/electron/git-client'
 
 export default function ChatPage(): React.JSX.Element {
   const { t } = useTranslation()
@@ -39,14 +40,12 @@ export default function ChatPage(): React.JSX.Element {
 
   useEffect(() => {
     if (!gitCwd) return undefined
-    void window.electron?.git?.watch(gitCwd)
+    void gitClient.watch(gitCwd)
     return () => {
-      void window.electron?.git?.unwatch(gitCwd)
+      void gitClient.unwatch(gitCwd)
     }
   }, [gitCwd])
 
-  // Collapse (not unmount) the chat pane when the browser is maximized so the
-  // active conversation is preserved.
   useEffect(() => {
     const panel = chatPaneRef.current
     if (!panel) return
@@ -56,10 +55,6 @@ export default function ChatPage(): React.JSX.Element {
     else panel.expand()
   }, [browserOpen, browserMaximized, chatPaneRef])
 
-  // Switches render synchronously: hot sessions (kept alive by the session
-  // manager) paint their first frame from memory, so no transition shell or
-  // deferred remount is needed. The sub-agent drill-down replaces the main
-  // conversation in place (same footprint) and returns via its back button.
   const chatContent = viewedSubagentTask ? (
     <SubagentTranscriptView
       key={viewedSubagentTask.chatId}

@@ -71,9 +71,6 @@ function isConstructorInstance<T>(
   return error instanceof klass
 }
 
-/** Matches AI SDK errors by their `Symbol.for('vercel.ai.error.<name>')` marker.
- *  Used for classes that are not exported from their package index (e.g. the
- *  MCP client errors in @ai-sdk/mcp), mirroring AISDKError.hasMarker. */
 function hasAiSdkErrorMarker(error: unknown, name: string): boolean {
   const markerSymbol = Symbol.for(`vercel.ai.error.${name}`)
   return (
@@ -182,7 +179,7 @@ export function retryTelemetryFromError(error: unknown): AgentTelemetryRetry | u
 export function normalizeTelemetryError(error: unknown): AgentTelemetryError {
   if (isSdkInstance(RetryError, error)) {
     const lastError = error.lastError
-    // A retry loop ended by an abort signal is a cancellation, not a failure.
+
     if (error.reason === 'abort') {
       return {
         ...baseError(lastError, 'abort'),
@@ -266,7 +263,6 @@ export function normalizeTelemetryError(error: unknown): AgentTelemetryError {
     return baseError(error, 'stream')
   }
 
-  // @ai-sdk/mcp does not export its error classes; match them by marker.
   if (
     hasAiSdkErrorMarker(error, 'AI_MCPClientError') ||
     hasAiSdkErrorMarker(error, 'AI_MCPClientOAuthError')

@@ -5,17 +5,11 @@ import { fileMentionClient } from '@/platform/electron/file-mention-client'
 const SEARCH_DEBOUNCE_MS = 80
 const MAX_PLUGIN_SUGGESTIONS = 5
 
-/** A plugin that can be `@mentioned` to focus the model on its capabilities. */
 export interface PluginMentionOption {
-  /** The mention token (`displayName ?? pluginName`); matches the main-side namespace. */
   name: string
   description?: string
 }
 
-/**
- * A single suggestion in the `@` menu. Plugins (local, instant) and files
- * (remote, searched) share one trigger and one list, distinguished by `kind`.
- */
 export type MentionItem =
   { kind: 'plugin'; name: string; description?: string } | ({ kind: 'file' } & FileMentionEntry)
 
@@ -50,7 +44,6 @@ function formatFileInsertion(entry: FileMentionEntry): string {
   return /\s/.test(path) ? `"${path}"` : path
 }
 
-/** Rank plugins whose name matches the query: prefix matches before substring. */
 export function matchPlugins(plugins: PluginMentionOption[], query: string): MentionItem[] {
   const q = query.toLowerCase()
   const scored: { plugin: PluginMentionOption; rank: number }[] = []
@@ -72,12 +65,6 @@ export function matchPlugins(plugins: PluginMentionOption[], query: string): Men
   return result
 }
 
-/**
- * The literal text a selected item writes back. Plugins and directories keep the
- * leading `@` (plugins so the parser matches; directories so the user can drill
- * in); files resolve to a bare path. Returns the insertion plus any trailing
- * separator the caret should land after.
- */
 export function buildMentionInsertion(item: MentionItem): { text: string; trailing: string } {
   if (item.kind === 'plugin') return { text: `@${item.name}`, trailing: ' ' }
   if (item.type === 'directory') return { text: `@${item.path}/`, trailing: '' }
@@ -120,8 +107,6 @@ export function useMentionMenu({
   const [highlight, setHighlight] = useState(0)
   const [dismissed, setDismissed] = useState<string | null>(null)
 
-  // Plugins need no workspace (they live in app state); files do. The menu can
-  // therefore open in a fresh conversation to offer plugin mentions alone.
   const canOpen = !isStreaming
 
   const context = useMemo(() => {
@@ -140,11 +125,6 @@ export function useMentionMenu({
     setDismissed(null)
   }, [textareaRef, value])
 
-  // Reset the highlight to the top whenever the typed mention query changes, so
-  // arrow-key selection stays predictable as the candidate list shifts. Driven
-  // synchronously from the change handler (like the slash menu) rather than an
-  // effect, which avoids cascading renders and works for plugin-only menus where
-  // no async file search resolves to reset it.
   const resetHighlightOnQueryChange = useCallback(
     (nextValue: string) => {
       const el = textareaRef.current
@@ -182,9 +162,6 @@ export function useMentionMenu({
     [context, plugins]
   )
 
-  // Plugins first (local, instant, few), then files. Stale file entries are
-  // gated by `context`, mirroring the original menu, so no synchronous clear is
-  // needed when the trigger closes.
   const mentionItems = useMemo<MentionItem[]>(() => {
     if (!context) return []
     return [...pluginMatches, ...fileEntries.map((entry) => ({ kind: 'file' as const, ...entry }))]
@@ -211,8 +188,6 @@ export function useMentionMenu({
         })
       }
 
-      // Plugins keep `@` (parser match); directories keep `@` + `/`; files
-      // resolve to a bare path. Files dismiss the menu for the inserted text.
       const { text, trailing } = buildMentionInsertion(item)
       const dismissAfter = item.kind === 'file' && item.type === 'file' ? text : null
       place(text, trailing, dismissAfter)

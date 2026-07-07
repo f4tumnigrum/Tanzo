@@ -1,21 +1,3 @@
-/**
- * On-disk plugin cache and data store.
- *
- * Wire-compatible layout with Codex (`codex-rs/core-plugins/src/store.rs`):
- * - Cached plugin artifacts live at
- *   `<root>/plugins/cache/<marketplace>/<plugin>/<version>/`.
- * - Per-plugin durable data lives at
- *   `<root>/plugins/data/<plugin>-<marketplace>/`.
- * - A plugin may have multiple installed versions; the "active" one is the
- *   literal `local` version when present, otherwise the highest by semver
- *   (falling back to string order for non-semver tags).
- *
- * Codex roots this under `codex_home`; Tanzo roots it under its own
- * `<userData>` (per the project decision to keep a Tanzo-owned directory),
- * while preserving the same `plugins/cache` / `plugins/data` subpaths so a
- * plugin authored for Codex installs and resolves identically.
- */
-
 import { cpSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { TanzoValidationError } from '@shared/errors'
@@ -36,27 +18,25 @@ export interface PluginInstallResult {
 }
 
 export interface PluginStore {
-  /** Absolute cache root (`<root>/plugins/cache`). */
   cacheRoot(): string
-  /** `<cache>/<marketplace>/<plugin>` — holds one dir per installed version. */
+
   pluginBaseRoot(id: PluginId): string
-  /** `<cache>/<marketplace>/<plugin>/<version>`. */
+
   pluginRoot(id: PluginId, version: string): string
-  /** `<data>/<plugin>-<marketplace>` — durable per-plugin storage. */
+
   pluginDataRoot(id: PluginId): string
-  /** The active version string, or undefined when nothing is installed. */
+
   activePluginVersion(id: PluginId): string | undefined
-  /** The active version's plugin root, or undefined. */
+
   activePluginRoot(id: PluginId): string | undefined
   isInstalled(id: PluginId): boolean
-  /** Enumerate every installed plugin in the cache (one entry per plugin id). */
+
   listInstalled(): PluginId[]
-  /** Copy a plugin source dir into the cache, returning the install result. */
+
   install(sourcePath: string, id: PluginId): PluginInstallResult
   uninstall(id: PluginId): void
 }
 
-/** Validate a version directory segment (mirrors Codex). */
 export function validatePluginVersionSegment(version: string): string | null {
   if (version.length === 0) return 'invalid plugin version: must not be empty'
   if (version === '.' || version === '..') {
@@ -68,10 +48,7 @@ export function validatePluginVersionSegment(version: string): string | null {
   return null
 }
 
-/** Parse a dotted version into numeric components for semver-ish comparison. */
 function parseSemver(version: string): number[] | null {
-  // Strip a build/prerelease suffix (`-`/`+`) before comparing the core triple,
-  // matching the spirit of Codex's `Version::parse` ordering for common tags.
   const core = version.split(/[-+]/, 1)[0]
   const parts = core.split('.')
   if (parts.length === 0) return null
@@ -83,7 +60,6 @@ function parseSemver(version: string): number[] | null {
   return nums
 }
 
-/** Compare two version strings: numeric semver order, else string order. */
 export function comparePluginVersions(left: string, right: string): number {
   const l = parseSemver(left)
   const r = parseSemver(right)
@@ -196,8 +172,7 @@ export function createPluginStore(root: string, logger: Logger): PluginStore {
     }
 
     const installedPath = pluginRoot(id, version)
-    // Stage into a sibling temp dir, then swap into place so a partially copied
-    // tree is never observed as the active version.
+
     const base = pluginBaseRoot(id)
     mkdirSync(base, { recursive: true })
     const staged = join(base, `.staging-${process.pid}-${Date.now().toString(36)}`)
@@ -232,7 +207,6 @@ export function createPluginStore(root: string, logger: Logger): PluginStore {
   }
 }
 
-/** Convenience: validate the two segments and build a store key. */
 export function pluginStoreKey(pluginName: string, marketplaceName: string): string | null {
   const result = makePluginId(pluginName, marketplaceName)
   return result.ok ? pluginIdKey(result.id) : null

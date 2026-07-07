@@ -7,10 +7,6 @@ interface ChannelDetailStore {
   setSelectedChannelId: (channelId: ChannelId | null) => void
 }
 
-/**
- * Selection state for the channels list→detail flow. Mirrors `useProviderDetailStore`: a
- * single store field drives the panel swap; no routing involved.
- */
 export const useChannelDetailStore = create<ChannelDetailStore>()(
   devtools(
     (set) => ({

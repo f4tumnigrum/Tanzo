@@ -112,8 +112,7 @@ export function useAttachments(isStreaming: boolean): {
         void addFiles(files)
         return
       }
-      // Long pasted text becomes a text/plain attachment; the main process
-      // externalizes it to a temp .txt the agent reads with fileRead.
+
       const text = event.clipboardData.getData('text/plain')
       if (text.length < LONG_PASTE_THRESHOLD) return
       event.preventDefault()

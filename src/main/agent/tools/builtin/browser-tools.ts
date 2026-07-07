@@ -5,13 +5,6 @@ import { toolResultToModelOutput } from '../model-output'
 import { isAllowedEmbeddedBrowserUrl } from '../../../embedded-browser'
 import { browserOpenInputSchema } from '../tool-schemas'
 
-/**
- * Open the built-in browser at a URL. This is the only bespoke browser tool
- * that remains: it asks the renderer to show the browser panel and load `url`,
- * creating the `<webview>` target that the chrome-devtools-mcp server then
- * drives over CDP. All actual page interaction (snapshot, click, type, read,
- * screenshot, navigate…) is provided by that MCP server, not by Tanzo.
- */
 export const browserOpenTool = (deps: ToolDeps) =>
   tool<
     TanzoTools['browserOpen']['input'],

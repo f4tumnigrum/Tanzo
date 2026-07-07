@@ -35,43 +35,16 @@ export interface CreateMcpModuleOptions {
   enableReconnect?: boolean
   appName?: string
   appVersion?: string
-  /**
-   * Chromium remote-debugging port opened by the main process (0 = disabled).
-   * When set, a built-in chrome-devtools-mcp server is registered so agent
-   * browser tools drive the embedded `<webview>` guests over CDP.
-   */
+
   remoteDebuggingPort?: number
-  /**
-   * Live view of the user's browser-automation preference. Read on every sync
-   * so flipping the preference connects/disconnects the built-in server at
-   * runtime. Defaults to enabled when omitted.
-   */
+
   browserAutomationEnabled?: () => boolean
 }
 
-/** Re-exported from @shared/mcp: a user server with this name shadows the
- * built-in (mergedServers gives user servers priority), which we treat as an
- * intentional override. */
 export { BUILTIN_BROWSER_SERVER_NAME }
 
-/** Synthetic id for the built-in server so the renderer can key/select it.
- * It never exists in the database, so store-backed mutations (toggle, update,
- * delete) are no-ops for it by construction. */
 export const BUILTIN_BROWSER_SERVER_ID = 'builtin:chrome-devtools'
 
-/**
- * Build the built-in chrome-devtools-mcp server config that attaches to our own
- * Electron Chromium over CDP. `--browserUrl` connects to the already-open
- * debugging port instead of launching a separate Chrome. Isolation notes:
- *   - `--experimentalIncludeAllPages` surfaces `<webview>` guests as pages so
- *     the agent can drive the tab the user sees.
- *   - `--blockedUrlPattern file://**` detaches the server from the Tanzo UI and
- *     pet windows (both load via file:// in production), so the agent cannot
- *     navigate or inject into the app's own renderer. Chrome 149's cleaner
- *     `--allowedUrlPattern` allowlist is unavailable on our Chromium (146).
- * `enabled` mirrors the user's browser-automation preference so flipping the
- * preference connects/disconnects the server on the next sync.
- */
 function buildBrowserServerConfig(port: number, enabled: boolean): McpServerConfig {
   return {
     id: BUILTIN_BROWSER_SERVER_ID,
@@ -182,8 +155,6 @@ export function createMcpModule(options: CreateMcpModuleOptions): McpModule {
 
   const browserPort = options.remoteDebuggingPort ?? 0
   if (browserPort > 0) {
-    // Lazy provider: re-evaluated on every sync, so the server's enabled state
-    // always reflects the current preference.
     service.setBuiltinServers(() => [
       buildBrowserServerConfig(browserPort, options.browserAutomationEnabled?.() ?? true)
     ])

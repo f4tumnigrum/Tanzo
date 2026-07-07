@@ -8,31 +8,19 @@ export interface PluginMentionEntry {
 }
 
 export interface PluginMentionReader {
-  /** Capability summaries for currently active plugins, keyed by name. */
   list: () => PluginMentionEntry[]
-  /** Plugin names mentioned for this chat's pending turn. */
+
   peek: (chatId: string) => string[]
-  /** Clear the pending mentions for this chat. */
+
   take: (chatId: string) => void
 }
 
-/**
- * Per-turn focus hint for explicitly mentioned plugins. Mirrors Codex's
- * `build_plugin_injections`: when the user `@mentions` a plugin, this volatile
- * leading-user section tells the model to prefer that plugin's capabilities for
- * the turn, naming its skill prefix and available MCP servers.
- *
- * Only mentioned plugins that are still active are rendered (the names are
- * intersected with live capability summaries at build time), so a disabled or
- * uninstalled plugin never produces a stale hint.
- */
 export function createPluginsMentionSection(reader: PluginMentionReader): ContextSection {
   return {
     id: 'plugins-mention',
     stability: 'volatile',
     channel: 'injection',
-    // Just after the goal continuation hint (order 5); both are per-turn
-    // leading-user nudges placed close to the user's message.
+
     order: 6,
     render: ({ pluginMention }) => {
       if (!pluginMention || pluginMention.length === 0) return null

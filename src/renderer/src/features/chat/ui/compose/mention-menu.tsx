@@ -15,8 +15,6 @@ interface MentionMenuProps {
 
 type MentionKind = MentionItem['kind']
 
-// Render order of the groups; matches the flat ordering produced by the hook
-// (plugins first, then files), so flat-index navigation stays consistent.
 const KIND_ORDER: readonly MentionKind[] = ['plugin', 'file']
 
 function MentionRow({
@@ -77,8 +75,6 @@ export function MentionMenu({
   const { t } = useTranslation()
   const listRef = useRef<HTMLDivElement>(null)
 
-  // Group by kind for display while keeping each item's flat index for
-  // keyboard navigation and highlight tracking (mirrors the slash menu).
   const groups = useMemo(() => {
     const byKind = new Map<MentionKind, { item: MentionItem; index: number }[]>()
     items.forEach((item, index) => {

@@ -1,12 +1,3 @@
-/**
- * Pure selection + derivation helpers for the git review controller.
- *
- * Selection is modeled as user *intent* (what the user last clicked) that is
- * resolved against the latest server data at render time. If the intent is no
- * longer valid (the file/commit disappeared after a refresh) it falls back to a
- * sensible default. Keeping this pure removes the setState-in-effect dance that
- * previously synced selection with fetched data.
- */
 import type {
   GitCommitDetails,
   GitHistoryPage,
@@ -45,7 +36,6 @@ export function firstSelectableEntry(
   return null
 }
 
-/** Resolve the effective selected file: keep valid intent, else first selectable. */
 export function resolveSelectedFile(
   intent: GitReviewSelectedFile | null,
   status: GitStatusSnapshot | null
@@ -61,7 +51,6 @@ export function resolveSelectedFile(
   return firstSelectableEntry(status)
 }
 
-/** Resolve the effective commit hash: keep valid intent, else newest commit. */
 export function resolveCommitHash(
   intent: string | null,
   history: GitHistoryPage | null
@@ -70,7 +59,6 @@ export function resolveCommitHash(
   return history?.entries[0]?.hash ?? null
 }
 
-/** Resolve the effective commit file: keep valid intent, else first changed file. */
 export function resolveCommitFile(
   intent: string | null,
   details: GitCommitDetails | null

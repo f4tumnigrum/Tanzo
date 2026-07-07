@@ -31,7 +31,6 @@ function useGoalBadge(context: ToolRenderContext): GoalBadge | null {
   const { t } = useTranslation()
   const output = goalOutput(context)
   if (output && 'recorded' in output) {
-    // Block attempt below the machine's threshold: recorded, not applied.
     return {
       text: t('chat.tool.goal.status.recorded', {
         attempts: output.attempts,

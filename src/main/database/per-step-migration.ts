@@ -2,22 +2,6 @@ import type { TanzoUIMessage } from '@shared/agent-message'
 import { splitAssistantSteps } from '@shared/message-steps'
 import type { SqlDatabase } from './types'
 
-/**
- * Migration 22 — per-step message rows (context compaction v2, design §4.5).
- *
- * Historical assistant rows aggregate a whole model pass (parts delimited by
- * `step-start`). This migration splits every multi-step assistant row into one
- * row per step group so that compaction cuts always cover whole rows:
- *
- * - rows are renumbered per conversation into a dense seq block, preserving
- *   order, with fragments inserted in place of their source row;
- * - compaction overlay coverage (`covers_from_seq/covers_to_seq`) is remapped
- *   onto the new seq numbers;
- * - revisions of split messages are dropped — the log projection COALESCEs the
- *   latest revision over the base row, so a stale aggregated revision would
- *   otherwise shadow the fragment content.
- */
-
 interface MessageRow {
   id: string
   seq: number
@@ -97,7 +81,6 @@ export function migratePerStepMessages(db: SqlDatabase): void {
   for (const { id: chatId } of conversations) {
     const rows = selectRows.all([chatId]) as MessageRow[]
 
-    // Split each row; remember where every original seq lands.
     interface NextRow {
       id: string
       role: string
@@ -114,7 +97,6 @@ export function migratePerStepMessages(db: SqlDatabase): void {
       const decoded = decodeMessage(row.message_json)
       const fragments = decoded ? splitAssistantSteps(decoded) : null
       if (!fragments || fragments.length <= 1) {
-        // Single-step or unparseable row — keep it verbatim (id, json, all).
         next.push({
           id: row.id,
           role: row.role,
@@ -152,7 +134,6 @@ export function migratePerStepMessages(db: SqlDatabase): void {
       })
     })
 
-    // Remap overlay coverage onto the new seq numbers.
     const oldSeqs = rows.map((row) => row.seq)
     const overlays = selectOverlays.all([chatId]) as OverlayRow[]
     for (const overlay of overlays) {

@@ -1,15 +1,11 @@
 import { MessageCircle, Hash, Send, MessagesSquare } from 'lucide-react'
 import type { ChannelId } from '@shared/chat-bridge'
 
-/**
- * Presentation metadata for each channel. There is no brand-logo registry in the app, so we
- * use distinct lucide glyphs (net-new, per the provider pattern which is also icon-driven).
- */
 export interface ChannelPresentation {
   id: ChannelId
-  /** i18n key for the display name (with a sensible English defaultValue at call sites). */
+
   icon: React.ReactNode
-  /** Accent classes for the card/detail icon chip. */
+
   accent: string
 }
 

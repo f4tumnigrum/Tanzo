@@ -6,12 +6,6 @@ export interface GoalSectionReader {
   get(chatId: string): ThreadGoal | null
 }
 
-/**
- * Per-turn goal pulse (v2, invariant I1): the volatile delta — injection kind,
- * remaining budget, stalled warning. A few lines that enter the transcript via
- * the injection channel. The rules live in the goal charter (stable system
- * channel); the pulse never repeats them.
- */
 export function createGoalSection(reader: GoalSectionReader): ContextSection {
   return {
     id: 'goal',

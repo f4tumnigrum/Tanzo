@@ -82,20 +82,23 @@ export function registerSystemIpc(
     return result.canceled ? null : (result.filePaths[0] ?? null)
   })
 
-  target.handle(SYSTEM_CHANNELS.openPath, async (_event, rawPath?: unknown): Promise<OpenPathResult> => {
-    if (typeof rawPath !== 'string' || rawPath.trim().length === 0) {
-      return { ok: false, error: 'invalid-path' }
+  target.handle(
+    SYSTEM_CHANNELS.openPath,
+    async (_event, rawPath?: unknown): Promise<OpenPathResult> => {
+      if (typeof rawPath !== 'string' || rawPath.trim().length === 0) {
+        return { ok: false, error: 'invalid-path' }
+      }
+      try {
+        const info = await stat(rawPath)
+        if (!info.isDirectory()) return { ok: false, error: 'not-a-directory' }
+      } catch {
+        return { ok: false, error: 'not-found' }
+      }
+
+      const error = await shell.openPath(rawPath)
+      return error ? { ok: false, error } : { ok: true }
     }
-    try {
-      const info = await stat(rawPath)
-      if (!info.isDirectory()) return { ok: false, error: 'not-a-directory' }
-    } catch {
-      return { ok: false, error: 'not-found' }
-    }
-    // shell.openPath returns '' on success, or an OS error string on failure.
-    const error = await shell.openPath(rawPath)
-    return error ? { ok: false, error } : { ok: true }
-  })
+  )
 
   target.handle(
     SYSTEM_CHANNELS.revealInFolder,

@@ -29,11 +29,9 @@ interface SkillRoot {
   scope: SkillScope
 }
 
-/** An extra skills directory contributed by a plugin. */
 export interface PluginSkillRootInput {
-  /** Absolute path to the plugin's skills directory. */
   dir: string
-  /** Namespace prefix (the plugin's manifest name) applied to its skills. */
+
   namespace: string
 }
 
@@ -42,19 +40,9 @@ export interface SkillsStoreDeps {
   userDir: string
   logger: Logger
   db?: SqlDatabase
-  /**
-   * Lazily provides skills directories contributed by active plugins. Called on
-   * every (re)load so plugin enable/disable changes take effect on reload.
-   * Plugin skills are namespaced (`<namespace>:<name>`) to avoid collisions
-   * with user/workspace skills.
-   */
+
   pluginSkillRoots?: () => PluginSkillRootInput[]
-  /**
-   * Live view of the browser-automation preference. When it returns false the
-   * built-in browser skill is excluded from enabled skills, so it disappears
-   * from the skills index and the `skill` tool refuses to load it — its
-   * allowed tools (browserOpen, chrome-devtools) are unavailable anyway.
-   */
+
   browserAutomationEnabled?: () => boolean
 }
 
@@ -245,8 +233,7 @@ function loadSkills(deps: SkillsStoreDeps): Map<string, ResolvedSkill> {
       skills.set(skill.name, skill)
     }
   }
-  // Plugin-contributed skills load last and are namespaced (`<namespace>:<name>`)
-  // so they never collide with user/workspace skills of the same bare name.
+
   for (const pluginRoot of deps.pluginSkillRoots?.() ?? []) {
     for (const skill of loadFromRoot({ dir: pluginRoot.dir, scope: 'plugin' }, deps.logger)) {
       const namespaced = `${pluginRoot.namespace}:${skill.name}`
@@ -273,12 +260,6 @@ function loadFromRoot(root: SkillRoot, logger: Logger): ResolvedSkill[] {
   return resolved
 }
 
-/**
- * True when the entry is a directory, or a symlink/Windows junction that
- * resolves to one. Skill managers (e.g. the `skills` CLI) install skills as
- * links pointing at a shared store, and `Dirent.isDirectory()` reports `false`
- * for links — so we follow the link with `statSync` before skipping it.
- */
 function isDirectoryEntry(entry: Dirent, entryPath: string): boolean {
   if (entry.isDirectory()) return true
   if (!entry.isSymbolicLink()) return false

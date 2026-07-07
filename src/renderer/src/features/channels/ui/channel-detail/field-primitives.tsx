@@ -52,7 +52,6 @@ export function ChannelStatusBadge({
   )
 }
 
-/** A small segmented control matching the app's outline/default button pairing. */
 export function SegmentedControl<T extends string>({
   options,
   value,
@@ -81,7 +80,6 @@ export function SegmentedControl<T extends string>({
   )
 }
 
-/** A text field with a label, laid out in a ROW_STACK. */
 export function LabeledInput({
   label,
   value,
@@ -113,7 +111,6 @@ export function LabeledInput({
   )
 }
 
-/** A chip-list editor for id allowlists. */
 export function ChipListEditor({
   values,
   onChange,
@@ -187,7 +184,6 @@ export function ChipListEditor({
   )
 }
 
-/** The write-only secret field with a "stored/not set" badge. */
 export function SecretField({
   label,
   configured,

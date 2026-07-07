@@ -73,11 +73,6 @@ function SyncOptionPill({
   )
 }
 
-/**
- * Guidance shown when the workspace is on a detached HEAD. New commits made here
- * can be lost, so we surface a one-tap "create branch here" affordance instead
- * of silently letting the user commit into a doomed state.
- */
 function DetachedBanner({
   controller
 }: {

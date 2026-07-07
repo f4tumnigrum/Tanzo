@@ -2,19 +2,6 @@ import * as React from 'react'
 
 import { cn } from '@/lib/utils'
 
-/**
- * Liquid glass surface — native implementation, no external library.
- *
- * How it works (all Chromium-native, validated in spike/liquid-glass-prototype.html):
- * - A vector displacement map (pure SVG data URI, no canvas, no per-pixel JS) encodes
- *   x-displacement in R and y-displacement in B. The center is neutral #808080, so the
- *   backdrop refracts only at the bezel and content behind the center stays sharp.
- * - The map feeds an feDisplacementMap that runs INSIDE backdrop-filter, combined with
- *   blur + saturate in a single compositor pass.
- * - The map regenerates only on resize (ResizeObserver); pointer interaction writes CSS
- *   custom properties directly on the element via rAF — zero React re-renders.
- */
-
 function displacementMapURI(width: number, height: number, radius: number, bezel: number): string {
   const w = Math.max(1, Math.round(width))
   const h = Math.max(1, Math.round(height))
@@ -40,11 +27,10 @@ function displacementMapURI(width: number, height: number, radius: number, bezel
 }
 
 interface LiquidGlassProps extends React.ComponentProps<'div'> {
-  /** Multiplies refraction strength. 0 disables displacement (frost only). */
   intensity?: number
-  /** Adds RGB fringing at the bezel (three displacement taps, ~3x backdrop cost). */
+
   aberration?: boolean
-  /** Track the pointer to drive the specular highlight. */
+
   interactive?: boolean
 }
 
@@ -62,9 +48,7 @@ function LiquidGlass({
   const backdropRef = React.useRef<HTMLDivElement>(null)
   const mapRefs = React.useRef<(SVGFEImageElement | null)[]>([])
   const rafRef = React.useRef(0)
-  // Frost tier: no SVG filter at all. Mounting the displacement filter with
-  // scale 0 still costs a one-off filter compile the first time the element
-  // becomes visible, which shows up as a stutter on fade-in transitions.
+
   const refract = intensity > 0
 
   React.useLayoutEffect(() => {
@@ -81,10 +65,7 @@ function LiquidGlass({
       const uri = displacementMapURI(rect.width, rect.height, radius, bezel)
       if (uri === latest) return
       latest = uri
-      // Decode the map before wiring it into the filter: swapping in an
-      // undecoded feImage renders several broken frames (backdrop shifts,
-      // then snaps once the image loads). Until then the ::before frost
-      // baseline shows, so the surface never looks broken.
+
       const img = new Image()
       img.src = uri
       const apply = (): void => {

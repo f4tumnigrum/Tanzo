@@ -13,7 +13,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
 
-/** Mirror the backend's source detection so ref/sparse only show for git. */
 function looksLikeGit(raw: string): boolean {
   const value = raw.trim()
   if (!value) return true

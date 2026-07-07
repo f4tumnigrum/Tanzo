@@ -94,9 +94,7 @@ export function createBuildTools(deps: ToolDeps): BuildTools {
     const hasAvailableTypes = subAgentTypes.some((a) => a.available)
     const canDelegate = depth < maxDepth && hasAvailableTypes
     const conversation = deps.store.getConversation(chatId)
-    // A fork behaves as an independent root conversation: it keeps the main
-    // agent surface (askQuestion, goal tools, exitPlanMode). Only executor
-    // conversations spawned for subagent tasks lose it.
+
     const isSubagent = conversation?.parentRelation === 'subagent'
     const isMainAgent = !isSubagent
     const shouldIncludeExitPlanMode =
@@ -114,11 +112,7 @@ export function createBuildTools(deps: ToolDeps): BuildTools {
       ...(isMainAgent ? goalTools(deps, chatId, context.runId) : {}),
       ...(shouldIncludeExitPlanMode ? { exitPlanMode: exitPlanModeTool() } : {})
     }
-    // Drop tools the user disabled in settings. This applies before the agent's
-    // allowedTools filter so a disabled tool is unavailable to every agent,
-    // regardless of its allowlist. MCP ids are normalized the same way the
-    // registry builds its keys, so raw `mcp__server__tool` ids from settings
-    // match sanitized registry keys.
+
     const disabled = new Set(deps.disabledTools().map((id) => normalizeMcpToolPattern(id)))
     if (disabled.size > 0) {
       for (const key of Object.keys(merged)) {

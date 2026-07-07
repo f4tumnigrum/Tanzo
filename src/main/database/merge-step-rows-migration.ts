@@ -2,26 +2,6 @@ import type { TanzoUIMessage } from '@shared/agent-message'
 import { groupAssistantSteps, isStepFragmentOf } from '@shared/message-steps'
 import type { SqlDatabase } from './types'
 
-/**
- * Migration 23 — merge per-step message rows back into aggregated rows.
- *
- * Migration 22 split multi-step assistant replies into one row per step group
- * (design §4.5). That representation was rolled back: it gave every reply two
- * identities (one live SDK message vs. N persisted fragments) and every
- * id-based path in the renderer had to reconcile them. Storage returns to the
- * live-domain shape: one row per reply, steps delimited by `step-start` parts.
- *
- * This is the exact inverse of migration 22:
- * - consecutive assistant fragments (`a1`, `a1::step-1`, …) merge into one row
- *   that keeps the FIRST fragment's id — the id the original aggregated row had
- *   before the split;
- * - rows are renumbered per conversation into a dense seq block;
- * - compaction overlay coverage is remapped onto the new seq numbers, rounded
- *   outward to whole merged rows;
- * - revisions of merged fragment ids are dropped so a stale fragment-shaped
- *   revision cannot shadow the merged content in the log projection.
- */
-
 interface MessageRow {
   id: string
   seq: number
@@ -95,7 +75,7 @@ export function mergeStepMessageRows(db: SqlDatabase): void {
       created_at: number
     }
     const next: NextRow[] = []
-    // Old seq → index in `next` of the row that carries it (merged or not).
+
     const newSeqOf = new Map<number, number>()
     let anyMerge = false
 
@@ -104,8 +84,6 @@ export function mergeStepMessageRows(db: SqlDatabase): void {
       const row = rows[i]
       const decoded = decodeMessage(row.message_json)
 
-      // Collect a run of fragments: this assistant row plus consecutive
-      // assistant rows whose ids continue it (`a1` ← `a1::step-1` ← …).
       const group: Array<{ row: MessageRow; message: TanzoUIMessage }> = []
       if (decoded && row.role === 'assistant') {
         group.push({ row, message: decoded })
@@ -121,7 +99,6 @@ export function mergeStepMessageRows(db: SqlDatabase): void {
       }
 
       if (group.length <= 1) {
-        // Not a fragment run — keep the row verbatim.
         newSeqOf.set(row.seq, next.length)
         next.push({
           id: row.id,
@@ -165,9 +142,6 @@ export function mergeStepMessageRows(db: SqlDatabase): void {
       })
     })
 
-    // Remap overlay coverage. Rounding is outward: if a boundary landed on a
-    // fragment mid-reply, the merged row is covered as a whole (projection
-    // works at row granularity).
     const oldSeqs = rows.map((row) => row.seq)
     const overlays = selectOverlays.all([chatId]) as OverlayRow[]
     for (const overlay of overlays) {

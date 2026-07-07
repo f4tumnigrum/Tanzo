@@ -1,22 +1,6 @@
 import type { GoalInjection, ThreadGoal } from '@shared/goal'
 import { BLOCK_ATTEMPTS_REQUIRED } from './goal.machine'
 
-/**
- * Goal presentation templates (v2, invariant I1).
- *
- * charterText — the standing declaration: objective + the full (static)
- * decision procedure. Rendered into the stable system channel, byte-identical
- * across turns while the goal is unchanged, so it lands inside the provider
- * cache prefix at ~zero marginal cost and the model sees the goal on EVERY
- * turn — including ordinary user turns.
- *
- * pulseText — the per-turn delta: injection kind, remaining budget, stalled
- * warning. Small (a few lines), enters the transcript via the injection
- * channel. Never repeats the rules — the charter is always in context.
- */
-
-// --- charter ---------------------------------------------------------------
-
 function objectiveBlock(goal: ThreadGoal): string {
   return ['<objective>', goal.objective, '</objective>'].join('\n')
 }
@@ -37,12 +21,12 @@ Hold the full objective; never a smaller or easier version. Judge by the current
 </goal_charter>`
 }
 
-// --- pulse -----------------------------------------------------------------
-
 function budgetLine(goal: ThreadGoal): string | null {
   const parts: string[] = []
   if (goal.tokenBudget != null) {
-    parts.push(`${Math.max(0, goal.tokenBudget - goal.tokensUsed)} of ${goal.tokenBudget} budget tokens remaining`)
+    parts.push(
+      `${Math.max(0, goal.tokenBudget - goal.tokensUsed)} of ${goal.tokenBudget} budget tokens remaining`
+    )
   }
   if (goal.timeBudgetSeconds != null) {
     parts.push(
@@ -58,7 +42,11 @@ function stalledLine(goal: ThreadGoal): string | null {
 }
 
 function wrap(lines: Array<string | null>): string {
-  return ['<goal_pulse>', ...lines.filter((line): line is string => line !== null), '</goal_pulse>'].join('\n')
+  return [
+    '<goal_pulse>',
+    ...lines.filter((line): line is string => line !== null),
+    '</goal_pulse>'
+  ].join('\n')
 }
 
 export function pulseText(goal: ThreadGoal, injection: GoalInjection): string {
@@ -66,7 +54,7 @@ export function pulseText(goal: ThreadGoal, injection: GoalInjection): string {
     return wrap([
       'This goal hit its budget; the system marked it budget_limited. Wrap up now.',
       budgetLine(goal),
-      "Don't start new substantive work. This turn: summarize what's done, list what remains, and leave the user a clear next step. Only call updateGoal(status=\"complete\") if the objective is genuinely already satisfied."
+      'Don\'t start new substantive work. This turn: summarize what\'s done, list what remains, and leave the user a clear next step. Only call updateGoal(status="complete") if the objective is genuinely already satisfied.'
     ])
   }
   if (injection === 'objective_updated') {

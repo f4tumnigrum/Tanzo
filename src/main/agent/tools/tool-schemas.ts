@@ -396,7 +396,7 @@ export const spawnInputSchema = z
 export const spawnOutputSchema = z.union([
   z.object({
     tasks: z.array(z.object({ task: z.string(), status: subagentTaskStatusSchema })),
-    /** Inline reminder of the next action — helps the agent remember to await results. */
+
     hint: z.string().optional()
   }),
   toolErrorSchema
@@ -426,7 +426,7 @@ export const awaitOutputSchema = z.union([
   z.object({
     results: z.array(z.object({ task: z.string(), result: subagentTaskResultSchema })),
     pending: z.array(z.string()).optional(),
-    /** Task ids that do not exist — typos or ids from another conversation. */
+
     unknown: z.array(z.string()).optional(),
     timedOut: z.boolean().optional()
   }),
@@ -447,11 +447,6 @@ export const tasksOutputSchema = z.union([
   toolErrorSchema
 ])
 
-// Provide exactly one of instruction/objective. This is expressed as a single
-// object (not a union) because provider tool schemas — notably Anthropic — reject
-// a top-level anyOf/oneOf/allOf in input_schema. The XOR is enforced by refine
-// (surfaced to the model in the field descriptions) and, as a backstop, by the
-// tool's execute handler.
 export const steerInputSchema = z
   .object({
     task: z.string().min(1).describe('Task id to steer.'),
@@ -659,8 +654,6 @@ export const exitPlanModeOutputSchema = z.union([
   z.object({ acknowledged: z.literal(true), message: z.string() }),
   toolErrorSchema
 ])
-
-// --- Embedded browser ---------------------------------------------------------
 
 export const browserOpenInputSchema = z
   .object({

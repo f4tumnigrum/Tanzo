@@ -1,8 +1,3 @@
-/**
- * React Query key factory for the git review feature. All keys are scoped by
- * `cwd` so that switching repositories swaps the cache entry instead of relying
- * on manual request-id race guards.
- */
 export const gitKeys = {
   all: ['git'] as const,
   repo: (cwd: string) => [...gitKeys.all, cwd] as const,

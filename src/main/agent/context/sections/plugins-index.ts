@@ -9,20 +9,12 @@ export interface PluginsIndexReader {
   list: () => PluginIndexEntry[]
 }
 
-/**
- * Always-on plugin catalog. Mirrors Codex's `<plugins_instructions>` block: a
- * stable system section listing enabled plugins by name + description only — no
- * skill bodies or tool schemas. A plugin's skills appear in the `<skills>`
- * catalog prefixed with `name:`; its MCP servers appear as ordinary tools.
- * Plugins are never invoked directly.
- */
 export function createPluginsIndexSection(reader: PluginsIndexReader): ContextSection {
   return {
     id: 'plugins-index',
     stability: 'stable',
     channel: 'system',
-    // Right after the skills catalog (order 30): this block references the
-    // `name:` skill prefix, so it reads naturally just below the skill list.
+
     order: 31,
     render: () => {
       const plugins = reader.list()

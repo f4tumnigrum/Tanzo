@@ -48,7 +48,6 @@ export function useDeleteConversation() {
   return useMutation({
     mutationFn: (chatId: string) => chatClient.deleteConversation(chatId),
     onSuccess: (_result, chatId) => {
-      // Kept-alive sessions must not outlive their conversation.
       discardChatSession(chatId)
       queryClient.setQueryData<ConversationSummary[]>(chatKeys.conversations(), (list) =>
         list ? list.filter((conversation) => conversation.id !== chatId) : list
@@ -96,8 +95,6 @@ export function useSetConversationPinned() {
     mutationFn: (input: { chatId: string; pinned: boolean }) =>
       chatClient.setConversationPinned(input.chatId, input.pinned),
     onSuccess: (updated) => {
-      // Patch only pinnedAt: pinning does not touch updated_at, so the
-      // response row may be staler than concurrently refreshed cache entries.
       queryClient.setQueryData<ConversationSummary[]>(chatKeys.conversations(), (list) =>
         list
           ? list.map((c) => (c.id === updated.id ? { ...c, pinnedAt: updated.pinnedAt } : c))

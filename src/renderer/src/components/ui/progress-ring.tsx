@@ -2,16 +2,11 @@ import type { ComponentProps } from 'react'
 import { cn } from '@/lib/utils'
 
 interface ProgressRingProps extends Omit<ComponentProps<'svg'>, 'children'> {
-  /** Progress in the range 0–100. */
   value: number
-  /** Stroke width relative to the 24-unit viewBox. */
+
   strokeWidth?: number
 }
 
-/**
- * A minimal circular progress indicator drawn with SVG stroke-dashoffset.
- * Sizing follows `className` (default size-4); colors use theme tokens.
- */
 export function ProgressRing({
   value,
   strokeWidth = 3,

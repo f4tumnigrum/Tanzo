@@ -37,6 +37,8 @@ async function initRepo(root: string): Promise<void> {
   await execGit(root, ['init', '-b', 'main'])
   await execGit(root, ['config', 'user.name', 'Test User'])
   await execGit(root, ['config', 'user.email', 'test@example.com'])
+  await execGit(root, ['config', 'core.autocrlf', 'false'])
+  await execGit(root, ['config', 'core.eol', 'lf'])
 }
 
 async function commitFile(root: string, name: string, content: string): Promise<void> {

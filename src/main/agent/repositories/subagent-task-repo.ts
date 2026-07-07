@@ -111,9 +111,6 @@ export function createSubagentTaskRepo(db: SqlDatabase): SubagentTaskRepo {
     'SELECT COUNT(*) AS n FROM subagent_tasks WHERE root_chat_id = ? AND agent_type = ?'
   )
 
-  // Columns mutated by UPDATE. Insert-only columns (seq, created_at, and the
-  // identity/foreign-key columns) are intentionally excluded so update() never
-  // has to supply a placeholder for them.
   function bindMutable(task: SubagentTask): Record<string, unknown> {
     return {
       objective: task.objective,

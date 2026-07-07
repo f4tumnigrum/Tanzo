@@ -15,14 +15,6 @@ import type { ChatBridgeStore } from './store'
 import type { ChatBridgeRuntime } from './bridge'
 import { createLogger } from '../logger'
 
-/**
- * The chat-bridge service. Coordinates persisted per-channel config + secrets (via the store)
- * with the live multi-channel runtime. This is the object the IPC layer calls.
- *
- * The service is the sole owner of each channel's `secretConfigured` flag: the runtime never
- * sees the store, and the store never sees the network. Status returned to the renderer always
- * carries the correct `secretConfigured` per channel and never the secret value.
- */
 export interface ChatBridgeService {
   getConfig(): ChatBridgeConfig
   setChannelConfig(config: ChannelConfigInput): ChatBridgeConfig
@@ -33,7 +25,7 @@ export interface ChatBridgeService {
   testConnection(channelId: ChannelId): Promise<ChatBridgeTestResult>
   subscribe(listener: (event: ChatBridgeEvent) => void): () => void
   emit(event: ChatBridgeEvent): void
-  /** Connect every channel whose config says enabled + has a stored secret, on startup. */
+
   autoStart(): Promise<void>
   close(): Promise<void>
 }
@@ -62,7 +54,6 @@ export function createChatBridgeService(deps: ChatBridgeServiceDeps): ChatBridge
   }
 
   const emit = (event: ChatBridgeEvent): void => {
-    // Ensure status events always report the authoritative secretConfigured.
     const normalized: ChatBridgeEvent =
       event.kind === 'status'
         ? { kind: 'status', channelId: event.channelId, status: withSecretFlag(event.status) }
@@ -87,7 +78,7 @@ export function createChatBridgeService(deps: ChatBridgeServiceDeps): ChatBridge
     },
     setSecret(channelId, secret) {
       store.writeSecret(channelId, secret)
-      // Reflect the change so the UI updates its "configured" badge.
+
       emit({ kind: 'status', channelId, status: runtime.channelStatus(channelId) })
       return { secretConfigured: store.hasSecret(channelId) }
     },

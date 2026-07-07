@@ -22,7 +22,6 @@ import { ManageMarketplacesDialog } from './manage-marketplaces-dialog'
 
 type Controller = ReturnType<typeof usePluginsPageController>
 
-/** Items per page before a section paginates. */
 const PLUGIN_PAGE_SIZE = 12
 
 export function PluginsPageView({ controller }: { controller: Controller }): React.ReactElement {

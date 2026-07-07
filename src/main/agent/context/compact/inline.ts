@@ -10,22 +10,6 @@ import { runSummarizeFork } from './summarize'
 import { stripAnalysis } from './prompt'
 import type { CompactionPolicy } from './policy'
 
-/**
- * In-stream compaction (v2, invariant I4): compact the live model transcript
- * inside `prepareStep`, without stopping the stream or starting a new run.
- *
- * This deliberately does NOT touch persistence: the persisted UI transcript
- * stays complete during the run; the model-side transcript is replaced with
- * `[summary, ...tail]` and carried forward by the stream-runner. After the run
- * ends, the turn loop reconciles the persisted transcript against the summary
- * (archiving rows and recording the overlay) via
- * `CompactionCoordinator.reconcileInline`.
- *
- * Degradation chain: summarize fork (L1/L2 inside runSummarizeFork) →
- * mechanical prune / drop-oldest (L3/L4). Always returns a sendable
- * transcript, or null when nothing needs to change.
- */
-
 export interface InlineCompactionDeps {
   providerService: AgentRuntimeDeps['providerService']
   contextEngine: ContextEngine
@@ -106,8 +90,6 @@ export async function compactModelTranscript(
     }
   }
 
-  // L3/L4 — mechanical degradation. Fires when the fork failed or when no
-  // clean cut exists but the transcript is over the hard ceiling.
   const degraded = degradeTranscript(input.transcript, input.policy.hardCeilingTokens)
   if (!degraded) return null
   const summaryText =

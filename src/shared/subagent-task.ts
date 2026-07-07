@@ -22,15 +22,11 @@ export interface SubagentTaskResult {
   summary: string
   failed?: boolean
   errorMessage?: string
-  /** Whether the result was submitted via an explicit `report(result:...)` call or
-   *  inferred from the last assistant text when the sub-agent terminated without one. */
+
   resultSource?: 'explicit' | 'inferred'
-  /** Distinguishes app-restart interruptions and cancelled awaits from genuine
-   *  logic failures so the parent agent and UI can react appropriately
-   *  ('await-cancelled' means the wait was aborted — the task may still run). */
+
   failureKind?: 'app-restart' | 'logic-error' | 'await-cancelled'
-  /** When the failure was caused by a dependency failing/cancelling, the id of that
-   *  dependency. Structured so cascade-retry does not have to parse error messages. */
+
   failedDependencyId?: string
 }
 
@@ -80,11 +76,5 @@ export interface PendingTaskQuestion {
   input: AskQuestionInput
 }
 
-/**
- * Result of steering (instruct/redefine) a task. Steering is rejected when the
- * task is settled (its result is final) or dependency-blocked (the gate may
- * not be bypassed).
- */
 export type SteerTaskOutcome =
-  | { ok: true }
-  | { ok: false; reason: 'not-found' | 'terminal' | 'dependency-blocked' }
+  { ok: true } | { ok: false; reason: 'not-found' | 'terminal' | 'dependency-blocked' }

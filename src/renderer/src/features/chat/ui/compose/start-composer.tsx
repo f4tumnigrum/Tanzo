@@ -16,7 +16,7 @@ import { usePluginMentions } from '../../model/conversation/use-plugin-mentions'
 export interface StartConversationDraft {
   message: TanzoUIMessage
   modelRef: string
-  /** Conversation-scoped reasoning effort chosen before the chat exists. */
+
   reasoningEffort?: string
 }
 
@@ -34,8 +34,7 @@ export function StartComposer({
   const pluginMentions = usePluginMentions()
   const { models } = useAvailableLanguageModels()
   const [selectedModelRef, setSelectedModelRef] = useState<string | null>(null)
-  // Pre-conversation effort choice; '' means "untouched", so the badge shows
-  // the provider schema's default. Resolved to a concrete value at start.
+
   const [selectedEffort, setSelectedEffort] = useState<string>('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -57,8 +56,7 @@ export function StartComposer({
 
   const handleSelectModel = useCallback((nextModelRef: string) => {
     setSelectedModelRef(nextModelRef)
-    // Effort choices are provider-specific; reset when the model changes so the
-    // new provider's default applies.
+
     setSelectedEffort('')
   }, [])
 
@@ -75,8 +73,6 @@ export function StartComposer({
       if (trimmed) parts.push({ type: 'text', text: trimmed })
       if (files) parts.push(...(files as TanzoUIMessage['parts']))
 
-      // The badge always reflects a real provider choice (the schema default
-      // when untouched); persist it so the new conversation starts explicit.
       const effort = effortControl.options ? effortControl.effort : undefined
 
       setIsSubmitting(true)

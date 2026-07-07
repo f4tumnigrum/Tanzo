@@ -80,9 +80,6 @@ export const ConversationItem = memo(function ConversationItem({
     setIsRenaming(false)
   }, [])
 
-  // Select immediately on click: selection is idempotent, so the extra select
-  // fired before a double-click rename is harmless, while a debounce timer
-  // would delay every conversation switch by its full window.
   const handleClick = useCallback(() => {
     onSelect(session.sessionId)
   }, [onSelect, session.sessionId])

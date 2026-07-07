@@ -27,10 +27,9 @@ export function QueuedMessages({
   if (items.length === 0) return null
 
   const hasMore = items.length > 1
-  // Derive expansion so a queue that drains to a single item collapses on its
-  // own, without an effect resetting state.
+
   const expanded = userExpanded && hasMore
-  // FIFO: the head of the queue is what dispatches next, so it leads the bar.
+
   const next = items[0]
 
   const steerAndRemove = (item: QueuedMessage): void => {

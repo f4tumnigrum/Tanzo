@@ -2,6 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { TanzoUIMessage } from '@shared/agent-message'
 import type { SubagentApprovalScope } from '@shared/chat'
 import type { CodexPetAnimationName, PetAsset, PetPresencePayload } from '@shared/pet'
+import { chatClient } from '@/platform/electron/chat-client'
+import { petClient } from '@/platform/electron/pet-client'
+import { preferencesClient } from '@/platform/electron/preferences-client'
 import { ApprovalBubble } from './approval-bubble'
 import { PetSprite } from './pet-sprite'
 import { QuickInputBubble } from './quick-input-bubble'
@@ -17,10 +20,10 @@ const INITIAL_PRESENCE: PetPresencePayload = {
 
 async function resolveTargetChatId(activeChatId: string | null): Promise<string | null> {
   if (activeChatId) return activeChatId
-  const conversations = await window.electron.chat.listConversations()
+  const conversations = await chatClient.listConversations()
   const existing = conversations[0]
   if (existing) return existing.id
-  const created = await window.electron.chat.createConversation()
+  const created = await chatClient.createConversation()
   return created.id
 }
 
@@ -30,7 +33,7 @@ async function sendTextMessage(chatId: string, text: string): Promise<void> {
     role: 'user',
     parts: [{ type: 'text', text }]
   }
-  await window.electron.chat.submit(chatId, message)
+  await chatClient.submit(chatId, message)
 }
 
 export function PetApp(): React.JSX.Element | null {
@@ -52,13 +55,13 @@ export function PetApp(): React.JSX.Element | null {
 
   useEffect(() => {
     let cancelled = false
-    void window.electron.preferences.get().then((prefs) => {
+    void preferencesClient.get().then((prefs) => {
       if (!cancelled) {
         setPetId(prefs.petId)
         setPetScale(prefs.petScale)
       }
     })
-    const unsubscribe = window.electron.preferences.onChanged((prefs) => {
+    const unsubscribe = preferencesClient.onChanged((prefs) => {
       setPetId(prefs.petId)
       setPetScale(prefs.petScale)
     })
@@ -76,7 +79,7 @@ export function PetApp(): React.JSX.Element | null {
         return
       }
 
-      void window.electron.pet.get(petId).then((loaded) => {
+      void petClient.get(petId).then((loaded) => {
         if (!cancelled) setAsset(loaded)
       })
     })
@@ -86,7 +89,7 @@ export function PetApp(): React.JSX.Element | null {
   }, [petId])
 
   useEffect(() => {
-    return window.electron.pet.onPresenceChanged((payload) => setPresence(payload))
+    return petClient.onPresenceChanged((payload) => setPresence(payload))
   }, [])
 
   useEffect(() => {
@@ -98,16 +101,16 @@ export function PetApp(): React.JSX.Element | null {
   const interactionDeps = useMemo(
     () => ({
       setHitRect: (rect: { x: number; y: number; width: number; height: number } | null) => {
-        void window.electron.pet.setHitRect(rect)
+        void petClient.setHitRect(rect)
       },
       setDragging: (value: boolean) => {
-        void window.electron.pet.setDragging(value)
+        void petClient.setDragging(value)
         if (!value) setDragAnimation(null)
       },
       move: (delta: { dx: number; dy: number }) => {
         if (delta.dx > 0) setDragAnimation('running-right')
         else if (delta.dx < 0) setDragAnimation('running-left')
-        void window.electron.pet.move(delta)
+        void petClient.move(delta)
       },
       onClick: () => {
         setInputOpen((open) => {
@@ -116,11 +119,11 @@ export function PetApp(): React.JSX.Element | null {
         })
       },
       onDoubleClick: () => {
-        void window.electron.pet.focusMain()
+        void petClient.focusMain()
       },
       onDragEnd: () => {
         setDragAnimation(null)
-        void window.electron.pet.persistPosition()
+        void petClient.persistPosition()
       }
     }),
     []
@@ -147,10 +150,10 @@ export function PetApp(): React.JSX.Element | null {
         const chatId = await resolveTargetChatId(snapshot.activeChatId)
         if (!chatId) return
         if (snapshot.state === 'idle') {
-          await window.electron.pet.setActiveChatId(chatId)
+          await petClient.setActiveChatId(chatId)
           await sendTextMessage(chatId, text)
         } else {
-          await window.electron.chat.enqueue(chatId, text)
+          await chatClient.enqueue(chatId, text)
         }
       } finally {
         submittingRef.current = false
@@ -165,7 +168,7 @@ export function PetApp(): React.JSX.Element | null {
   }): void => {
     const approval = presenceRef.current.approval
     if (!approval) return
-    void window.electron.chat.approveTask(approval.rootChatId, {
+    void chatClient.approveTask(approval.rootChatId, {
       approvalId: approval.approvalId,
       approved: decision.approved,
       ...(decision.reason ? { reason: decision.reason } : {}),
@@ -183,10 +186,7 @@ export function PetApp(): React.JSX.Element | null {
         ) : inputOpen ? (
           <QuickInputBubble onSubmit={submitMessage} onClose={() => setInputOpen(false)} />
         ) : showReply && presence.lastReply ? (
-          <ReplyBubble
-            reply={presence.lastReply}
-            onOpen={() => void window.electron.pet.focusMain()}
-          />
+          <ReplyBubble reply={presence.lastReply} onOpen={() => void petClient.focusMain()} />
         ) : null}
         <div ref={spriteRef} className="pet-handle">
           <PetSprite

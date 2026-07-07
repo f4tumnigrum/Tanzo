@@ -11,12 +11,6 @@ function minimaxBaseUrl(credentials: Credentials): string {
   return ensureUrlProtocol(credentials.baseUrl, MINIMAX_DEFAULT_BASE_URL).replace(/\/+$/, '')
 }
 
-/**
- * MiniMax exposes an OpenAI-compatible chat surface at `/v1`. We build language
- * models on `@ai-sdk/openai-compatible` (spec v4) rather than the community
- * `vercel-minimax-ai-provider` package, which emits spec-v3 models
- * incompatible with this app's `ai@7` runtime.
- */
 function minimaxProvider(credentials: Credentials) {
   const apiKey = credentialText(credentials.apiKey)
   return createOpenAICompatible({

@@ -80,7 +80,6 @@ export function spawnTool(
             })
             spawned.push({ task: task.id, status: task.status })
           } catch (error) {
-            // Partial failure must stay visible: earlier specs already started.
             const startedIds = spawned.map((t) => t.task)
             const detail = error instanceof Error ? error.message : String(error)
             return toolError(
@@ -91,8 +90,7 @@ export function spawnTool(
             )
           }
         }
-        // Inline reminder so the agent has an immediate, concrete follow-up
-        // action visible in the tool result — reduces the risk of forgetting await.
+
         const ids = spawned.map((t) => JSON.stringify(t.task)).join(', ')
         const count = spawned.length
         const hint =
@@ -165,9 +163,6 @@ export function awaitTool(
             }
           }
         } finally {
-          // Always clear the timer: without this, every await call with a
-          // timeoutMs leaks a pending setTimeout (up to 60min) after tasks
-          // settle normally.
           if (timeoutTimer !== undefined) clearTimeout(timeoutTimer)
         }
 

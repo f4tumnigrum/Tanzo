@@ -11,13 +11,12 @@ interface CollapsibleGridProps<T> {
   renderItem: (item: T, index: number) => React.ReactNode
   getItemKey: (item: T) => string | number
   defaultOpen?: boolean
-  /** When set, paginate the grid and show a pager once items exceed this size. */
+
   pageSize?: number
 }
 
 const PAGINATION_MAX_VISIBLE = 5
 
-/** Build a windowed page list with leading/trailing ellipses (1-based). */
 function buildPageNumbers(currentPage: number, totalPages: number): (number | 'ellipsis')[] {
   if (totalPages <= PAGINATION_MAX_VISIBLE + 2) {
     return Array.from({ length: totalPages }, (_, index) => index + 1)
@@ -45,8 +44,7 @@ export function CollapsibleGrid<T>({
   const [requestedPage, setRequestedPage] = useState(0)
 
   const pageCount = pageSize ? Math.ceil(items.length / pageSize) : 1
-  // Clamp during render so a shrinking item count (e.g. on filter) never leaves
-  // the view on an out-of-range page, without an effect-driven state sync.
+
   const page = Math.min(requestedPage, Math.max(0, pageCount - 1))
 
   const visibleItems = useMemo(() => {

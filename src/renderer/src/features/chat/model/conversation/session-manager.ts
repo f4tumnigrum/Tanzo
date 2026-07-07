@@ -29,15 +29,10 @@ import { createStateStore, type StateStore } from './state-store'
 type Goal = TanzoDataParts['goal']['goal']
 type QueuedMessage = TanzoDataParts['queued']['items'][number]
 
-/**
- * Low-frequency run-control plane: streaming lifecycle, notices, context and
- * compaction status. Subscribed by the composer and chat chrome — never
- * notified on transcript deltas.
- */
 export interface RunState {
   isLoadingHistory: boolean
   isStreaming: boolean
-  /** True between the user pressing Stop and the run reaching a terminal state. */
+
   isStopping: boolean
   transientStatus: string | null
   contextStatus: TanzoDataParts['context'] | null
@@ -47,7 +42,6 @@ export interface RunState {
   runNotice: RunNotice | null
 }
 
-/** Low-frequency sidecar plane: queued messages, sub-agent tasks, goal. */
 export interface SidecarState {
   queuedMessages: QueuedMessage[]
   goal: Goal
@@ -60,7 +54,7 @@ export interface ChatSession {
   transcript: TranscriptStore
   runState: StateStore<RunState>
   sidecar: StateStore<SidecarState>
-  /** Mark the session as actively viewed; returns a release function. */
+
   retain(): () => void
   sendMessage(input: { text: string; files?: FileUIPart[] }): void
   editMessage(messageId: string, text: string): void
@@ -194,11 +188,6 @@ function createChatSession(chatId: string): ChatSession & {
   let opened = false
   let disposed = false
 
-  // ---------------------------------------------------------------------
-  // Compaction reconciliation: whenever the transcript changes, clear the
-  // in-progress indicator once its persisted summary appears. Runs on the
-  // transcript commit feed — timing-equivalent to the old setState hook.
-  // ---------------------------------------------------------------------
   const reconcileCompaction = (): void => {
     const inProgress = runState.getState().compactionInProgress
     if (!inProgress) return
@@ -224,19 +213,12 @@ function createChatSession(chatId: string): ChatSession & {
           ? state.runNotice
           : {
               kind: 'error',
-              // Recover the error category from the ChatRunError code so the
-              // degraded (non-telemetry) path still shows an accurate heading.
+
               error: { kind: errorKindFromCode(code), message, ...(code ? { name: code } : {}) }
             }
     }))
   }
 
-  /**
-   * Restore the last failed run's notice from the persisted runs table so a
-   * failure survives session teardown, chat switches, and app restarts. Only
-   * fills the slot when the failed run is the tail of the conversation (no
-   * user activity after it) and no live notice exists.
-   */
   const restoreLastRunOutcome = async (): Promise<void> => {
     try {
       const outcome = await chatClient.lastRunOutcome(chatId)
@@ -391,11 +373,7 @@ function createChatSession(chatId: string): ChatSession & {
             isStopping: false,
             transientStatus: null,
             activeRunKind: null,
-            // Surface an explicit "stopped" marker so a user-cancelled run is
-            // distinguishable from a naturally finished one. Only for chat
-            // runs (internal compaction aborts are not user-facing) and never
-            // overwriting an error notice (an abort racing a failure keeps
-            // the error).
+
             ...(outcome?.status === 'aborted' &&
             activeRunKind === 'chat' &&
             state.runNotice?.kind !== 'error'
@@ -445,8 +423,7 @@ function createChatSession(chatId: string): ChatSession & {
     if (queued.status === 'fulfilled') patch.queuedMessages = queued.value
     if (approvals.status === 'fulfilled') patch.subagentApprovals = approvals.value
     if (goal.status === 'fulfilled') patch.goal = toGoalView(goal.value)
-    // Load historical sub-agent tasks so the header pill stays resident for any
-    // conversation that has spawned sub-agents, even when none are running.
+
     if (tasks.status === 'fulfilled') patch.tasks = tasks.value
     sidecar.setState(patch)
   }
@@ -475,8 +452,6 @@ function createChatSession(chatId: string): ChatSession & {
     void attachRun()
       .catch(reportError)
       .finally(() => {
-        // After the run attach settles we know whether a run is live; only
-        // then can a persisted failure be restored without racing a stream.
         if (!disposed && !runActive) void restoreLastRunOutcome()
       })
   }
@@ -575,9 +550,7 @@ function createChatSession(chatId: string): ChatSession & {
       const targetIndex = messages.findIndex((message) => message.id === messageId)
       if (targetIndex === -1) return
       const target = messages[targetIndex]
-      // Eligibility must mirror the UI (active-chat) and the main process
-      // (chat-inbox.editMessage): trailing synthetic context injections after
-      // a failed run don't count as replies below the prompt.
+
       if (target.role !== 'user' || trailingUserMessageId(messages) !== messageId) return
 
       const nonTextParts = target.parts.filter((part) => part.type !== 'text')
@@ -586,8 +559,7 @@ function createChatSession(chatId: string): ChatSession & {
         parts: [...nonTextParts, { type: 'text' as const, text: trimmed }]
       }
       const previousMessages = [...messages]
-      // The optimistic transcript also drops the trailing injections — the
-      // main side replays from the edited prompt, so they're gone there too.
+
       setTranscript([...messages.slice(0, targetIndex), edited])
       runState.setState({ isStreaming: true, isStopping: false, runNotice: null })
       void chatClient.editMessage(chatId, messageId, trimmed).catch((error) => {
@@ -603,9 +575,7 @@ function createChatSession(chatId: string): ChatSession & {
       runState.setState({ isStreaming: true, isStopping: false, runNotice: null })
       try {
         const { started } = await chatClient.respondApprovals(chatId, responses)
-        // No run was launched — either approvals are still pending in this turn
-        // or the responses were stale. Clear the optimistic streaming flag so the
-        // UI never sticks waiting for a stream that will never start.
+
         if (!started && !runActive) runState.setState({ isStreaming: false })
       } catch (error) {
         setTranscript(previousMessages)
@@ -614,9 +584,6 @@ function createChatSession(chatId: string): ChatSession & {
       }
     },
     stop() {
-      // Reflect the in-flight cancel immediately; the terminal run-state event
-      // clears it. If the cancel IPC itself fails, roll back and surface the
-      // failure instead of silently leaving a phantom "stopping" state.
       const state = runState.getState()
       if (state.isStreaming && !state.isStopping) runState.setState({ isStopping: true })
       void chatClient.cancel(chatId).catch((error) => {
@@ -626,7 +593,7 @@ function createChatSession(chatId: string): ChatSession & {
     },
     steer(text) {
       const trimmed = text.trim()
-      // A failed steer/enqueue silently discards the user's text; surface it.
+
       if (trimmed) void chatClient.steer(chatId, trimmed).catch(reportError)
     },
     enqueue(text) {
@@ -649,9 +616,7 @@ function createChatSession(chatId: string): ChatSession & {
     },
     async respondTaskApproval(response) {
       const rootChatId = chatId
-      // Confirm the approval with the main process BEFORE removing the card.
-      // If the IPC call failed after an optimistic removal, the task would be
-      // permanently stuck in blocked state with no way to re-respond.
+
       try {
         await chatClient.approveTask(rootChatId, response)
         sidecar.update((state) => ({
@@ -664,9 +629,7 @@ function createChatSession(chatId: string): ChatSession & {
         throw error
       }
     },
-    // Task-row actions: no optimistic state — every transition is pushed back
-    // over data-task by the task service's broadcastTasks, so the row updates
-    // as soon as the main process settles the operation.
+
     async cancelTask(taskId) {
       try {
         await chatClient.cancelTask(chatId, taskId)
@@ -704,15 +667,8 @@ function createChatSession(chatId: string): ChatSession & {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Session manager: hot sessions stay resident (LRU) so switching back to a
-// recent conversation renders its first frame from memory with zero IPC.
-// Running sessions are never evicted — their frame subscription must persist.
-// ---------------------------------------------------------------------------
-
 type ManagedSession = ReturnType<typeof createChatSession>
 
-/** Retained beyond the active one: most recent N released, non-running chats. */
 const MAX_IDLE_SESSIONS = 4
 
 const sessions = new Map<string, ManagedSession>()
@@ -720,9 +676,6 @@ const sessions = new Map<string, ManagedSession>()
 function evictIdleSessions(activeChatId: string): void {
   const idle: ManagedSession[] = []
   for (const session of sessions.values()) {
-    // Never evict the session being acquired, one still retained by a mounted
-    // component (mid-switch, the outgoing tree releases only on unmount), or
-    // one with a live run (its frame subscription must persist).
     if (session.chatId === activeChatId || session.isRetained() || session.isRunning()) continue
     idle.push(session)
   }
@@ -743,7 +696,6 @@ export function getChatSession(chatId: string): ChatSession {
   return session
 }
 
-/** Drop a session immediately (conversation deleted). */
 export function discardChatSession(chatId: string): void {
   const session = sessions.get(chatId)
   if (!session) return
@@ -751,7 +703,6 @@ export function discardChatSession(chatId: string): void {
   sessions.delete(chatId)
 }
 
-/** Test-only: dispose every session and clear the registry. */
 export function resetChatSessions(): void {
   for (const session of sessions.values()) session.dispose()
   sessions.clear()

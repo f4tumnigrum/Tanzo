@@ -39,11 +39,6 @@ export interface ParsedModelRef {
   modelId: string
 }
 
-/**
- * Parse a `provider:modelId` reference. Single source of truth — every layer
- * (provider service, runtime cache, agent runtime, context strategies) must
- * use this instead of ad-hoc `split(':')` parsing.
- */
 export function parseModelRef(modelRef: string): ParsedModelRef | undefined {
   const separator = modelRef.indexOf(':')
   if (separator === -1) return undefined
@@ -53,7 +48,6 @@ export function parseModelRef(modelRef: string): ParsedModelRef | undefined {
   return { providerId, modelId }
 }
 
-/** Parse a model ref or throw `PROVIDER_MODEL_REF_INVALID`. */
 export function requireModelRef(modelRef: string): ParsedModelRef {
   const parsed = parseModelRef(modelRef)
   if (!parsed) {
@@ -221,11 +215,7 @@ export interface ProviderOptionField {
   path: string
   label: string
   control: ProviderOptionControl
-  /**
-   * Semantic role of this field. UI surfaces (e.g. the composer's reasoning
-   * badge) and the runtime locate provider-specific fields through the role
-   * instead of hardcoding per-provider paths.
-   */
+
   role?: 'reasoningEffort'
   description?: string
   default?: unknown

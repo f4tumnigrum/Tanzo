@@ -22,7 +22,6 @@ import {
 } from '@/components/ui/feature-card'
 import type { MarketplacePluginEntry, PluginSummary } from '@shared/plugins'
 
-/** Comma-free contribution summary, e.g. "Skills · 2 MCP · Hooks". */
 function contributesParts(plugin: PluginSummary, t: TFunction): string[] {
   const parts: string[] = []
   if (plugin.contributes.skills) parts.push(t('plugins.contributes.skills'))

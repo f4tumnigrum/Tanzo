@@ -1,21 +1,9 @@
-/**
- * Element picker for the embedded browser.
- *
- * The guest `<webview>` runs untrusted pages with no preload and no Node access,
- * so we drive the picker entirely through `webview.executeJavaScript()`. The
- * injected IIFE installs a hover highlight, waits for a click (or Esc), then
- * resolves with the clicked element's computed style. Electron awaits a Promise
- * returned from `executeJavaScript`, so the host receives the picked data (or
- * `null` if the user cancelled) without any preload bridge or extra IPC.
- */
-
-/** Raw computed values pulled from the picked element in the guest page. */
 export interface PickedElementRaw {
   selector: string
   tag: string
   width: number
   height: number
-  /** Element rect in guest-viewport coordinates, used to anchor the host tip. */
+
   anchor: { top: number; left: number; right: number; bottom: number }
   color: string
   backgroundColor: string
@@ -48,7 +36,7 @@ export interface PickedElementRaw {
 export interface DesignToken {
   label: string
   value: string
-  /** A CSS color string to render as a swatch, when the token is a color. */
+
   swatch?: string
 }
 
@@ -57,11 +45,6 @@ export interface DesignTokenGroup {
   tokens: DesignToken[]
 }
 
-/**
- * The self-contained script injected into the guest page. Kept as a string so
- * it can be passed to `executeJavaScript`. Resolves with `PickedElementRaw` on
- * click or `null` on Escape; cleans up all listeners and DOM it created.
- */
 const PICKER_SCRIPT = `
 (() => {
   if (window.__tanzoPickerActive) return Promise.resolve(null)
@@ -210,7 +193,6 @@ export function getPickerScript(): string {
   return PICKER_SCRIPT
 }
 
-/** Ends an active pick session in the guest, if one is running. */
 const STOP_SCRIPT = `(() => { if (window.__tanzoPickerStop) window.__tanzoPickerStop() })()`
 
 export function getStopScript(): string {
@@ -228,10 +210,6 @@ function isVisibleColor(value: string): boolean {
   return value.length > 0 && !TRANSPARENT_COLOR.test(value.trim())
 }
 
-/**
- * Shape the raw computed values into labelled token groups for display. Labels
- * come from the caller (i18n) so this stays presentation-framework agnostic.
- */
 export function buildTokenGroups(
   raw: PickedElementRaw,
   labels: {
@@ -284,7 +262,7 @@ export function buildTokenGroups(
     colors.push({
       label: labels.gradient,
       value: raw.backgroundImage,
-      // Only gradients get a swatch; never render remote url() images here.
+
       swatch: /gradient/i.test(raw.backgroundImage) ? raw.backgroundImage : undefined
     })
   if (isVisibleColor(raw.borderColor) && isMeaningful(raw.borderWidth))

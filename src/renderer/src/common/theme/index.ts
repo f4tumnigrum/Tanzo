@@ -6,12 +6,7 @@ export {
   getRadiusPresetById
 } from './presets'
 export { importTweakcnTheme, useCustomThemes } from './custom-themes'
-export {
-  BUNDLED_MONO_FONTS,
-  BUNDLED_SANS_FONTS,
-  loadLocalFonts,
-  useLocalFonts
-} from './fonts'
+export { BUNDLED_MONO_FONTS, BUNDLED_SANS_FONTS, loadLocalFonts, useLocalFonts } from './fonts'
 export type { FontOption } from './fonts'
 export type {
   ColorThemeDefinition,

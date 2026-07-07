@@ -44,7 +44,7 @@ const MODE_CHROME: Record<PermissionMode, ModeChrome> = {
 
 export interface ChatInputState {
   isStreaming: boolean
-  /** True after Stop is pressed while the cancel is still in flight. */
+
   isStopping?: boolean
   permissionMode?: PermissionMode
 
@@ -77,7 +77,6 @@ export interface ChatInputProps {
 
   workspaceRoot?: string | null
 
-  /** Plugins offered as `@mention` suggestions alongside files. */
   pluginMentions?: PluginMentionOption[]
 
   draft?: string

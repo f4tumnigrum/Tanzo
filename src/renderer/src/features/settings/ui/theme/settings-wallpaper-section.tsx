@@ -25,8 +25,6 @@ import { Slider } from '@/components/ui/slider'
 import { cn } from '@/lib/utils'
 import { SectionCard } from '../shared/settings-primitives'
 
-// ─── Slider row ────────────────────────────────────────────────────────────────
-
 function SliderRow({
   label,
   value,
@@ -65,8 +63,6 @@ function SliderRow({
     </div>
   )
 }
-
-// ─── Fit segmented control ──────────────────────────────────────────────────────
 
 const FIT_OPTIONS: WallpaperFit[] = ['cover', 'contain', 'fill', 'tile']
 
@@ -107,8 +103,6 @@ function FitRow({
     </div>
   )
 }
-
-// ─── Single thumbnail card ───────────────────────────────────────────────────
 
 function WallpaperThumbnail({
   asset,
@@ -205,8 +199,6 @@ function WallpaperThumbnail({
   )
 }
 
-// ─── Library grid ────────────────────────────────────────────────────────────
-
 function WallpaperGrid({ wallpaper }: { wallpaper: WallpaperSettings }) {
   const { t } = useTranslation()
   const full = wallpaper.assets.length >= WALLPAPER_MAX_ASSETS
@@ -258,8 +250,6 @@ function WallpaperGrid({ wallpaper }: { wallpaper: WallpaperSettings }) {
   )
 }
 
-// ─── Overlay row ─────────────────────────────────────────────────────────────
-
 const OVERLAY_ORDER: WallpaperOverlay[] = ['none', 'dark', 'light']
 
 function OverlayRow({
@@ -299,8 +289,6 @@ function OverlayRow({
     </div>
   )
 }
-
-// ─── Main section ─────────────────────────────────────────────────────────────
 
 export function WallpaperSection() {
   const { t } = useTranslation()

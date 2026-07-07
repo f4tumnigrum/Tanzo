@@ -11,18 +11,8 @@ export interface TurnFinalizerDeps extends AgentRuntimeDeps {
 }
 
 export interface TurnFinalizer {
-  /**
-   * Per-stream cleanup, run on every stream end (including intermediate
-   * compaction passes). Owner-only: clears steering on abort, otherwise carries
-   * any steering that was not consumed this run forward as queued messages.
-   */
   reconcile(input: { chatId: string; wasOwner: boolean; state: AgentStreamFinalState }): void
-  /**
-   * Terminal dispatch, run exactly once when the turn loop decides the turn is
-   * over: hands off the next queued message, or evaluates goal continuation.
-   * Self-guards on abort/failure/inflight, so callers may invoke it for any
-   * terminal decision.
-   */
+
   dispatch(input: {
     chatId: string
     broadcast: boolean
@@ -66,10 +56,6 @@ export function createTurnFinalizer(
       const hasQueuedMessage = queues.messageQueue.list(chatId).length > 0
       let goalWantsContinuation = false
 
-      // Accounting runs for every turn — including failed and aborted ones
-      // (invariant I3: burned tokens always land in the ledger). Only healthy
-      // turns are outcome-eligible; the machine returns continue=false for the
-      // rest.
       if (deps.goal) {
         const conversation = deps.store.getConversation(chatId)
         const isMainAgent = !conversation?.parentConversationId

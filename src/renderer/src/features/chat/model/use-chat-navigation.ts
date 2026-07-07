@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import type { ConversationSummary } from '@shared/chat'
 import { systemClient } from '@/platform/electron/system-client'
 import { chatClient } from '@/platform/electron/chat-client'
+import { isPetApiAvailable, petClient } from '@/platform/electron/pet-client'
 import { errorMessage } from '@/common/lib/error-utils'
 import { useChatUiStore } from './store'
 import { useConversations, useWorkspaces } from './queries'
@@ -72,7 +73,7 @@ export function useChatNavigation(): ChatNavigation {
   }, [workspaces])
 
   useEffect(() => {
-    void window.electron?.pet?.setActiveChatId(activeChatId)
+    if (isPetApiAvailable()) void petClient.setActiveChatId(activeChatId)
   }, [activeChatId])
 
   useEffect(() => {
@@ -244,8 +245,6 @@ export function useChatNavigation(): ChatNavigation {
           messageId
         })
       } catch {
-        // The mutation's onError already surfaced a toast; swallowing here
-        // prevents an unhandled rejection from the fork button.
         return
       }
       workspaceActions.setCurrent(result.conversation.workspaceId)

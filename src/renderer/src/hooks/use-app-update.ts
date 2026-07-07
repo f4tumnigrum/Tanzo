@@ -7,14 +7,13 @@ const log = createLogger('renderer.app-update')
 
 export interface AppUpdate {
   state: UpdaterState
-  /** Whether the updater IPC surface exists (packaged Electron builds). */
+
   available: boolean
   check: () => void
   download: () => void
   install: () => void
 }
 
-/** Human-readable byte size, e.g. "12.4 MB". Returns null for unknown sizes. */
 export function formatBytes(bytes: number): string | null {
   if (!Number.isFinite(bytes) || bytes <= 0) return null
   if (bytes < 1024) return `${bytes} B`
@@ -23,7 +22,6 @@ export function formatBytes(bytes: number): string | null {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`
 }
 
-/** "3.1 MB/s"-style download speed, or null when unknown. */
 export function formatSpeed(bytesPerSecond: number): string | null {
   const size = formatBytes(bytesPerSecond)
   return size ? `${size}/s` : null

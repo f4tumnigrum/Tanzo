@@ -4,7 +4,7 @@ export type CacheKind = 'ephemeral' | 'auto' | 'unsupported'
 
 export interface CachingInput {
   plan: CompiledContext
-  /** Index into `plan.history` of the latest compaction summary, or -1. */
+
   summaryIndex: number
 }
 

@@ -6,8 +6,7 @@ interface ChatUiState {
   activeChatId: string | null
   draftByChatId: Record<string, string>
   disclosureById: Record<string, boolean>
-  /** The sub-agent task whose read-only transcript is being viewed full-screen,
-   *  or null when viewing the main conversation. */
+
   viewedSubagentTask: SubagentTask | null
 }
 
@@ -29,10 +28,7 @@ export const useChatUiStore = create<ChatUiStore>()(
       viewedSubagentTask: null,
       setActiveChatId: (chatId) =>
         set((state) =>
-          state.activeChatId === chatId
-            ? state
-            : // Leaving a conversation always drops the sub-agent drill-down.
-              { activeChatId: chatId, viewedSubagentTask: null }
+          state.activeChatId === chatId ? state : { activeChatId: chatId, viewedSubagentTask: null }
         ),
       setDraft: (chatId, draft) =>
         set((state) => {

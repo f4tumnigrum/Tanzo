@@ -19,9 +19,6 @@ export function TabStrip(): React.JSX.Element | null {
   const setActiveTab = useBrowserUiStore((s) => s.setActiveTab)
   const closeTab = useBrowserUiStore((s) => s.closeTab)
 
-  // A single tab carries no information the address bar doesn't already show,
-  // so the strip only appears once there are multiple tabs. The new-tab button
-  // lives in the toolbar, so the chrome stays a single row at one tab.
   if (tabs.length < 2) return null
 
   return (
@@ -42,7 +39,6 @@ export function TabStrip(): React.JSX.Element | null {
               }
             }}
             onAuxClick={(e) => {
-              // Middle-click closes the tab, matching browser convention.
               if (e.button === 1) {
                 e.preventDefault()
                 closeTab(tab.id)

@@ -6,6 +6,10 @@ import {
   type PreferencesPatch,
   type UserPreferences
 } from '@shared/preferences'
+import {
+  isPreferencesApiAvailable,
+  preferencesClient
+} from '@/platform/electron/preferences-client'
 import { createLogger } from '@/common/logger'
 
 const log = createLogger('renderer.preferences')
@@ -25,20 +29,15 @@ const store = create<PreferencesState>((set) => ({
 let unsubscribe: (() => void) | null = null
 let bootstrap: Promise<UserPreferences> | null = null
 
-function api() {
-  return window.electron?.preferences
-}
-
 export function bootstrapPreferences(): Promise<UserPreferences> {
   if (bootstrap) return bootstrap
-  const electron = api()
-  if (!electron) {
+  if (!isPreferencesApiAvailable()) {
     const promise = Promise.resolve(DEFAULT_PREFERENCES)
     bootstrap = promise
     store.getState().hydrate(DEFAULT_PREFERENCES)
     return promise
   }
-  const promise = electron
+  const promise = preferencesClient
     .get()
     .catch((error) => {
       log.warn('failed to load preferences; using defaults', error)
@@ -47,7 +46,7 @@ export function bootstrapPreferences(): Promise<UserPreferences> {
     .then((value) => {
       store.getState().hydrate(value)
       unsubscribe?.()
-      unsubscribe = electron.onChanged((next) => store.getState().hydrate(next))
+      unsubscribe = preferencesClient.onChanged((next) => store.getState().hydrate(next))
       return value
     })
   bootstrap = promise
@@ -79,25 +78,31 @@ async function applyResult(promise: Promise<UserPreferences> | undefined): Promi
 }
 
 export function patchPreferences(patch: PreferencesPatch): Promise<void> {
-  return applyResult(api()?.patch(patch))
+  if (!isPreferencesApiAvailable()) return Promise.resolve()
+  return applyResult(preferencesClient.patch(patch))
 }
 
 export function addCustomTheme(theme: ColorThemeDefinition): Promise<void> {
-  return applyResult(api()?.addCustomTheme(theme))
+  if (!isPreferencesApiAvailable()) return Promise.resolve()
+  return applyResult(preferencesClient.addCustomTheme(theme))
 }
 
 export function removeCustomTheme(id: ColorThemeId): Promise<void> {
-  return applyResult(api()?.removeCustomTheme(id))
+  if (!isPreferencesApiAvailable()) return Promise.resolve()
+  return applyResult(preferencesClient.removeCustomTheme(id))
 }
 
 export function addWallpaper(): Promise<void> {
-  return applyResult(api()?.addWallpaper())
+  if (!isPreferencesApiAvailable()) return Promise.resolve()
+  return applyResult(preferencesClient.addWallpaper())
 }
 
 export function removeWallpaper(id: string): Promise<void> {
-  return applyResult(api()?.removeWallpaper(id))
+  if (!isPreferencesApiAvailable()) return Promise.resolve()
+  return applyResult(preferencesClient.removeWallpaper(id))
 }
 
 export function clearWallpaper(): Promise<void> {
-  return applyResult(api()?.clearWallpaper())
+  if (!isPreferencesApiAvailable()) return Promise.resolve()
+  return applyResult(preferencesClient.clearWallpaper())
 }

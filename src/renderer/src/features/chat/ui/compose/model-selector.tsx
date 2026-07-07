@@ -37,9 +37,9 @@ const PROVIDER_DISPLAY_NAME: Partial<Record<ProviderId, string>> = {
 export interface ModelSelectorProps {
   selectedId: string | null
   onSelect: (modelId: string) => void
-  /** Current reasoning effort shown on the badge (a cycle member). */
+
   reasoningEffort: string
-  /** Cycle options (schema-driven); null hides the badge. */
+
   reasoningEffortOptions: string[] | null
   onReasoningEffortChange: (effort: string) => void
   subagent?: {

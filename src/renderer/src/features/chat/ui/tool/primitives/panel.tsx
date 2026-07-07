@@ -278,7 +278,10 @@ export function ToolPathLine({
   if (!value) return null
   return (
     <ToolMetaLine
-      className={cn('px-1 font-mono text-[length:var(--code-font-size-xs)] leading-[1.4] text-foreground/52', className)}
+      className={cn(
+        'px-1 font-mono text-[length:var(--code-font-size-xs)] leading-[1.4] text-foreground/52',
+        className
+      )}
     >
       {label ? <span className="mr-1 text-muted-foreground/80">{label}: </span> : null}
       <span className="break-words">{value}</span>

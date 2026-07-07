@@ -75,11 +75,6 @@ export function expandMcpServerConfig(config: McpServerConfig): McpServerConfig 
 }
 
 export function normalizeStdioEnv(env?: Record<string, string>): Record<string, string> {
-  // MCP server stdio env is operator-declared configuration (from the MCP
-  // config file). The host process.env is filtered through safeChildEnv to
-  // strip ambient secrets, but explicit overrides declared in the config are
-  // passed through as-is — an MCP server may legitimately need API keys or
-  // tokens that the operator has intentionally provided.
   const base = safeChildEnv(undefined)
   return env ? { ...base, ...env } : base
 }

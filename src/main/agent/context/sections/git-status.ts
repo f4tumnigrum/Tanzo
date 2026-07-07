@@ -11,9 +11,6 @@ export function createGitStatusSection(reader: GitStatusReader): ContextSection 
     channel: 'injection',
     order: 10,
     render: ({ cwd, isFirstTurn }) => {
-      // The git snapshot is taken once, at the start of the conversation; it is
-      // persisted into the transcript, so re-rendering it every turn would only
-      // duplicate stale data.
       if (isFirstTurn === false) return null
       const status = reader.read(cwd)?.trim()
       if (!status) return null

@@ -11,7 +11,6 @@ import { cn } from '@/lib/utils'
 const REPO_URL = 'https://github.com/f4tumnigrum/Tanzo'
 const ISSUES_URL = `${REPO_URL}/issues`
 
-/** Friendly OS names for the spec sheet; anything unmapped falls back to the raw platform id. */
 const OS_NAMES: Partial<Record<string, string>> = {
   darwin: 'macOS',
   win32: 'Windows',
@@ -24,7 +23,6 @@ const TEXT_ACTION_CLASS = cn(
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50'
 )
 
-/** Staggered entrance: fade + rise, honoring reduced-motion. */
 function Reveal({
   delay = 0,
   className,

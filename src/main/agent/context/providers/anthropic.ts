@@ -31,14 +31,6 @@ function markLast(messages: ModelMessage[], ttl: Ttl): ModelMessage[] {
   return messages.map((message, i) => (i === index ? withCacheControl(message, ttl) : message))
 }
 
-/**
- * Anthropic cache frontier (v2). Four breakpoints (provider maximum):
- * 1. last stable system message — 1h (role/instructions/skills index)
- * 2. last leading-user message — 1h (environment block)
- * 3. latest compaction summary — 1h (root of the current prefix family; the
- *    head before it never changes again, so a long TTL pays for itself)
- * 4. last history message — 5m (the moving frontier, refreshed every step)
- */
 export function createAnthropicStrategy(): ProviderContextStrategy {
   return {
     cacheKind: 'ephemeral',

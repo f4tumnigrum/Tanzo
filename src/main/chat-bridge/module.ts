@@ -9,15 +9,6 @@ import { createChatBridgeRuntime, type BridgeAgentPort } from './bridge'
 import { createChatBridgeService, type ChatBridgeService } from './service'
 import { registerChatBridgeIpc, type ChatBridgeIpcDeps } from './ipc'
 
-/**
- * The chat-bridge module. Follows the standard Tanzo module-factory convention
- * (`createXxxModule(deps) → { service, registerIpc, close }`), plus an `observeChunk`
- * hook wired into `createAgentModule` so the bridge can mirror assistant output to any
- * connected chat channel (QQ / Discord / Lark / WeChat).
- *
- * It depends on a narrow `AgentPort` rather than the whole AgentModule, so the coupling to
- * the agent is explicit and testable.
- */
 export interface ChatBridgeAgentPort {
   ensureConversation(chatId: string): void
   submitMessage(chatId: string, message: TanzoUIMessage): Promise<void>
@@ -31,16 +22,13 @@ export interface ChatBridgeAgentPort {
 export interface CreateChatBridgeModuleOptions {
   userDataPath: string
   agent: ChatBridgeAgentPort
-  /** Push bridge events to renderer windows. */
+
   broadcast: (event: import('@shared/chat-bridge').ChatBridgeEvent) => void
 }
 
 export interface ChatBridgeModule {
   service: ChatBridgeService
-  /**
-   * Observe an agent chunk. Pass this as `observeChunk` to `createAgentModule` so every
-   * outbound chunk is mirrored to the bridge runtime.
-   */
+
   observeChunk(
     chatId: string,
     chunk: {
@@ -53,7 +41,7 @@ export interface ChatBridgeModule {
     }
   ): void
   registerIpc(ipcMain: IpcMain): void
-  /** Connect on startup if the persisted config is enabled. */
+
   autoStart(): Promise<void>
   close(): Promise<void>
 }
@@ -61,10 +49,6 @@ export interface ChatBridgeModule {
 export function createChatBridgeModule(options: CreateChatBridgeModuleOptions): ChatBridgeModule {
   const logger = createLogger('chat-bridge.module')
 
-  // Each channel's secret is stored via the shared codec: encrypted with the OS keyring
-  // (safeStorage) when available, falling back to a reversible plaintext encoding only when the
-  // keyring is unavailable (mirrors provider behaviour for parity; a local dev machine may lack
-  // safeStorage).
   const codec = createSecretCodec({ allowPlaintextFallback: true })
   const store = createChatBridgeStore(options.userDataPath, codec)
 
@@ -79,8 +63,6 @@ export function createChatBridgeModule(options: CreateChatBridgeModuleOptions): 
     setPermissionMode: (chatId, mode) => options.agent.setPermissionMode(chatId, mode)
   }
 
-  // `service` is created after `runtime`, but the runtime's onEvent needs to reach the
-  // service's emit(). Use a late-bound ref to break the cycle.
   let serviceRef: ChatBridgeService | null = null
 
   const runtime = createChatBridgeRuntime({
@@ -93,7 +75,6 @@ export function createChatBridgeModule(options: CreateChatBridgeModuleOptions): 
   const service = createChatBridgeService({ store, runtime })
   serviceRef = service
 
-  // Fan service events out to renderer windows.
   const unsubscribeBroadcast = service.subscribe((event) => options.broadcast(event))
 
   let unregisterIpc: (() => void) | null = null

@@ -21,7 +21,6 @@ export function useChatBridgeStatus() {
     refetchInterval: 15_000
   })
 
-  // Live per-channel status pushes from main keep badges current without hard polling.
   useEffect(() => {
     const unsubscribe = chatBridgeClient.onEvent((event) => {
       if (event.kind !== 'status') return

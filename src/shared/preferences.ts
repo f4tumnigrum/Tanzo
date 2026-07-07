@@ -73,15 +73,14 @@ export interface PetPosition {
 }
 
 export interface TypographySettings {
-  /** Base UI font size in px. */
   fontSize: number
-  /** Monospace/code font size in px, independent of the base size. */
+
   codeFontSize: number
-  /** Unitless line-height applied to chat and reading content. */
+
   lineHeight: number
-  /** CSS font-family stack overriding the theme sans font; null follows the theme. */
+
   sansFont: string | null
-  /** CSS font-family stack overriding the theme mono font; null follows the theme. */
+
   monoFont: string | null
 }
 
@@ -91,26 +90,22 @@ export type WallpaperFit = 'cover' | 'contain' | 'fill' | 'tile'
 export interface WallpaperAsset {
   id: string
   path: string
-  /** ISO timestamp of when the asset was imported. */
+
   addedAt: string
 }
 
 export interface WallpaperSettings {
-  /** Ordered list of stored wallpaper assets. */
   assets: WallpaperAsset[]
-  /** Id of the active asset for light mode (or both when darkAssetId is null). */
+
   activeId: string | null
-  /** Id of the active asset for dark mode. null = follow activeId. */
+
   darkAssetId: string | null
   opacity: number
   blur: number
   overlay: WallpaperOverlay
   overlayStrength: number
   fit: WallpaperFit
-  /**
-   * 0–1 multiplier applied to the semi-transparent surface layers (sidebar,
-   * toolbar, main area) when a wallpaper is active. Lower = more transparent.
-   */
+
   surfaceOpacity: number
 }
 
@@ -128,13 +123,9 @@ export interface UserPreferences {
   petPosition: PetPosition | null
   petScale: number
   wallpaper: WallpaperSettings
-  /** Built-in tool ids the user has disabled; filtered out of the agent's tool set. */
+
   disabledTools: string[]
-  /**
-   * Master switch for the browser-automation capability. Gates the browserOpen
-   * tool, the built-in chrome-devtools MCP server, the built-in browser skill,
-   * and (on next launch) the Chromium remote-debugging port.
-   */
+
   browserAutomation: boolean
 }
 

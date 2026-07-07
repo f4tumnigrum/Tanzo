@@ -13,7 +13,7 @@ export const SYSTEM_CHANNELS = {
 
 export interface OpenPathResult {
   ok: boolean
-  /** Present when the path could not be opened (missing, not a directory, or OS error). */
+
   error?: string
 }
 

@@ -11,15 +11,15 @@ export type UpdaterStatus =
 
 export interface UpdaterState {
   status: UpdaterStatus
-  /** Version offered by the update feed, when one is available. */
+
   version: string | null
-  /** Download progress in the range 0–100 while `status` is `downloading`. */
+
   percent: number
-  /** Current download speed in bytes per second while `status` is `downloading`. */
+
   bytesPerSecond: number
-  /** Bytes downloaded so far while `status` is `downloading`. */
+
   transferred: number
-  /** Total download size in bytes, known once the download starts. */
+
   total: number
 }
 

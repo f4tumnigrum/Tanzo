@@ -1,27 +1,3 @@
-/**
- * BETA-FRAGILITY GUARDRAIL — OpenAI Responses API compatibility shim.
- *
- * This module is a custom `fetch` wrapper wired into the OpenAI and
- * OpenAI-compatible adapters (adapters/openai.ts, adapters/openai-compatible.ts).
- * It compensates for shape mismatches between the pinned `@ai-sdk/openai` beta's
- * Zod schemas and what the live `/responses` endpoint actually returns:
- *
- *   - JSON responses: injects missing `output[].id`, `output_text.annotations`,
- *     and `reasoning.summary` fields the SDK schema rejects (normalizeResponsesApiJson).
- *   - SSE streams: drops frames whose `type` is not `response.*`/`error`, which
- *     the SDK would otherwise fail to parse (shouldKeepResponsesSseFrame).
- *
- * WHY THIS IS FRAGILE: it is tightly coupled to both the current OpenAI wire
- * format AND the current SDK beta's schema strictness. A beta bump on either
- * side can (a) make this redundant, or worse (b) silently mis-normalize if the
- * shape changes. It is intentionally SCOPED to `/responses` requests only
- * (shouldFilterResponsesApiSse) so non-Responses traffic is never touched.
- *
- * WHEN UPGRADING @ai-sdk/openai: re-check whether this shim is still needed. If
- * the SDK schema accepts the raw response, delete it; if the shape drifted,
- * update normalizeResponsesApiJson accordingly. The unit tests in
- * tests/unit/main/provider/sse-filter.test.ts pin the current behavior.
- */
 function isResponsesApiEvent(value: unknown): boolean {
   if (typeof value !== 'object' || value === null) return false
   const record = value as { type?: unknown }

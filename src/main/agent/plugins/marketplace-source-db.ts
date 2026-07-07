@@ -5,13 +5,13 @@ export type MarketplaceSourceType = 'git' | 'local'
 export interface MarketplaceSourceRecord {
   name: string
   sourceType: MarketplaceSourceType
-  /** Git URL for `git` sources, or the absolute directory for `local` sources. */
+
   source: string
-  /** Branch / tag / SHA, git sources only. */
+
   refName: string | null
-  /** Sparse-checkout paths, git sources only. */
+
   sparsePaths: string[]
-  /** Last cloned commit SHA, git sources only. */
+
   lastRevision: string | null
   installedAt: number
 }

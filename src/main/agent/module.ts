@@ -61,22 +61,11 @@ export interface AgentModule {
   skills: SkillsStore
   plugins: PluginsManager
   presence: PresenceAggregator
-  /**
-   * Set the per-conversation permission mode via the policy engine. Exposed for the
-   * chat bridge, which fixes the approval posture of externally-triggered conversations
-   * (e.g. QQ) before their first run.
-   */
+
   setPermissionMode(chatId: string, mode: PermissionMode): void
-  /**
-   * Read the conversation's current messages (unvalidated view). Exposed for the chat
-   * bridge to inspect for pending tool approvals after a run pauses.
-   */
+
   loadConversationMessages(chatId: string): TanzoUIMessage[]
-  /**
-   * Ensure a conversation with a caller-provided id exists (idempotent). Exposed for the
-   * chat bridge, which addresses conversations by a stable external id (`qq:group:{id}`)
-   * and must have a persisted conversation row for messages/approvals to be stored.
-   */
+
   ensureConversation(chatId: string, cwd?: string): void
   registerIpc(ipcMain: IpcMain): void
   close(): Promise<void>
@@ -89,16 +78,11 @@ export interface AgentModuleOptions {
   workspaceRoot: string
   getWindows: () => BrowserWindow[]
   getChatWindows?: () => BrowserWindow[]
-  /** Built-in tool ids the user disabled in settings; read fresh on each build. */
+
   disabledTools?: () => readonly string[]
-  /** Master switch for the browser-automation capability; read fresh on each build. */
+
   browserAutomationEnabled?: () => boolean
-  /**
-   * Optional in-process observer of every outbound chat chunk, invoked alongside the
-   * renderer delivery path. Used by the chat bridge to mirror assistant output (text
-   * deltas, status, approval requests) to external chat platforms without a renderer.
-   * Must never throw or block; failures are swallowed by the caller.
-   */
+
   observeChunk?: (chatId: string, chunk: Parameters<ChunkSink>[1], meta?: ChunkSinkMeta) => void
 }
 
@@ -263,7 +247,7 @@ export function createAgentModule(options: AgentModuleOptions): AgentModule {
     userDir: join(app.getPath('userData'), 'agent'),
     logger,
     db: options.db,
-    // Active plugins contribute namespaced skills; re-evaluated on every reload.
+
     pluginSkillRoots: () => plugins.skillRoots(),
     browserAutomationEnabled: () => options.browserAutomationEnabled?.() ?? true
   })
@@ -286,7 +270,7 @@ export function createAgentModule(options: AgentModuleOptions): AgentModule {
     store: hooksStore,
     userDir: join(app.getPath('userData'), 'agent'),
     logger,
-    // Active plugins contribute `managed` (auto-trusted) hook configs.
+
     pluginSources: () => plugins.hookSources(),
     sessionMeta: (chatId) => {
       const conversation = store.getConversation(chatId)
@@ -299,14 +283,8 @@ export function createAgentModule(options: AgentModuleOptions): AgentModule {
     }
   })
 
-  // Wire the plugin system as a pure data source into the three subsystems.
-  // The MCP service is created before the agent module, so its plugin provider
-  // is bound late here. Skills and hooks already pull via their providers above.
   options.mcpService.setPluginServers(() => plugins.mcpServers())
 
-  // A single contribution-change event, fanned out to each subsystem. The
-  // plugin manager never reaches into a subsystem; the composition root owns
-  // this wiring. Skills/hooks re-read lazily on reload; MCP re-syncs connections.
   plugins.onContributionsChanged(() => {
     try {
       skills.reload()
@@ -367,9 +345,7 @@ export function createAgentModule(options: AgentModuleOptions): AgentModule {
   const git = createGitService({ broadcast: gitBroadcast, logger })
   const changeSet = createChangeSetService({ userDataPath: app.getPath('userData') })
   const questions = createQuestionBroker()
-  // Asks the renderer to show the built-in browser panel and load a URL. This
-  // creates the <webview> target that the chrome-devtools-mcp server drives;
-  // Tanzo itself no longer performs page interaction.
+
   const browser = {
     requestOpen: (url: string): boolean => {
       const windows = (options.getChatWindows ?? options.getWindows)().filter(isUsableWindow)
@@ -381,9 +357,6 @@ export function createAgentModule(options: AgentModuleOptions): AgentModule {
     }
   }
 
-  // Tracks explicit plugin @mentions in user messages for one-shot, per-turn
-  // capability hints. Only mentions matching an active plugin's skill namespace
-  // are recorded; the context engine peeks and consumes them at step 0.
   const pluginMentions = createPluginMentionTracker(() =>
     plugins.capabilitySummaries().map((plugin) => plugin.name)
   )
@@ -413,8 +386,7 @@ export function createAgentModule(options: AgentModuleOptions): AgentModule {
   function toolDeps(workspaceRoot: string, mode: PermissionMode): ToolDeps {
     const dangerous = mode === 'dangerous'
     const fs = createWorkspaceFs(workspaceRoot, { dangerous })
-    // Long pasted text is externalized to temp .txt files by the chat inbox;
-    // fileRead must be able to reach them in sandboxed modes.
+
     fs.registerReadRoot(PASTED_TEXT_DIR)
     return {
       fs,

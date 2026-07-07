@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { ElectronColorScheme, ElectronSystemPreferences } from '@shared/system'
+import { isSystemApiAvailable, systemClient } from '@/platform/electron/system-client'
 import { createLogger } from '@/common/logger'
 
 const log = createLogger('renderer.system-preferences')
@@ -11,16 +12,16 @@ const FALLBACK: ElectronSystemPreferences = {
 }
 
 export function useSystemPreferences(): ElectronSystemPreferences | null {
-  const electron = window.electron
+  const available = isSystemApiAvailable()
   const [preferences, setPreferences] = useState<ElectronSystemPreferences | null>(
-    electron ? null : FALLBACK
+    available ? null : FALLBACK
   )
 
   useEffect(() => {
-    if (!electron) return
+    if (!available) return
 
     let cancelled = false
-    void electron
+    void systemClient
       .getSystemPreferences()
       .then((value) => {
         if (!cancelled) setPreferences(value)
@@ -29,12 +30,12 @@ export function useSystemPreferences(): ElectronSystemPreferences | null {
         log.warn('failed to load system preferences; using defaults', error)
         if (!cancelled) setPreferences(FALLBACK)
       })
-    const unsubscribe = electron.onSystemPreferencesChanged((value) => setPreferences(value))
+    const unsubscribe = systemClient.onSystemPreferencesChanged((value) => setPreferences(value))
     return () => {
       cancelled = true
       unsubscribe()
     }
-  }, [electron])
+  }, [available])
 
   return preferences
 }

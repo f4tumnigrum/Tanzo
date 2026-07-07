@@ -67,13 +67,12 @@ export interface AgentStreamFinalState {
   aborted: boolean
   turnStartedAt: number
   lastFinishReason?: string
-  /** Set when an in-stream compaction replaced the model transcript this run. */
+
   inlineCompaction?: InlineCompactionRecord
   isGoalContinuation: boolean
   exitPlanModeCalled: boolean
   endedWithTextOnly: boolean
-  /** Worktree diff verdict from the change-set capture (null = unavailable).
-   *  Filled by turn-loop after settleChangeCapture, before goal evaluation. */
+
   worktreeChanged?: boolean | null
 }
 
@@ -91,8 +90,6 @@ export function terminalRunError(state: AgentStreamFinalState): ChatRunError | u
   }
 }
 
-/** Maps a normalized telemetry error kind to a ChatRunError code so the
- *  renderer can distinguish AI SDK failures without parsing messages. */
 function chatRunErrorCode(kind: AgentTelemetryError['kind']): string {
   switch (kind) {
     case 'api':
@@ -224,13 +221,9 @@ function isUsageLimitError(error: unknown): boolean {
 
 const OVERHEAD_TOOL_NAMES = new Set(['updateGoal', 'todo'])
 
-function toolMeta(
-  tools: ToolSet,
-  toolName: string
-): { kind?: string; workSignal?: boolean } {
+function toolMeta(tools: ToolSet, toolName: string): { kind?: string; workSignal?: boolean } {
   const tool = tools[toolName] as
-    | { metadata?: { tanzo?: { kind?: unknown; workSignal?: unknown } } }
-    | undefined
+    { metadata?: { tanzo?: { kind?: unknown; workSignal?: unknown } } } | undefined
   const tanzo = tool?.metadata?.tanzo
   return {
     ...(typeof tanzo?.kind === 'string' ? { kind: tanzo.kind } : {}),
@@ -241,8 +234,7 @@ function toolMeta(
 function isWorkToolCall(tools: ToolSet, toolName: string): boolean {
   if (OVERHEAD_TOOL_NAMES.has(toolName)) return false
   const meta = toolMeta(tools, toolName)
-  // Explicit workSignal wins (unannotated MCP tools opt out of work evidence
-  // while keeping the conservative 'edit' approval kind).
+
   if (meta.workSignal !== undefined) return meta.workSignal
   return meta.kind === 'edit' || meta.kind === 'exec'
 }
@@ -259,13 +251,7 @@ export function startAgentStream(
   let streamError: string | undefined
   let streamErrorCode: string | undefined
   let streamErrorDetail: AgentTelemetryError | undefined
-  // Original error object captured from streamText's onError. By the time
-  // createUIMessageStream's onError fires, the AI SDK has flattened the error
-  // into an `error` chunk and reconstructed it as `new Error(errorText)`
-  // (process-ui-message-stream), losing statusCode/provider/isRetryable.
-  // streamText invokes its onError several stream hops upstream, so this is
-  // populated first in practice; otherwise the reconstructed error is the
-  // fallback (same behavior as before).
+
   let rawStreamError: unknown
   let producedToolCall = false
   let producedWorkToolCall = false
@@ -306,9 +292,7 @@ export function startAgentStream(
         runId: opts.runId
       })
       const compactionPolicy = deps.contextEngine?.compactionPolicy(opts.def)
-      // Goal budget snapshot (v2): only for the main agent on a broadcast run
-      // with an active, budgeted goal. Read once at run start — the machine's
-      // end-of-turn evaluation remains the single source of truth.
+
       const goalBudget = (() => {
         if (!opts.broadcast || !deps.goal) return undefined
         if (conversation?.parentConversationId) return undefined
@@ -349,23 +333,10 @@ export function startAgentStream(
         })
       )
 
-      // Rebased model transcript (append-only prefix invariant). Two events
-      // replace the base mid-run: in-stream compaction (invariant I4) swaps in
-      // `[summary, ...tail]`, and consumed steering is pinned at the step where
-      // it was drained. Steering must NOT be re-appended after the moving
-      // frontier each step — that would shift its position as responses
-      // accumulate and break the provider prefix cache for the rest of the run.
-      // `responseCountAtRebase` marks the step boundary — responseMessages
-      // accumulated before it are already baked into the base and must be
-      // dropped when reassembling.
       let rebasedBase: ModelMessage[] | null = null
       let responseCountAtRebase = 0
       let lastStepInputTokens = 0
 
-      // The trigger reads the *reported* usage of the previous step. This is
-      // self-hysteretic: right after a compaction the next step reports the
-      // compacted (small) prompt size, so an immediate retrigger is impossible
-      // unless the transcript genuinely grows past the trigger again.
       const shouldCompactInline = (): boolean => {
         if (!compactionPolicy || !deps.contextEngine) return false
         return lastStepInputTokens > compactionPolicy.compactionTriggerTokens
@@ -385,7 +356,6 @@ export function startAgentStream(
         messages: initialMessages,
         abortSignal: opts.signal,
         onError: ({ error }) => {
-          // Keep the first error: later stream errors are usually cascades.
           if (rawStreamError === undefined) rawStreamError = error
         },
         prepareStep: async ({ responseMessages, stepNumber }) => {
@@ -405,9 +375,7 @@ export function startAgentStream(
               })),
               stepNumber
             )
-            // Pin the steering at its consumption point by rebasing: later
-            // steps keep it at this fixed position in the transcript, so the
-            // prompt prefix stays append-only across the rest of the run.
+
             transcript = [
               ...transcript,
               ...steers.map<ModelMessage>((text) => ({ role: 'user', content: text }))
@@ -416,7 +384,6 @@ export function startAgentStream(
             responseCountAtRebase = (responseMessages as ModelMessage[]).length
           }
 
-          // --- In-stream compaction (v2) ---
           if (deps.contextEngine && compactionPolicy && shouldCompactInline()) {
             try {
               const compacted = await compactModelTranscript(
@@ -454,8 +421,7 @@ export function startAgentStream(
                 transcript = compacted.transcript
                 rebasedBase = compacted.transcript
                 responseCountAtRebase = (responseMessages as ModelMessage[]).length
-                // Clear the stale trigger reading; the next step's reported
-                // usage reflects the compacted prompt.
+
                 lastStepInputTokens = 0
                 inlineCompaction = {
                   summaryText: compacted.summaryText,

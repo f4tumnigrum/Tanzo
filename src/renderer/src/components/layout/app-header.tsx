@@ -8,21 +8,6 @@ import { useWindowControlsVisible } from '@/components/ui/window-controls'
 import { useAppShellStore } from '@/app/app-shell-store'
 import { useRouteActive } from '@/app/route-activity'
 
-/**
- * App-level header.
- *
- * The shell renders exactly one `<AppHeader />` at the top of the content
- * column. It owns every piece of window chrome: the drag strip, the
- * traffic-light inset, the sidebar toggle and the row layout. Pages never
- * render a header of their own — they project structured content (title,
- * stats, back button, actions) into the shell header through
- * `<AppHeaderContent />`, which portals into the header's outlet.
- *
- * Exactly one route may write header content at a time. Keep-alive routes
- * stay mounted while hidden, so `AppHeaderContent` gates on `useRouteActive()`
- * and renders nothing for inactive routes.
- */
-
 export interface AppHeaderStat {
   value: number
   label: string
@@ -30,7 +15,7 @@ export interface AppHeaderStat {
 
 export interface AppHeaderContentProps {
   title: string
-  /** Zero-valued stats are omitted; an all-zero list renders nothing. */
+
   stats?: AppHeaderStat[]
   onBack?: () => void
   actions?: ReactNode
@@ -43,7 +28,6 @@ interface AppHeaderOutletContextValue {
 
 const AppHeaderOutletContext = createContext<AppHeaderOutletContextValue | null>(null)
 
-/** Wraps the shell so `AppHeader` (owner) and pages (writers) share the outlet. */
 export function AppHeaderProvider({ children }: { children: ReactNode }): React.JSX.Element {
   const [outlet, setOutlet] = useState<HTMLDivElement | null>(null)
   const value = useMemo(() => ({ outlet, setOutlet }), [outlet])
@@ -85,13 +69,6 @@ function SidebarToggleButton(): React.JSX.Element {
   )
 }
 
-/**
- * When the sidebar is collapsed the persistent traffic-light overlay (owned by
- * the shell) sits at the window's top-left, directly over the start of the
- * header row. Reserve matching space so header content does not slide under
- * it. Renders nothing when the sidebar is expanded (the lights sit over the
- * sidebar instead) or on platforms with no custom overlay.
- */
 function WindowControlsInset(): React.JSX.Element | null {
   const sidebarCollapsed = useAppShellStore((state) => state.sidebarCollapsed)
   const controlsVisible = useWindowControlsVisible()
@@ -99,7 +76,6 @@ function WindowControlsInset(): React.JSX.Element | null {
   return <div className="app-no-drag w-(--traffic-lights-width) shrink-0" aria-hidden="true" />
 }
 
-/** The single shell-owned header row. Rendered once, above the routed content. */
 export function AppHeader(): React.JSX.Element {
   const { setOutlet } = useAppHeaderOutlet()
 
@@ -112,7 +88,6 @@ export function AppHeader(): React.JSX.Element {
   )
 }
 
-/** Projects page content into the shell header. No-op while the route is hidden. */
 export function AppHeaderContent({
   title,
   stats,

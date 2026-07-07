@@ -261,12 +261,6 @@ export type ShellSessionListItem = Omit<
 
 export type TanzoToolUI = TanzoTools
 
-/**
- * A user message waiting to be dispatched after the current turn ends. The `id`
- * is a session-stable handle minted when the message is queued; it is used by
- * the renderer to remove a specific entry without index races and is not
- * persisted (the durable store keeps only ordered text).
- */
 export type QueuedMessage = { id: string; text: string }
 
 export type TanzoDataParts = {
@@ -289,11 +283,10 @@ export type TanzoDataParts = {
     reducedRatio?: number
     omittedMessages?: number
     toolResultPruning?: boolean
-    /** Set when summarization failed and a mechanical fallback produced the result. */
+
     degraded?: 'prune' | 'drop-oldest'
   }
 
-  /** Synthetic per-turn context injection (datetime, git snapshot, goal, hooks). */
   contextInjection: { sections: string[] }
 
   context: {

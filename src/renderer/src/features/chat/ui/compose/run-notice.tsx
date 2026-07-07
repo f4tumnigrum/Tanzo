@@ -7,7 +7,7 @@ import type { RunNotice as RunNoticeData } from '../../model'
 
 export interface RunNoticeProps {
   notice: RunNoticeData
-  /** Re-runs the failed turn. Omitted when retrying is not possible. */
+
   onRetry?: () => void
   onDismiss?: () => void
 }
@@ -96,8 +96,7 @@ export function RunNotice({ notice, onRetry, onDismiss }: RunNoticeProps): React
   }
 
   const error = notice.error
-  // Content-derived key: a new error replaces the old one collapsed, so stale
-  // details are never shown expanded for a different failure.
+
   const noticeKey = `error:${error.kind}:${error.statusCode ?? ''}:${error.message}`
   const expanded = expandedNoticeKey === noticeKey
 
@@ -142,7 +141,7 @@ export function RunNotice({ notice, onRetry, onDismiss }: RunNoticeProps): React
         : error.cause.message
       : undefined
   )
-  // Diagnostic identifiers, visually separated from the user-facing fields.
+
   addRow(debugRows, 'toolName', error.toolName)
   addRow(debugRows, 'toolCallId', error.toolCallId)
 

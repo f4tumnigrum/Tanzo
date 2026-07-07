@@ -41,14 +41,6 @@ registerWallpaperScheme()
 initializeLogger()
 const log = createLogger('main')
 
-/**
- * Reserve an ephemeral loopback port for Chromium's remote debugging endpoint.
- * The port drives chrome-devtools-mcp via `--browser-url`; a random port (never
- * a fixed one) avoids collisions across instances and shrinks the window in
- * which a local process could guess it. Bound to 127.0.0.1 only, and Electron's
- * DevTools endpoint enforces a Host-header check, so remote/rebinding access is
- * refused. Falls back to 0 (feature disabled) if allocation fails.
- */
 async function reserveLoopbackPort(): Promise<number> {
   return new Promise((resolve) => {
     const srv = createServer()
@@ -61,10 +53,6 @@ async function reserveLoopbackPort(): Promise<number> {
   })
 }
 
-/**
- * Opened synchronously before app ready so agent browser automation can attach
- * to the embedded `<webview>` guests over CDP. 0 means "not enabled".
- */
 let remoteDebuggingPort = 0
 
 function openRemoteDebuggingPort(port: number): void {
@@ -246,7 +234,7 @@ function bootstrap(): void {
     getChatWindows: () => (mainWindow && !mainWindow.isDestroyed() ? [mainWindow] : []),
     disabledTools: () => getPreferences().disabledTools,
     browserAutomationEnabled: () => getPreferences().browserAutomation,
-    // Mirror every outbound chat chunk to the chat bridge (late-bound; safe before init).
+
     observeChunk: (chatId, chunk) =>
       chatBridgeModule?.observeChunk(
         chatId,
@@ -336,8 +324,6 @@ function bootstrap(): void {
   markStartup('syncPetWindow')
   onPreferencesChanged(() => syncPetWindow())
 
-  // Re-sync MCP connections when the browser-automation switch flips so the
-  // built-in chrome-devtools server connects/disconnects without a restart.
   let lastBrowserAutomation = getPreferences().browserAutomation
   onPreferencesChanged((preferences) => {
     if (preferences.browserAutomation === lastBrowserAutomation) return
@@ -354,7 +340,6 @@ function bootstrap(): void {
       log.error('Failed to initialize MCP module', error)
     })
 
-  // Auto-start the chat bridge for any channel the user enabled and stored a secret for.
   void chatBridgeModule
     ?.autoStart()
     .then(() => markStartup('chatBridge.autoStart'))
@@ -367,10 +352,6 @@ function bootstrap(): void {
   })
 }
 
-// The remote-debugging switch must be appended before app ready, so the
-// browser-automation preference is read synchronously up front. Disabling the
-// preference therefore closes the CDP port on the next launch (the built-in
-// MCP server and browserOpen tool are gated live, without a restart).
 if (singleInstanceLock)
   (getPreferences().browserAutomation ? reserveLoopbackPort() : Promise.resolve(0))
     .then((port) => {

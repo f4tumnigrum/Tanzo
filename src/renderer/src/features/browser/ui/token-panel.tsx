@@ -10,7 +10,6 @@ const GAP = 12
 const MARGIN = 10
 const CARET = 7
 
-/** A tiny checkerboard so translucent swatches read correctly. */
 const SWATCH_CHECKER =
   'repeating-conic-gradient(rgba(140,140,140,0.32) 0% 25%, transparent 0% 50%) 50% / 8px 8px'
 
@@ -89,9 +88,7 @@ export function TokenTip({
     side: 'left' | 'right'
     caretTop: number
   } | null>(null)
-  // A manual position set by dragging; once present it overrides the auto
-  // anchor (and hides the caret, which no longer points at the element). Tagged
-  // with the element it belongs to so a new selection drops the stale drag.
+
   const [drag, setDrag] = useState<{
     top: number
     left: number
@@ -141,9 +138,6 @@ export function TokenTip({
     [picked, t]
   )
 
-  // Anchor beside the element, flipping/clamping to stay inside the webview
-  // container. Runs after layout so the measured tip height is real, and points
-  // a caret back at the element's vertical center.
   useLayoutEffect(() => {
     const container = containerRef.current
     const tip = tipRef.current
@@ -169,9 +163,6 @@ export function TokenTip({
     setPos({ top, left, side, caretTop })
   }, [picked, containerRef])
 
-  // Keep a dragged tip inside the container when it is resized (e.g. the user
-  // drags the chat/browser split). Auto-anchored tips reposition via the effect
-  // above; only manually-dragged ones need re-clamping here.
   useEffect(() => {
     const container = containerRef.current
     if (!container || typeof ResizeObserver === 'undefined') return undefined
@@ -240,8 +231,7 @@ export function TokenTip({
       )
     )
     lastDrag.current = { top, left }
-    // Write position straight to the DOM during the drag so we don't re-render
-    // the (blurred, token-heavy) tip on every frame; state is committed on up.
+
     tip.style.left = `${left}px`
     tip.style.top = `${top}px`
   }

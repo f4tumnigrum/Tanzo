@@ -18,35 +18,20 @@ import {
 } from '@shared/chat-bridge'
 import { createLogger } from '../logger'
 
-/**
- * The multi-channel bridge runtime. Owns one Chat SDK `Chat` instance (and its adapter) per
- * enabled channel, translates inbound messages into `AgentService.submitMessage`, mirrors
- * assistant output back to chat by observing the agent chunk stream, and surfaces tool
- * approvals as a text prompt answered by a reply keyword.
- *
- * Channels are independent: each has its own connection, credentials, allowlist, and status.
- * The inbound/approval/streaming machinery is channel-agnostic — it operates on Chat SDK
- * `thread` / `chatId` (thread id), which every adapter namespaces with a distinct prefix
- * (`qq:` / `discord:` / `lark:` / `wechat:`), so the per-chatId run/thread/approval maps are
- * safely global and `observeChunk(chatId)` routes to the right conversation without a channel
- * argument. Per-channel config is resolved from the chatId prefix.
- */
-
 export interface BridgeAgentPort {
-  /** Ensure a persisted conversation row exists for this external chat id (idempotent). */
   ensureConversation(chatId: string): void
   submitMessage(chatId: string, message: TanzoUIMessage): Promise<void>
   respondApprovals(chatId: string, responses: ChatApprovalResponse[]): Promise<{ started: boolean }>
   answerQuestion(chatId: string, questionId: string, reply: QuestionReply): Promise<void>
   isRunning(chatId: string): boolean
-  /** Snapshot of the conversation's current messages, to inspect for pending approvals. */
+
   loadMessages(chatId: string): Promise<TanzoUIMessage[]>
   setPermissionMode(chatId: string, mode: PermissionMode): void
 }
 
 export interface ChatBridgeRuntimeDeps {
   agent: BridgeAgentPort
-  /** Emits per-channel status/log changes for the Settings UI. */
+
   onEvent: (event: ChatBridgeEvent) => void
 }
 
@@ -82,17 +67,14 @@ function loadChatModules(): Promise<ChatModules> {
   return chatModulesPromise
 }
 
-/** Max characters to accumulate before flushing a segment mid-run (chat message size guard). */
 const SEGMENT_FLUSH_CHARS = 1600
-// QQ does not expose editable streaming. Simulate it with a few paced messages and reserve one
-// reply slot for the final flush because QQ Bot msg_seq only supports up to five replies.
+
 const QQ_STREAM_FLUSH_INTERVAL_MS = 900
 const QQ_STREAM_MIN_CHARS = 80
 const QQ_STREAM_SEGMENT_CHARS = 600
 const QQ_MAX_REPLY_SEGMENTS = 5
 const QQ_STREAM_MAX_INTERMEDIATE_SEGMENTS = QQ_MAX_REPLY_SEGMENTS - 1
 
-/** Keywords a user replies with to answer a surfaced approval. Case-insensitive, trimmed. */
 const APPROVE_WORDS = new Set(['批准', '同意', 'approve', 'yes', 'y', 'ok'])
 const DENY_WORDS = new Set(['拒绝', '否', 'deny', 'no', 'n'])
 const CANCEL_WORDS = new Set(['取消', 'cancel', '算了'])
@@ -131,7 +113,6 @@ interface RunAccumulator {
   flushTimer?: ReturnType<typeof setTimeout>
 }
 
-/** Per-channel live connection + identity, held by the runtime. */
 interface ChannelRuntime {
   id: ChannelId
   bot: Chat | null
@@ -145,11 +126,9 @@ interface ChannelRuntime {
 }
 
 function toPermissionMode(mode: ChannelPermissionMode): PermissionMode {
-  // ChannelPermissionMode is a safe subset; map straight through. 'dangerous' is unreachable.
   return mode
 }
 
-/** Derive the channel id from a chatId (thread id) by its adapter prefix. */
 function channelOfChatId(chatId: string): ChannelId | undefined {
   const prefix = chatId.split(':', 1)[0]
   return (CHANNEL_IDS as readonly string[]).includes(prefix) ? (prefix as ChannelId) : undefined
@@ -160,28 +139,26 @@ export interface ChatBridgeRuntime {
   disconnect(channelId: ChannelId): Promise<ChannelStatus>
   status(): ChatBridgeStatus
   channelStatus(channelId: ChannelId): ChannelStatus
-  /** Update live allowlist/permission settings without reconnecting the adapter. */
+
   updateConfig(channelId: ChannelId, config: ChannelConfig): void
-  /** Called by the module's chunk observer for every agent chunk. */
+
   observeChunk(chatId: string, chunk: BridgeObservedChunk): void
   testConnection(
     channelId: ChannelId,
     config: ChannelConfig,
     secret: string
   ): Promise<{ ok: boolean; botId?: string; message?: string }>
-  /** Tear down all channels (app shutdown). */
+
   shutdownAll(): Promise<void>
 }
 
 export function createChatBridgeRuntime(deps: ChatBridgeRuntimeDeps): ChatBridgeRuntime {
-  // Per-channel connection state.
   const channels = new Map<ChannelId, ChannelRuntime>(
     CHANNEL_IDS.map((id) => [id, { id, bot: null, state: 'disabled' } as ChannelRuntime])
   )
-  // Live per-channel config (set on connect), for allowlist / permission lookups.
+
   const configs = new Map<ChannelId, ChannelConfig>()
 
-  // Global, keyed by chatId (thread ids are channel-namespaced, so no collisions).
   const threads = new Map<string, Thread>()
   const modeApplied = new Set<string>()
   const runs = new Map<string, RunAccumulator>()
@@ -273,7 +250,6 @@ export function createChatBridgeRuntime(deps: ChatBridgeRuntimeDeps): ChatBridge
     } as TanzoUIMessage
   }
 
-  /** Route an inbound message into the agent, or handle it as an approval reply. */
   async function handleInbound(
     channelId: ChannelId,
     thread: Thread,
@@ -281,7 +257,7 @@ export function createChatBridgeRuntime(deps: ChatBridgeRuntimeDeps): ChatBridge
   ): Promise<void> {
     const chatId = thread.id
     const authorId = message.author?.userId ?? ''
-    // Non-text messages (images/cards/stickers) may carry no `text`; guard everywhere.
+
     const text = typeof message.text === 'string' ? message.text : ''
 
     if (!isAllowed(channelId, chatId, authorId)) {
@@ -299,7 +275,6 @@ export function createChatBridgeRuntime(deps: ChatBridgeRuntimeDeps): ChatBridge
     rt(channelId).lastActivityAt = Date.now()
     threads.set(chatId, thread)
 
-    // If we're waiting on an approval for this conversation, interpret the message as the answer.
     const pending = pendingApprovals.get(chatId)
     if (pending) {
       const answer = text.trim().toLowerCase()
@@ -332,15 +307,13 @@ export function createChatBridgeRuntime(deps: ChatBridgeRuntimeDeps): ChatBridge
     }
 
     if (!text.trim()) {
-      // Nothing actionable (e.g. a bare image/sticker). Don't start an empty run.
       return
     }
     if (runs.has(chatId) || finalizing.has(chatId) || deps.agent.isRunning(chatId)) {
       await safePost(thread, '正在处理上一条消息,请等待完成后再发送。')
       return
     }
-    // Fresh request: ensure a conversation row exists (so messages/approvals persist and tools
-    // run against the bridge workspace), fix permission posture, then submit.
+
     deps.agent.ensureConversation(chatId)
     ensureMode(channelId, chatId)
     const run = startRun(channelId, chatId, thread)
@@ -747,10 +720,6 @@ export function createChatBridgeRuntime(deps: ChatBridgeRuntimeDeps): ChatBridge
     }
   }
 
-  /**
-   * Observe an agent chunk. Accumulate assistant text; on a terminal chunk, post the reply,
-   * then check whether the run paused awaiting approval and, if so, surface it into chat.
-   */
   function observeChunk(chatId: string, chunk: BridgeObservedChunk): void {
     const run = runs.get(chatId)
     if (!run) return
@@ -788,8 +757,6 @@ export function createChatBridgeRuntime(deps: ChatBridgeRuntimeDeps): ChatBridge
       return
     }
 
-    // 'finish' is the normal end; 'error'/'abort' can end a run without a 'finish', so we
-    // handle them too or buffered text leaks and the run entry is never cleared.
     if (chunk.type === 'finish' || chunk.type === 'error' || chunk.type === 'abort') {
       void finalizeRun(chatId, chunk.type === 'error' || chunk.type === 'abort')
     }
@@ -798,7 +765,7 @@ export function createChatBridgeRuntime(deps: ChatBridgeRuntimeDeps): ChatBridge
   async function finalizeRun(chatId: string, errored = false): Promise<void> {
     const run = runs.get(chatId)
     if (!run) return
-    // Claim the run immediately so a second terminal chunk can't double-finalize.
+
     clearRunTimer(run)
     runs.delete(chatId)
     finalizing.add(chatId)
@@ -838,7 +805,6 @@ export function createChatBridgeRuntime(deps: ChatBridgeRuntimeDeps): ChatBridge
         return
       }
       if (approvalIds.length > 0) {
-        // Approvals not surfaced -> deny by default, but still track the continuation.
         await resumeApprovals(
           run.channelId,
           run.thread,
@@ -857,15 +823,11 @@ export function createChatBridgeRuntime(deps: ChatBridgeRuntimeDeps): ChatBridge
       if (run.posted && canPostFallback)
         await enqueuePost(run, '（后续执行完成,但没有返回文本输出。）')
     }
-    // Conversation is idle; drop the thread ref so activeConversations reflects reality.
+
     pendingQuestions.delete(chatId)
     threads.delete(chatId)
     finalizing.delete(chatId)
   }
-
-  // -------------------------------------------------------------------------
-  // Adapter registry: one builder per channel. Returns a Chat SDK adapter.
-  // -------------------------------------------------------------------------
 
   function buildAdapter(
     modules: ChatModules,
@@ -982,7 +944,7 @@ export function createChatBridgeRuntime(deps: ChatBridgeRuntimeDeps): ChatBridge
     const c = rt(channelId)
     c.state = 'disabled'
     c.botId = undefined
-    // Drop this channel's conversations from the global maps.
+
     for (const chatId of activeChatIdsFor(channelId)) {
       threads.delete(chatId)
       modeApplied.delete(chatId)
@@ -1052,18 +1014,6 @@ export function createChatBridgeRuntime(deps: ChatBridgeRuntimeDeps): ChatBridge
   }
 }
 
-/**
- * Pure allowlist check (exported for testing). Default posture is deny-all: an empty allowlist
- * denies everything. Private conversations are bound to the AUTHENTICATED sender, never to the
- * thread-id-encoded peer alone, so a wrong sender can't drive an allow-listed private thread.
- *
- * Thread-id shapes per adapter (the parts we depend on):
- *   QQ:       qq:group:{gid} | qq:channel:{cid} | qq:c2c:{openid} | qq:guild-dm:{gid}
- *   Discord:  discord:{guildId}:{channelId}[:{threadId}], with DMs using guildId "@me"
- *   Lark:     lark:{base64url(chatId)}[:{base64url(threadId)}]
- *   WeChat:   wechat:dm:{openid}[:{contextToken}] | wechat:group:{gid}[:{contextToken}]
- * An unrecognised thread id denies (safe).
- */
 export function isThreadAllowed(
   channelId: ChannelId,
   threadId: string,
@@ -1082,13 +1032,12 @@ export function isThreadAllowed(
     const kind = m[1]
     if (kind === 'group' || kind === 'channel') groupId = m[2]
     else if (kind === 'c2c') peerUserId = m[2]
-    else peerUserId = '' // guild-dm: rely on author only
+    else peerUserId = ''
   } else if (channelId === 'discord') {
     const m = /^discord:([^:]+):([^:]+)(?::[^:]+)?$/.exec(threadId)
     if (!m) return false
-    if (m[1] === '@me')
-      peerUserId = '' // DM channel id does not encode the peer user.
-    else groupId = m[1] // guild id
+    if (m[1] === '@me') peerUserId = ''
+    else groupId = m[1]
   } else if (channelId === 'lark') {
     const m = /^lark:([^:]+)(?::[^:]+)?$/.exec(threadId)
     if (!m) return false
@@ -1113,7 +1062,7 @@ export function isThreadAllowed(
     if (users.length > 0 && !users.includes(authorUserId)) return false
     return true
   }
-  // Private: require the authenticated sender to be allow-listed.
+
   if (!users.includes(authorUserId)) return false
   return peerUserId === '' || authorUserId === peerUserId || (peerUserId?.length ?? 0) === 0
 }
@@ -1142,7 +1091,6 @@ function encodeBase64UrlPart(value: string): string {
     .replace(/=+$/u, '')
 }
 
-/** Collect approval ids in state 'approval-requested' across assistant messages. */
 function collectPendingApprovalIds(messages: TanzoUIMessage[]): string[] {
   const ids: string[] = []
   for (const message of messages) {
@@ -1157,7 +1105,6 @@ function collectPendingApprovalIds(messages: TanzoUIMessage[]): string[] {
   return ids
 }
 
-/** Best-effort read of the bot's own id from the channel's adapter, if exposed. */
 function resolveBotId(bot: Chat, channelId: ChannelId): string | undefined {
   try {
     const adapter = (bot as unknown as { getAdapter?: (name: string) => unknown }).getAdapter?.(
@@ -1171,5 +1118,4 @@ function resolveBotId(bot: Chat, channelId: ChannelId): string | undefined {
   }
 }
 
-// Re-export so the service/module can reference the default without a second import.
 export { DEFAULT_CHAT_BRIDGE_CONFIG }

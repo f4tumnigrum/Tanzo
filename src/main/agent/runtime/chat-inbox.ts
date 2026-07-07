@@ -56,9 +56,6 @@ export function createChatInbox(
   }
 
   function enqueue(chatId: string, text: string): void {
-    // When nothing is running there is no turn-end to drain the queue, so a
-    // queued message would wait forever. Dispatch it immediately instead — the
-    // user's intent ("send this next") still holds when "next" is "now".
     if (!callbacks.isInflight(chatId)) {
       void callbacks.submitUserMessage(chatId, text)
       return
@@ -79,9 +76,6 @@ export function createChatInbox(
   }
 
   function steer(chatId: string, text: string): void {
-    // Steering only makes sense against an in-flight run (it is injected at the
-    // next prepareStep). When idle, fall back to sending the text as a normal
-    // message so the user's input is never silently dropped.
     if (!callbacks.isInflight(chatId)) {
       void callbacks.submitUserMessage(chatId, text)
       return
@@ -157,8 +151,7 @@ export function createChatInbox(
         }
       }
     }
-    // Record any explicit plugin @mentions so the context engine can inject a
-    // focused capability hint for the upcoming turn (consumed once, at step 0).
+
     if (message.role === 'user') {
       callbacks.recordPluginMentions?.(chatId, promptTextOf(message))
     }
@@ -183,8 +176,7 @@ export function createChatInbox(
         'Only user messages can be edited.'
       )
     }
-    // Synthetic context injections trail the real user message in the
-    // transcript; they don't count as replies for edit eligibility.
+
     const isInjection = (message: TanzoUIMessage): boolean =>
       message.parts.some((part) => part.type === 'data-contextInjection')
     const lastRealIndex = (() => {
@@ -209,15 +201,6 @@ export function createChatInbox(
     await routeMessages(chatId, [...current.slice(0, targetIndex), edited])
   }
 
-  /**
-   * Resume the last turn after a failure. The full transcript is replayed:
-   * steps that completed before the failure (tool calls with results, partial
-   * text) were persisted per-step and stay in context, so the model continues
-   * from where it stopped instead of redoing the whole turn. The turn loop
-   * strips trailing incomplete tool inputs, and when the history ends with an
-   * assistant message the persistence layer merges the new stream into it
-   * (continuationMessageId), so the reply stays a single message in the UI.
-   */
   async function retryTurn(chatId: string): Promise<void> {
     if (callbacks.isInflight(chatId)) {
       throw new TanzoValidationError(
@@ -247,9 +230,7 @@ export function createChatInbox(
     if (responses.length === 0) return { started: false }
     const current = await deps.store.load(chatId)
     const { messages, applied } = applyApprovalResponses(current, responses)
-    // Stale/duplicate responses (e.g. an approvalId already migrated by an
-    // earlier rerun) apply to nothing. Report no run started so the caller can
-    // reconcile its optimistic streaming state instead of waiting forever.
+
     if (applied.length === 0) return { started: false }
     for (const { toolName, input, response } of applied) {
       if (response.scope !== 'session' && response.scope !== 'forever') continue
@@ -264,11 +245,7 @@ export function createChatInbox(
         chatId
       )
     }
-    // Concurrent tool calls stop the turn with several approval-requested parts
-    // in one assistant message. Answering them one at a time would rerun the
-    // turn per response, aborting the previous run and re-emitting the remaining
-    // approvals — a cascade of cards and aborts. Persist the partial decisions
-    // and only rerun once every approval in the turn is resolved.
+
     if (hasPendingApprovalRequest(messages)) {
       if (deps.store.getConversation(chatId)) deps.store.save(chatId, messages)
       return { started: false }

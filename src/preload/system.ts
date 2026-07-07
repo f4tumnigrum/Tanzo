@@ -33,9 +33,7 @@ export const systemApi = {
     SYSTEM_CHANNELS.pickDirectory
   ),
   openPath: invoke<(path: string) => Promise<OpenPathResult>>(SYSTEM_CHANNELS.openPath),
-  revealInFolder: invoke<(path: string) => Promise<OpenPathResult>>(
-    SYSTEM_CHANNELS.revealInFolder
-  ),
+  revealInFolder: invoke<(path: string) => Promise<OpenPathResult>>(SYSTEM_CHANNELS.revealInFolder),
   onSystemPreferencesChanged: (callback: (preferences: ElectronSystemPreferences) => void) =>
     subscribe<ElectronSystemPreferences>(SYSTEM_CHANNELS.preferencesChanged, callback),
   windowControls: {

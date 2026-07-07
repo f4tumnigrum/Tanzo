@@ -11,13 +11,7 @@ import type { AgentService } from '../runtime/types'
 import type { AgentStore } from '../store-types'
 import type { QuestionBroker } from '../question/broker'
 
-/**
- * Minimal browser access exposed to tools. The agent no longer drives pages
- * itself; it only asks the renderer to open the built-in browser panel, which
- * creates the `<webview>` target that chrome-devtools-mcp then controls.
- */
 export interface BrowserOpener {
-  /** Show the browser panel and load `url`. False if no window can receive it. */
   requestOpen(url: string): boolean
 }
 
@@ -61,8 +55,8 @@ export interface ToolDeps {
   submitTaskResult: AgentService['submitTaskResult']
   goal: GoalToolAccess
   browser: BrowserOpener
-  /** Built-in tool ids the user disabled in settings; filtered out at build time. */
+
   disabledTools: () => readonly string[]
-  /** Master switch for browser automation; gates browserOpen at build time. */
+
   browserAutomationEnabled: () => boolean
 }

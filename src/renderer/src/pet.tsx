@@ -5,13 +5,15 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { UserPreferences } from '@shared/preferences'
 import type { ElectronColorScheme } from '@shared/system'
+import { preferencesClient } from './platform/electron/preferences-client'
+import { systemClient } from './platform/electron/system-client'
 import { bootstrapPreferences } from './common/preferences'
 import { applyThemeSettings, getColorThemeById, resolveThemeMode } from './common/theme'
 import { initializeI18n } from './i18n'
 import { PetApp } from './features/pet/pet-app'
 
 const root = document.documentElement
-const platform = window.electron?.platformInfo.platform ?? 'unknown'
+const platform = systemClient.platformInfo()?.platform ?? 'unknown'
 root.classList.add('electron', `platform-${platform}`)
 
 let currentPreferences: UserPreferences | null = null
@@ -32,18 +34,18 @@ function applyTheme(): void {
 async function bootstrapPet(): Promise<void> {
   try {
     const [systemPreferences, preferences] = await Promise.all([
-      window.electron.getSystemPreferences(),
+      systemClient.getSystemPreferences(),
       bootstrapPreferences()
     ])
     currentColorScheme = systemPreferences.colorScheme
     currentPreferences = preferences
     applyTheme()
 
-    window.electron.onSystemPreferencesChanged((next) => {
+    systemClient.onSystemPreferencesChanged((next) => {
       currentColorScheme = next.colorScheme
       applyTheme()
     })
-    window.electron.preferences.onChanged((next) => {
+    preferencesClient.onChanged((next) => {
       currentPreferences = next
       applyTheme()
     })

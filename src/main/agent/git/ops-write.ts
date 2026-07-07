@@ -86,12 +86,6 @@ export async function restoreWorktree(
   }
 }
 
-/**
- * Partition the requested paths into tracked vs. untracked so `discard` can
- * apply the right recovery per path. Running `git checkout -- <path>` over an
- * untracked path aborts the whole batch, which previously left tracked files
- * un-reverted when the two kinds were mixed.
- */
 async function partitionTracked(
   git: SimpleGit,
   paths: readonly string[]
@@ -120,7 +114,6 @@ export async function discard(
     const git = pool.client(input.cwd)
     const { tracked, untracked } = await partitionTracked(git, input.paths)
     if (tracked.length > 0) {
-      // Unstage then restore the worktree copy from HEAD for tracked paths.
       await git.reset(['--', ...tracked]).catch(() => undefined)
       await git.checkout(['--', ...tracked])
     }
@@ -157,7 +150,6 @@ async function headSha(git: SimpleGit): Promise<string | null> {
   return git.revparse(['HEAD']).catch(() => null)
 }
 
-/** Count commits reachable from `to` but not from `from` (0 when unknown). */
 async function countBetween(git: SimpleGit, from: string, to: string): Promise<number> {
   if (from === to) return 0
   const raw = await git.raw(['rev-list', '--count', `${from}..${to}`]).catch(() => '0')
@@ -165,11 +157,6 @@ async function countBetween(git: SimpleGit, from: string, to: string): Promise<n
   return Number.isFinite(parsed) ? parsed : 0
 }
 
-/**
- * Run a fetch/pull/push, then diff HEAD and ahead/behind before/after so the UI
- * can report a real outcome. `received` = local HEAD advanced (pull); `published`
- * = commits the remote gained (push, i.e. the ahead count we consumed).
- */
 async function runSync(
   pool: GitClientPool,
   cwd: string,

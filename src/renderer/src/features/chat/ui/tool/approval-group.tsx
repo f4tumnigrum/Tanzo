@@ -32,13 +32,6 @@ type TargetKind = 'path' | 'command' | 'url' | 'value'
 
 const CHOICES: PermissionChoice[] = ['once', 'session', 'forever', 'deny']
 
-/**
- * Renders a single approval card for one assistant message. When the model
- * emits several concurrent tool calls the turn stops with multiple pending
- * approvals; rather than stacking one card per call (which clutters the UI and
- * — before the main-side guard — thrashed the run), they are listed inside one
- * card with a single action bar that resolves every pending call at once.
- */
 export function ApprovalGroup({ contexts }: ApprovalGroupProps): React.JSX.Element | null {
   const actions = useChatActions()
   const { t } = useTranslation()

@@ -13,11 +13,7 @@ import {
 
 interface DiscardConfirmProps {
   onConfirm: () => void
-  /**
-   * Number of untracked files in the selection. When > 0 the copy escalates to
-   * warn that those files are deleted permanently (git clean, not recoverable
-   * with git), so the user is not surprised by irreversible data loss.
-   */
+
   untrackedCount: number
   trigger: ReactElement<{ onClick?: () => void }>
 }

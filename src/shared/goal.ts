@@ -38,7 +38,6 @@ export interface ThreadGoal {
 
   blockerStreak: number
 
-  /** Run id of the last rejected/recorded block attempt — same-run dedupe. */
   blockerLastRunId: string | null
 
   pendingInjection: GoalInjection | null

@@ -1,11 +1,10 @@
 import type { ModelCapabilities } from '../capabilities'
 
 export interface CompactionPolicy {
-  /** Reported prompt tokens above this trigger compaction. */
   compactionTriggerTokens: number
-  /** Token budget for the retained tail when cutting the transcript. */
+
   retainBudgetTokens: number
-  /** Absolute prompt ceiling (window − maxOutput); emergency degradation applies above it. */
+
   hardCeilingTokens: number
 }
 

@@ -24,23 +24,15 @@ export type CompactionRunLifecycle = <T>(
   parentSignal?: AbortSignal
 ) => Promise<T>
 
-/** Result of an in-stream (model-domain) compaction, to be reconciled post-run. */
 export interface InlineCompactionRecord {
   summaryText: string
-  /** Ids of the persisted messages the run started from. The summary covers
-   *  (at most) their content, so the post-run reconcile must never archive
-   *  past this prefix. */
+
   baseMessageIds: string[]
   usage?: TanzoUsageMetadata
   degraded?: 'prune' | 'drop-oldest'
 }
 
 export interface CompactionCoordinator {
-  /**
-   * Pre-turn compaction: when the persisted transcript measures over the
-   * trigger, summarize + archive before the run starts. Returns the messages
-   * the run should start from.
-   */
   prepareMessages(
     chatId: string,
     def: AgentDefinition,
@@ -48,18 +40,14 @@ export interface CompactionCoordinator {
     runId: string,
     options?: { signal?: AbortSignal }
   ): Promise<TanzoUIMessage[]>
-  /**
-   * Post-run persistence reconciliation for an in-stream compaction: cut the
-   * persisted transcript with the same token budget and archive the head under
-   * the already-produced summary — no second summarize fork.
-   */
+
   reconcileInline(
     chatId: string,
     def: AgentDefinition,
     inline: InlineCompactionRecord,
     options?: { signal?: AbortSignal }
   ): Promise<boolean>
-  /** Manual /compact entry point. */
+
   compact(chatId: string, options?: { instructions?: string }): Promise<CompactionOutcome>
 }
 
@@ -80,8 +68,6 @@ export function createCompactionCoordinator(
     runLifecycle?: CompactionRunLifecycle
   }
 ): CompactionCoordinator {
-  // Per-chat run queue: at most one compaction per conversation at a time even
-  // when no external runLifecycle is provided.
   const pendingByChat = new Map<string, Promise<unknown>>()
   const lifecycle: CompactionRunLifecycle =
     deps.runLifecycle ??
@@ -154,7 +140,6 @@ export function createCompactionCoordinator(
     frameRunId?: string
   }
 
-  /** Archive the plan head under the summary; returns the outcome. */
   async function finalize(
     chatId: string,
     def: AgentDefinition,
@@ -211,7 +196,6 @@ export function createCompactionCoordinator(
     return { outcome: 'compacted', next: input.next }
   }
 
-  /** Full fork-based compaction against the persisted transcript. */
   async function runCompaction(
     chatId: string,
     def: AgentDefinition,
@@ -287,9 +271,7 @@ export function createCompactionCoordinator(
         next = result.next
       } catch (error) {
         if (signal.aborted) return { outcome: 'aborted', next: null }
-        // L3: mechanical fallback — the conversation must be able to continue
-        // even when the summarize fork is broken (window mismatch, provider
-        // outage, malformed output).
+
         deps.logger?.warn('compaction fork failed; using mechanical fallback', { chatId, error })
         summary = mechanicalSummary(plan, auto, summaryId)
         next = [summary, ...plan.tail]
@@ -310,7 +292,6 @@ export function createCompactionCoordinator(
     return lifecycle(chatId, compactionRunId, incoming, execute, options.signal)
   }
 
-  /** Mechanical fallback summary when the summarize fork fails (L3). */
   function mechanicalSummary(
     plan: CompactionPlan,
     auto: boolean,
@@ -366,10 +347,6 @@ export function createCompactionCoordinator(
           .map((message) => message.id)
         const policy = engine.compactionPolicy(def)
 
-        // Domain coherence: the in-stream cut summarized the transcript as it
-        // was at compaction time. The persisted transcript has since grown
-        // with the run's later output, so cut only over the run's base prefix
-        // — everything the summary is guaranteed to cover — and keep the rest.
         const baseIds = new Set(inline.baseMessageIds)
         let baseEnd = 0
         while (baseEnd < incoming.length && baseIds.has(incoming[baseEnd].id)) baseEnd += 1

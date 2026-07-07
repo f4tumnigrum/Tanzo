@@ -66,11 +66,6 @@ function panelToneForStatus(
   return 'subtle'
 }
 
-// ── Header ──────────────────────────────────────────────────────────────────
-// Every card reads as one sentence about the subagent entity: a narrative
-// action ("Handed off"), the objective or affected run, the agent role, and
-// the run id the user can reference.
-
 function SubagentHeader({ context }: { context: ToolRenderContext }): React.JSX.Element {
   const { t } = useTranslation()
   const input = context.input as Record<string, unknown> | undefined
@@ -192,8 +187,6 @@ function headerIdChip(
   if (task) return <ToolMetaChip text={task} tone="info" />
   return null
 }
-
-// ── Body ────────────────────────────────────────────────────────────────────
 
 function SubagentOutputComp({ context }: { context: ToolRenderContext }): React.JSX.Element | null {
   const { t } = useTranslation()
@@ -333,8 +326,6 @@ function AckLine({
   const cancelled = 'cancelled' in output
   const text = ackText(context, output, t)
 
-  // Redefining a task is destructive (all progress lost) — use amber warning
-  // tone so the visual feedback matches the action's consequence.
   const redefined = 'steered' in output && output.mode === 'redefined'
   const tone: ToolBadgeTone = cancelled ? 'neutral' : redefined ? 'warning' : 'success'
   return (
@@ -400,11 +391,6 @@ function ResultBlock({
 
 type AwaitResult = { task: string; result: SubagentTaskResult }
 
-// Switcher for multiple await results: a compact dropdown picks the subagent
-// and the chosen result renders in the single panel below. No vertical row list
-// and no forced scroll — the control stays one line no matter how many agents
-// ran. Selection defaults to the first failure (most worth inspecting), else
-// the first result.
 function ResultSelector({ results }: { results: AwaitResult[] }): React.JSX.Element {
   const { t } = useTranslation()
   const initial = results.find((entry) => entry.result.failed) ?? results[0]
@@ -589,11 +575,6 @@ function TaskList({ tasks }: { tasks: SubagentTask[] }): React.JSX.Element {
   )
 }
 
-// One subagent, rendered as an entity. A status glyph opens a fixed left rail
-// so every line shares the same optical margin; the objective is the hero text
-// and the id chip trails as the stable handle. The agent role and live phase
-// sit on one quiet meta line under the objective, aligned to the same rail. The
-// glyph + tone carry status, so the status word is dropped to save density.
 function SubagentEntity({
   status,
   objective,
@@ -620,7 +601,6 @@ function SubagentEntity({
     />
   )
 
-  // Dense single-line row for multi-task lists: glyph · objective · agent · id.
   if (truncate) {
     return (
       <div className="flex min-w-0 items-center gap-2">
@@ -644,9 +624,6 @@ function SubagentEntity({
     )
   }
 
-  // Hero layout for a single highlighted subagent: the objective leads on its
-  // own line with the id chip trailing; the agent role and phase form a quiet
-  // meta line that aligns to the objective via the shared left rail.
   return (
     <div className="flex min-w-0 items-start gap-2">
       <span className="mt-px shrink-0">{StatusGlyph}</span>
@@ -685,8 +662,6 @@ function SubagentEntity({
 function TaskBlockLine({ task }: { task: SubagentTask }): React.JSX.Element | null {
   const { t } = useTranslation()
   if (task.block?.kind === 'dependency') {
-    // Render each blocker as a labelled chip so the agent and user can identify
-    // the exact dependency at a glance without inspecting the raw text.
     return (
       <div
         className={cn(

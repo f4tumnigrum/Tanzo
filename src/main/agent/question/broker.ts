@@ -4,12 +4,6 @@ import type { PendingQuestion } from '@shared/chat'
 export type QuestionReply =
   { kind: 'answers'; answers: AskQuestionAnswer[] } | { kind: 'declined'; note?: string }
 
-/**
- * Default timeout before an unanswered question self-resolves as declined.
- * Prevents a turn from hanging forever when the user closes the panel without
- * explicitly answering or cancelling. 30 minutes is generous enough for a real
- * user working at the desk but short enough to avoid indefinite slot starvation.
- */
 const DEFAULT_QUESTION_TIMEOUT_MS = 30 * 60_000
 
 export interface QuestionBroker {
@@ -82,10 +76,6 @@ function validateAnswers(input: AskQuestionInput, answers: AskQuestionAnswer[]):
 export function createQuestionBroker(): QuestionBroker {
   const pending = new Map<string, PendingQuestionState>()
 
-  /**
-   * Remove the question from `pending`, clear its timer, and return the state
-   * so the caller can settle it. Idempotent — returns undefined when already cleared.
-   */
   function clear(questionId: string): PendingQuestionState | undefined {
     const state = pending.get(questionId)
     if (!state) return undefined
@@ -115,12 +105,7 @@ export function createQuestionBroker(): QuestionBroker {
           reject(abortError())
         }
 
-        // Auto-resolve as declined after the timeout window so the agent turn
-        // is never stuck waiting for a user who closed the panel or walked away.
         const timer = setTimeout(() => {
-          // clear() removes from map and clears the timer reference itself;
-          // use the returned state to guard against a race where respond() fired
-          // concurrently with the timer callback.
           const s = clear(questionId)
           if (s) {
             signal?.removeEventListener('abort', onAbort)
