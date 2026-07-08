@@ -130,15 +130,17 @@ export function awaitTool(
     {
       description:
         'Wait for sub-agent tasks to finish and return their results. settle:"all" (default) ' +
-        'waits for every listed task; settle:"first" returns as soon as one finishes. Pass ' +
-        'timeoutMs to cap the wait — tasks keep running and can be awaited again; on timeout, ' +
-        "'pending' carries each unfinished task's current status, phase, and latest note so you " +
-        'can decide to keep waiting, steer, or cancel. Ids that do not exist are listed in ' +
-        "'unknown' — check it whenever a result seems missing. A failed result's failureKind " +
-        "tells you why: 'app-restart' (interrupted; retry or respawn), 'await-cancelled' (your " +
-        'wait was aborted — the task may still be running), otherwise a genuine task failure. ' +
-        "resultSource:'inferred' means the sub-agent never called report(result); treat that " +
-        'summary with lower confidence.',
+        'waits for every listed task; settle:"first" returns as soon as one finishes. A task ' +
+        'result is the final message that sub-agent produced when its work converged — use it ' +
+        'as-is. You do not have to poll: if an awaited task sends a note mid-task, this returns ' +
+        "early, and 'notedTasks' lists exactly which awaited tasks produced a new note this call " +
+        "— read each one's latestNote in 'pending' (or its result if it also finished), then keep " +
+        'waiting (await again), steer, or stop. Pass timeoutMs only as a safety cap; on timeout ' +
+        "'pending' carries each unfinished task's status, phase, and latest note. Ids " +
+        "that do not exist are listed in 'unknown' — check it whenever a result seems missing. A " +
+        "failed result's failureKind tells you why: 'app-restart' (interrupted; retry or " +
+        "respawn), 'await-cancelled' (your wait was aborted — the task may still be running), " +
+        'otherwise a genuine task failure.',
       inputSchema: zodSchema(awaitInputSchema),
       outputSchema: zodSchema(awaitOutputSchema),
       metadata: { tanzo: { kind: 'read', component: 'SubagentCard' } },
@@ -156,10 +158,37 @@ export function awaitTool(
         const settled = new Map<string, SubagentTaskResult>()
         let timedOut = false
 
-        const collect = async (id: string): Promise<string> => {
-          settled.set(id, await deps.awaitTask(rootChatId, id, abortSignal))
-          return id
+        // Baseline note counts per task at the start of this wait. Comparing
+        // against these afterward tells us exactly which awaited tasks produced a
+        // new note during the wait — independent of whether the wait ended by note
+        // wake, settle, or timeout. This survives the "settle and note in the same
+        // pass" race that a single boolean could not represent.
+        const noteBaseline = new Map<string, number>()
+        for (const id of known)
+          noteBaseline.set(id, (deps.getTask(rootChatId, id)?.notes ?? []).length)
+
+        // Scope every waiter registered this pass to a local controller so that
+        // when we return early (note/timeout) the abandoned settle/note waiters
+        // detach instead of piling up across repeated awaits on a long task.
+        const waitController = new AbortController()
+        if (abortSignal) {
+          if (abortSignal.aborted) waitController.abort()
+          else abortSignal.addEventListener('abort', () => waitController.abort(), { once: true })
         }
+        const waitSignal = waitController.signal
+
+        const collect = async (id: string): Promise<'settled'> => {
+          settled.set(id, await deps.awaitTask(rootChatId, id, waitSignal))
+          return 'settled'
+        }
+
+        // A mid-task note from any awaited task wakes the wait early so the parent
+        // can react. This resolves on note, settle, or abort; which tasks actually
+        // produced a note is computed afterward from noteBaseline, not from who
+        // won this race.
+        const noteWake = Promise.race(
+          known.map((id) => deps.waitForNoteTask(rootChatId, id, waitSignal))
+        ).then(() => 'note' as const)
 
         let timeoutTimer: ReturnType<typeof setTimeout> | undefined
         const timeout = new Promise<'timeout'>((resolve) => {
@@ -168,23 +197,25 @@ export function awaitTool(
         })
 
         try {
-          if (settle === 'first') {
-            const winner = await Promise.race(
-              timeoutMs === undefined ? known.map(collect) : [...known.map(collect), timeout]
-            )
-            if (winner === 'timeout') timedOut = true
-          } else {
-            const all = Promise.all(known.map(collect))
-            if (timeoutMs === undefined) {
-              await all
-            } else {
-              const race = await Promise.race([all.then(() => 'done' as const), timeout])
-              if (race === 'timeout') timedOut = true
-            }
-          }
+          const done =
+            settle === 'first'
+              ? Promise.race(known.map(collect))
+              : Promise.all(known.map(collect)).then(() => 'settled' as const)
+          const racers: Array<Promise<'settled' | 'note' | 'timeout'>> = [done, noteWake]
+          if (timeoutMs !== undefined) racers.push(timeout)
+          const winner = await Promise.race(racers)
+          if (winner === 'timeout') timedOut = true
         } finally {
           if (timeoutTimer !== undefined) clearTimeout(timeoutTimer)
+          waitController.abort()
         }
+
+        // Which awaited tasks produced a new note during this wait, in the input
+        // order the parent passed. Precise per-task signal for the multi-task case;
+        // for a single task it collapses to a one-element list.
+        const notedTasks = known.filter(
+          (id) => (deps.getTask(rootChatId, id)?.notes ?? []).length > (noteBaseline.get(id) ?? 0)
+        )
 
         const results = known
           .filter((id) => settled.has(id))
@@ -196,7 +227,8 @@ export function awaitTool(
           results,
           ...(pending.length > 0 ? { pending } : {}),
           ...(unknown.length > 0 ? { unknown } : {}),
-          ...(timedOut ? { timedOut: true } : {})
+          ...(timedOut ? { timedOut: true } : {}),
+          ...(notedTasks.length > 0 ? { notedTasks } : {})
         }
       }
     }

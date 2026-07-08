@@ -2,9 +2,11 @@ import { Buffer } from 'node:buffer'
 import { randomUUID } from 'crypto'
 import type { Chat, ChatConfig, Message, Thread } from 'chat'
 import type { AskQuestionAnswer, AskQuestionInput, TanzoUIMessage } from '@shared/agent-message'
-import type { ChatApprovalResponse, QuestionReply } from '@shared/chat'
+import type { ChatApprovalResponse, CompactionOutcome, QuestionReply } from '@shared/chat'
 import { hasPendingApprovalRequest } from '@shared/approval-responses'
 import type { PermissionMode } from '@shared/policy'
+import { resolveSlashInvocation, type SlashCommandDef } from '@shared/slash-command'
+import { GOAL_COMMAND_KEYS, type GoalCommandResult } from '@shared/goal'
 import {
   CHANNEL_IDS,
   DEFAULT_CHAT_BRIDGE_CONFIG,
@@ -14,7 +16,9 @@ import {
   type ChannelStatus,
   type ChannelPermissionMode,
   type ChatBridgeStatus,
-  type ChatBridgeEvent
+  type ChatBridgeEvent,
+  type ChannelWorkspaceSwitch,
+  type ChannelWorkspaceView
 } from '@shared/chat-bridge'
 import { createLogger } from '../logger'
 
@@ -27,6 +31,25 @@ export interface BridgeAgentPort {
 
   loadMessages(chatId: string): Promise<TanzoUIMessage[]>
   setPermissionMode(chatId: string, mode: PermissionMode): void
+
+  /** Slash commands available on the channel surface for this conversation. */
+  listChannelCommands(chatId: string): SlashCommandDef[]
+  /** Compact the conversation context; resolves to a short status string. */
+  compact(chatId: string): Promise<CompactionOutcome>
+  /** Execute a `/goal` command; resolves to a result describing the outcome. */
+  goalCommand(chatId: string, args: string): GoalCommandResult
+  /** A one-line status summary (goal + run state) for `/status`. */
+  status(chatId: string): string
+  /** Cancel the in-progress run, if any. */
+  cancel(chatId: string): void
+  /** Clear all messages of the conversation, keeping the conversation itself. */
+  clearConversation(chatId: string): void
+  /** Rename the conversation. Returns the new title, or undefined if it does not exist. */
+  renameConversation(chatId: string, title: string): string | undefined
+  /** Workspaces available for switching, plus the conversation's current one. */
+  listChannelWorkspaces(chatId: string): ChannelWorkspaceView
+  /** Switch the conversation to an existing workspace by index or name. */
+  setChannelWorkspace(chatId: string, selector: string): ChannelWorkspaceSwitch
 }
 
 export interface ChatBridgeRuntimeDeps {
@@ -78,6 +101,96 @@ const QQ_STREAM_MAX_INTERMEDIATE_SEGMENTS = QQ_MAX_REPLY_SEGMENTS - 1
 const APPROVE_WORDS = new Set(['批准', '同意', 'approve', 'yes', 'y', 'ok'])
 const DENY_WORDS = new Set(['拒绝', '否', 'deny', 'no', 'n'])
 const CANCEL_WORDS = new Set(['取消', 'cancel', '算了'])
+
+function compactionOutcomeText(outcome: CompactionOutcome): string {
+  switch (outcome) {
+    case 'compacted':
+      return '已压缩会话上下文。'
+    case 'not-needed':
+      return '当前上下文无需压缩。'
+    case 'aborted':
+      return '压缩已中止。'
+    case 'stale':
+      return '上下文已变化,压缩未执行。'
+  }
+}
+
+function goalCommandText(result: GoalCommandResult): string {
+  switch (result.key) {
+    case GOAL_COMMAND_KEYS.current:
+      return `当前目标:${result.objective ?? ''}(${result.status ?? ''})`
+    case GOAL_COMMAND_KEYS.none:
+      return '当前没有活动目标。'
+    case GOAL_COMMAND_KEYS.cleared:
+      return '目标已清除。'
+    case GOAL_COMMAND_KEYS.paused:
+      return '目标已暂停。'
+    case GOAL_COMMAND_KEYS.resumed:
+      return '目标已恢复。'
+    case GOAL_COMMAND_KEYS.objectiveUpdated:
+      return '目标内容已更新。'
+    case GOAL_COMMAND_KEYS.set:
+      return '目标已设定。'
+  }
+}
+
+function workspaceListText(view: ChannelWorkspaceView): string {
+  if (view.workspaces.length === 0) {
+    return '暂无可切换的工作区。请先在桌面端创建工作区。'
+  }
+  const lines = view.workspaces.map((ws, index) => {
+    const marker = ws.isCurrent ? '(当前)' : ''
+    return `  ${index + 1}. ${ws.name}${marker}`
+  })
+  return [
+    view.currentName ? `当前工作区:${view.currentName}` : '当前工作区:默认',
+    '可切换:',
+    ...lines,
+    '发送 /workspace <序号或名称> 切换。'
+  ].join('\n')
+}
+
+function workspaceSwitchText(result: ChannelWorkspaceSwitch): string {
+  if (result.ok) return `已切换到工作区「${result.name}」。后续消息将在该目录下执行。`
+  switch (result.reason) {
+    case 'no_conversation':
+      return '当前对话尚不存在,无法切换工作区。'
+    case 'already_current':
+      return '已经在该工作区,无需切换。'
+    case 'not_found':
+    default:
+      return '未找到该工作区。发送 /workspace 查看可切换的工作区。'
+  }
+}
+
+// Channel-side descriptions for builtin commands (bridge has no i18next; the
+// desktop menu resolves descriptionKey instead). File/skill commands carry a
+// plain `description` and are read directly.
+const CHANNEL_BUILTIN_DESCRIPTIONS: Record<string, string> = {
+  help: '查看可用命令',
+  status: '查看目标与运行状态',
+  stop: '停止正在执行的任务',
+  approve: '批准待确认的操作',
+  deny: '拒绝待确认的操作',
+  clear: '清空当前对话的历史记录',
+  rename: '重命名当前对话',
+  workspace: '查看或切换当前工作区',
+  compact: '压缩当前对话的上下文',
+  goal: '设定、查看或清除自主目标'
+}
+
+function channelCommandDescription(command: SlashCommandDef): string {
+  return command.description || CHANNEL_BUILTIN_DESCRIPTIONS[command.name] || ''
+}
+
+function helpText(commands: SlashCommandDef[]): string {
+  if (commands.length === 0) return '当前没有可用的命令。'
+  const lines = commands.map((command) => {
+    const desc = channelCommandDescription(command)
+    return desc ? `  /${command.name} — ${desc}` : `  /${command.name}`
+  })
+  return ['可用命令:', ...lines].join('\n')
+}
 
 interface PendingApproval {
   chatId: string
@@ -277,7 +390,11 @@ export function createChatBridgeRuntime(deps: ChatBridgeRuntimeDeps): ChatBridge
 
     const pending = pendingApprovals.get(chatId)
     if (pending) {
-      const answer = text.trim().toLowerCase()
+      // Slash forms (/approve, /deny) augment the free-text keyword flow.
+      const answer = text
+        .trim()
+        .toLowerCase()
+        .replace(/^\/(approve|deny)$/, '$1')
       const approved = APPROVE_WORDS.has(answer)
       const denied = DENY_WORDS.has(answer)
       const cancelled = CANCEL_WORDS.has(answer)
@@ -302,6 +419,13 @@ export function createChatBridgeRuntime(deps: ChatBridgeRuntimeDeps): ChatBridge
 
     const pendingQuestion = pendingQuestions.get(chatId)
     if (pendingQuestion) {
+      // Let pure control commands through even while a question is pending;
+      // any other reply answers the question as before.
+      const control = text.trim().toLowerCase()
+      if (control === '/stop' || control === '/status') {
+        await handleSlashCommand(channelId, thread, text.trim(), true)
+        return
+      }
       await handleQuestionReply(channelId, thread, pendingQuestion, text)
       return
     }
@@ -309,11 +433,27 @@ export function createChatBridgeRuntime(deps: ChatBridgeRuntimeDeps): ChatBridge
     if (!text.trim()) {
       return
     }
-    if (runs.has(chatId) || finalizing.has(chatId) || deps.agent.isRunning(chatId)) {
+
+    const busy = runs.has(chatId) || finalizing.has(chatId) || deps.agent.isRunning(chatId)
+
+    // Slash commands are dispatched before the busy guard so that control
+    // commands (e.g. /stop, /status) work while a run is in progress. Commands
+    // that would submit a new run are themselves blocked when busy.
+    if (text.trim().startsWith('/')) {
+      const consumed = await handleSlashCommand(channelId, thread, text.trim(), busy)
+      if (consumed) return
+    }
+
+    if (busy) {
       await safePost(thread, '正在处理上一条消息,请等待完成后再发送。')
       return
     }
 
+    await runSubmission(channelId, thread, text)
+  }
+
+  async function runSubmission(channelId: ChannelId, thread: Thread, text: string): Promise<void> {
+    const chatId = thread.id
     deps.agent.ensureConversation(chatId)
     ensureMode(channelId, chatId)
     const run = startRun(channelId, chatId, thread)
@@ -328,6 +468,125 @@ export function createChatBridgeRuntime(deps: ChatBridgeRuntimeDeps): ChatBridge
       const msg = error instanceof Error ? error.message : String(error)
       emitLog(channelId, 'error', `submitMessage failed for ${chatId}: ${msg}`)
       await safePost(thread, `处理消息时出错: ${msg}`)
+    }
+  }
+
+  /**
+   * Interpret a leading-slash message against the channel command catalog.
+   * Returns true when the input was consumed (do not fall through to a normal
+   * run). Prompt/skill commands are submitted as runs; supported actions run
+   * inline; unknown commands are reported instead of sent to the model.
+   */
+  async function handleSlashCommand(
+    channelId: ChannelId,
+    thread: Thread,
+    text: string,
+    busy: boolean
+  ): Promise<boolean> {
+    const chatId = thread.id
+    const commands = deps.agent.listChannelCommands(chatId)
+    const invocation = resolveSlashInvocation(text, commands)
+
+    // Commands that submit a new run or mutate the conversation are blocked
+    // while a run is in progress; pure controls (/stop, /status) are allowed.
+    const wouldSubmit =
+      invocation.type === 'prompt' ||
+      invocation.type === 'skill' ||
+      (invocation.type === 'action' &&
+        (invocation.command.name === 'compact' || invocation.command.name === 'goal'))
+    if (busy && wouldSubmit) {
+      await safePost(thread, '正在处理上一条消息,请等待完成后再发送。')
+      return true
+    }
+
+    switch (invocation.type) {
+      case 'passthrough':
+        return false
+      case 'unknown':
+        await safePost(thread, `未知命令 /${invocation.name}。发送 / 查看可用命令。`)
+        return true
+      case 'prompt':
+      case 'skill':
+        await runSubmission(channelId, thread, invocation.text)
+        return true
+      case 'action': {
+        const name = invocation.command.name
+        if (name === 'compact') {
+          const outcome = await deps.agent.compact(chatId)
+          await safePost(thread, compactionOutcomeText(outcome))
+          return true
+        }
+        if (name === 'goal') {
+          // Ensure the conversation exists before mutating its goal (FK safety).
+          deps.agent.ensureConversation(chatId)
+          const result = deps.agent.goalCommand(chatId, invocation.args)
+          await safePost(thread, goalCommandText(result))
+          return true
+        }
+        if (name === 'status') {
+          await safePost(thread, deps.agent.status(chatId))
+          return true
+        }
+        if (name === 'help') {
+          await safePost(thread, helpText(commands))
+          return true
+        }
+        if (name === 'clear') {
+          // Ensure the conversation exists before clearing (FK safety on first msg).
+          deps.agent.ensureConversation(chatId)
+          deps.agent.clearConversation(chatId)
+          await safePost(thread, '已清空当前对话的历史记录。')
+          return true
+        }
+        if (name === 'rename') {
+          const title = invocation.args.trim()
+          if (!title) {
+            await safePost(thread, '请提供新的对话标题,例如 /rename 我的项目。')
+            return true
+          }
+          deps.agent.ensureConversation(chatId)
+          const next = deps.agent.renameConversation(chatId, title)
+          await safePost(
+            thread,
+            next ? `已将对话标题改为「${next}」。` : '当前对话尚不存在,无法重命名。'
+          )
+          return true
+        }
+        if (name === 'workspace') {
+          // Ensure the conversation exists so the list reflects its real cwd.
+          deps.agent.ensureConversation(chatId)
+          const selector = invocation.args.trim()
+          if (!selector) {
+            await safePost(thread, workspaceListText(deps.agent.listChannelWorkspaces(chatId)))
+            return true
+          }
+          // Switching changes the run cwd; block while a run is in progress.
+          if (busy) {
+            await safePost(thread, '正在处理上一条消息,请等待完成后再切换工作区。')
+            return true
+          }
+          const result = deps.agent.setChannelWorkspace(chatId, selector)
+          await safePost(thread, workspaceSwitchText(result))
+          return true
+        }
+        if (name === 'stop') {
+          if (busy) {
+            deps.agent.cancel(chatId)
+            await safePost(thread, '已停止当前任务。')
+          } else {
+            await safePost(thread, '当前没有正在执行的任务。')
+          }
+          return true
+        }
+        if (name === 'approve' || name === 'deny') {
+          // Only reachable with no pending approval (handled earlier otherwise).
+          await safePost(thread, '当前没有等待确认的操作。')
+          return true
+        }
+        // Other actions are desktop-only; surface a hint rather than run them.
+        await safePost(thread, `命令 /${name} 暂不支持在此渠道使用。`)
+        return true
+      }
     }
   }
 

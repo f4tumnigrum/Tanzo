@@ -10,7 +10,7 @@ import {
   cancelTaskTool,
   type SubagentType
 } from '@main/agent/tools/subagent'
-import { reportTool } from '@main/agent/tools/subagent-control'
+import { noteTool } from '@main/agent/tools/subagent-control'
 import {
   awaitInputSchema,
   cancelTaskInputSchema,
@@ -116,9 +116,8 @@ function deps(overrides: Partial<ToolDeps> = {}): ToolDeps {
     instructTask: vi.fn(async () => ({ ok: true }) as const),
     redefineTask: vi.fn(async () => ({ ok: true }) as const),
     cancelTask: vi.fn(),
-    reportTaskPhase: vi.fn(),
     addTaskNote: vi.fn(),
-    submitTaskResult: vi.fn(),
+    waitForNoteTask: vi.fn(() => new Promise<void>(() => {})),
     goal: {} as never,
     ...overrides
   } as unknown as ToolDeps
@@ -206,7 +205,7 @@ describe('main/agent/tools/subagent (tasks)', () => {
     await expect(exec(tool, { tasks: ['explore-1'] })).resolves.toEqual({
       results: [{ task: 'explore-1', result: { summary: 'result text' } }]
     })
-    expect(d.awaitTask).toHaveBeenCalledWith('parent', 'explore-1', undefined)
+    expect(d.awaitTask).toHaveBeenCalledWith('parent', 'explore-1', expect.any(AbortSignal))
   })
 
   it('lists unknown task ids explicitly instead of dropping them', async () => {
@@ -373,26 +372,12 @@ describe('main/agent/tools/subagent (tasks)', () => {
     expect((result as { message: string }).message).toContain('explore-1')
   })
 
-  it('report tool forwards phase and result to the service', async () => {
-    const d = deps()
-    await expect(exec(reportTool(d, 'chat-explore-1'), { phase: 'searching' })).resolves.toEqual({
-      ok: true
-    })
-    expect(d.reportTaskPhase).toHaveBeenCalledWith('chat-explore-1', 'searching')
-    await expect(
-      exec(reportTool(d, 'chat-explore-1'), { result: 'final findings' })
-    ).resolves.toEqual({ ok: true })
-    expect(d.submitTaskResult).toHaveBeenCalledWith('chat-explore-1', { summary: 'final findings' })
-  })
-
-  it('report tool forwards note to the service', async () => {
+  it('note tool forwards the note to the service', async () => {
     const d = deps()
     await expect(
-      exec(reportTool(d, 'chat-explore-1'), { note: 'auth is split across 3 files' })
+      exec(noteTool(d, 'chat-explore-1'), { note: 'auth is split across 3 files' })
     ).resolves.toEqual({ ok: true })
     expect(d.addTaskNote).toHaveBeenCalledWith('chat-explore-1', 'auth is split across 3 files')
-    expect(d.reportTaskPhase).not.toHaveBeenCalled()
-    expect(d.submitTaskResult).not.toHaveBeenCalled()
   })
 
   it('await pending includes phase and latest note for unfinished tasks', async () => {
@@ -421,5 +406,61 @@ describe('main/agent/tools/subagent (tasks)', () => {
       phase: 'reading auth module',
       latestNote: 'found a surprise'
     })
+  })
+
+  it('await reports the task in notedTasks when a running task sends a note', async () => {
+    // The note appears DURING the wait: start with no notes, add one when the
+    // note waiter resolves. notedTasks is computed from that delta.
+    const notes: Array<{ text: string; at: number }> = []
+    const d = deps({
+      getTask: vi.fn((_root: string, id: string) =>
+        task(id, 'running', { phase: 'reading', notes: [...notes] })
+      ),
+      awaitTask: vi.fn(() => new Promise(() => {})) as never,
+      waitForNoteTask: vi.fn(async () => {
+        notes.push({ text: 'a fork in approach', at: 9 })
+      })
+    })
+    const tool = awaitTool(d, 'parent')
+    const result = (await exec(tool, { tasks: ['explore-1'] })) as {
+      results: unknown[]
+      pending?: Array<{ task: string; latestNote?: string }>
+      notedTasks?: string[]
+    }
+    expect(result.notedTasks).toEqual(['explore-1'])
+    expect(result.results).toEqual([])
+    expect(result.pending?.[0]).toMatchObject({
+      task: 'explore-1',
+      latestNote: 'a fork in approach'
+    })
+  })
+
+  it('reports notedTasks even when another task settles in the same pass', async () => {
+    // The multi-task race the single boolean could not represent: explore-1
+    // settles while explore-2 emits a note. Both signals must survive.
+    const notes2: Array<{ text: string; at: number }> = []
+    const d = deps({
+      getTask: vi.fn((_root: string, id: string) =>
+        id === 'explore-2'
+          ? task(id, 'running', { phase: 'searching', notes: [...notes2] })
+          : task(id, 'running')
+      ),
+      awaitTask: vi.fn(async (_root: string, id: string) =>
+        id === 'explore-1' ? { summary: 'done fast' } : new Promise(() => {})
+      ) as never,
+      waitForNoteTask: vi.fn(async (_root: string, id: string) => {
+        if (id === 'explore-2') notes2.push({ text: 'heads up from 2', at: 3 })
+        else await new Promise(() => {})
+      })
+    })
+    const tool = awaitTool(d, 'parent')
+    const result = (await exec(tool, { tasks: ['explore-1', 'explore-2'], settle: 'first' })) as {
+      results: Array<{ task: string }>
+      pending?: Array<{ task: string; latestNote?: string }>
+      notedTasks?: string[]
+    }
+    expect(result.results.map((r) => r.task)).toEqual(['explore-1'])
+    expect(result.notedTasks).toEqual(['explore-2'])
+    expect(result.pending?.[0]).toMatchObject({ task: 'explore-2', latestNote: 'heads up from 2' })
   })
 })

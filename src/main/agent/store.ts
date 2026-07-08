@@ -217,6 +217,14 @@ export function createAgentStore(
     })
   }
 
+  function clearMessages(chatId: string): void {
+    requireConversation(chatId, 'CHAT_CONVERSATION_NOT_FOUND')
+    db.transaction(() => {
+      messages.deleteAll(chatId)
+      touch(chatId)
+    })
+  }
+
   function deleteWorkspace(workspaceId: string): void {
     const hasWorkspace = conversations
       .listWorkspaces()
@@ -248,6 +256,33 @@ export function createAgentStore(
     const updatedAt = Date.now()
     conversations.setSubagentModelRef(chatId, modelRef, updatedAt)
     return { ...existing, subagentModelRef: modelRef, updatedAt }
+  }
+
+  function updateConversationCwd(chatId: string, targetCwd: string): ConversationSummary {
+    const existing = requireConversation(chatId, 'CHAT_CONVERSATION_NOT_FOUND')
+    const cwd = normalizeCwd(targetCwd)
+    const workspaceId = workspaceIdFromCwd(cwd)
+    const workspaceName = workspaceNameFromCwd(cwd)
+    const updatedAt = Date.now()
+    conversations.setWorkspace(chatId, workspaceId, cwd, workspaceName, updatedAt)
+    return { ...existing, cwd, workspaceId, workspaceName, updatedAt }
+  }
+
+  /**
+   * Switch a conversation to an already-registered workspace row, reusing its
+   * id (so the unique root_path upsert never conflicts with a recomputed hash).
+   */
+  function switchConversationWorkspace(
+    chatId: string,
+    workspaceId: string,
+    workspaceName: string,
+    targetCwd: string
+  ): ConversationSummary {
+    const existing = requireConversation(chatId, 'CHAT_CONVERSATION_NOT_FOUND')
+    const cwd = normalizeCwd(targetCwd)
+    const updatedAt = Date.now()
+    conversations.setWorkspace(chatId, workspaceId, cwd, workspaceName, updatedAt)
+    return { ...existing, cwd, workspaceId, workspaceName, updatedAt }
   }
 
   function setConversationReasoningEffort(chatId: string, effort: string): ConversationSummary {
@@ -332,12 +367,15 @@ export function createAgentStore(
     rootOf: conversations.rootOf,
     deleteWorkspace,
     deleteConversation,
+    clearMessages,
     setConversationModel,
     setConversationTitle,
     setConversationSubagentModel,
     setConversationReasoningEffort,
     setConversationAgent,
     setConversationPinned,
+    updateConversationCwd,
+    switchConversationWorkspace,
     save(chatId, nextMessages) {
       requireConversation(chatId, 'CHAT_CONVERSATION_NOT_FOUND')
       db.transaction(() => writeActiveMessages(chatId, nextMessages))

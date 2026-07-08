@@ -293,7 +293,15 @@ export const zhCN = {
           descriptions: {
             compact: '压缩当前会话上下文',
             goal: '设定、更换或清除自主目标',
-            agent: '切换当前会话智能体'
+            agent: '切换当前会话智能体',
+            status: '查看目标与运行状态',
+            stop: '停止正在执行的任务',
+            approve: '批准待确认的操作',
+            deny: '拒绝待确认的操作',
+            clear: '清空当前对话的历史记录',
+            rename: '重命名当前对话',
+            workspace: '查看或切换当前工作区',
+            help: '查看可用命令'
           },
           subcommands: {
             goal: {
@@ -638,7 +646,8 @@ export const zhCN = {
             tasks: '已查看',
             steer: '已调整方向',
             cancel: '已停止',
-            report: '已汇报'
+            note: '已留言',
+            report: '已留言'
           },
           status: {
             pending: '待处理',
@@ -653,9 +662,7 @@ export const zhCN = {
             instructed: '已发送补充指令。',
             redefined: '已替换目标。',
             cancelled: '已停止子代理。',
-            phaseReported: '已更新阶段。',
-            noteReported: '已记录发现。',
-            resultSubmitted: '已提交结果。'
+            noteReported: '已记录发现。'
           },
           noTasks: '暂无子代理。',
           allTasks: '全部子代理',
@@ -670,8 +677,7 @@ export const zhCN = {
           blockedApproval: '等待批准。',
           awaitPending: '仍在运行：{{tasks}}。',
           stillRunning: '仍在运行',
-          inferred: '推断',
-          resultInferred: '结果由最后一条助手消息推断——子代理未调用 report()。',
+          noteFromSubagent: '来自子代理的提示',
           errors: {
             taskFailed: '子代理失败。'
           }
@@ -692,8 +698,7 @@ export const zhCN = {
         steerSend: '发送',
         openTranscript: '查看转录',
         readOnly: '只读',
-        emptyTranscript: '暂无活动。',
-        activity: '活动'
+        emptyTranscript: '暂无活动。'
       },
       goal: {
         pause: '暂停目标',
@@ -1514,7 +1519,7 @@ export const zhCN = {
           tasks: '查看子代理任务状态。',
           steer: '调整正在运行的子代理任务。',
           cancel: '取消子代理任务。',
-          report: '子代理通过它汇报进度和结果。',
+          note: '子代理通过它向父代理发送中途留言。',
           exitPlanMode: '提交计划供批准并退出规划模式。'
         }
       },

@@ -52,8 +52,8 @@ function deps(): ToolDeps {
     instructTask: vi.fn(),
     redefineTask: vi.fn(),
     cancelTask: vi.fn(),
-    reportTaskPhase: vi.fn(),
-    submitTaskResult: vi.fn(),
+    addTaskNote: vi.fn(),
+    waitForNoteTask: vi.fn(async () => undefined),
     goal: {
       get: vi.fn(() => null),
       markOutcome: vi.fn(() => false)
@@ -137,8 +137,8 @@ function planDeps(): ToolDeps {
     instructTask: vi.fn(),
     redefineTask: vi.fn(),
     cancelTask: vi.fn(),
-    reportTaskPhase: vi.fn(),
-    submitTaskResult: vi.fn(),
+    addTaskNote: vi.fn(),
+    waitForNoteTask: vi.fn(async () => undefined),
     goal: { get: vi.fn(), markOutcome: vi.fn() },
     browser: {
       requestOpen: vi.fn(() => true)

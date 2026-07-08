@@ -28,8 +28,6 @@ export interface SubagentTaskResult {
   failed?: boolean
   errorMessage?: string
 
-  resultSource?: 'explicit' | 'inferred'
-
   failureKind?: 'app-restart' | 'logic-error' | 'await-cancelled'
 
   failedDependencyId?: string

@@ -2,43 +2,34 @@ import { tool, zodSchema, type Tool, type ToolSet } from 'ai'
 import type { TanzoTools } from '@shared/agent-message'
 import type { ToolDeps } from './types'
 import { toolResultToModelOutput } from './model-output'
-import { toolError } from './builtin/shared'
-import { reportInputSchema, reportOutputSchema } from './tool-schemas'
+import { noteInputSchema, noteOutputSchema } from './tool-schemas'
 
-export function reportTool(
+export function noteTool(
   deps: ToolDeps,
   chatId: string
-): Tool<TanzoTools['report']['input'], TanzoTools['report']['output']> {
-  return tool<
-    TanzoTools['report']['input'],
-    TanzoTools['report']['output'],
-    Record<string, unknown>
-  >({
+): Tool<TanzoTools['note']['input'], TanzoTools['note']['output']> {
+  return tool<TanzoTools['note']['input'], TanzoTools['note']['output'], Record<string, unknown>>({
     description:
-      'Report progress and findings. Pass phase to announce the step you are starting (call ' +
-      'before each major phase; shown live in the UI, sampled by the parent when it awaits ' +
-      'you). Pass note for a mid-task finding the parent should know (surfaced via await; use ' +
-      'for signal, not narration). Pass result to submit your final, self-contained ' +
-      'deliverable — submitting a result ends your run immediately, so call it exactly once, ' +
-      'when you have the answer.',
-    inputSchema: zodSchema(reportInputSchema),
-    outputSchema: zodSchema(reportOutputSchema),
+      'Send the parent a mid-task note — a finding, surprise, blocker, or partial result worth ' +
+      'acting on before you finish. The note wakes the parent immediately if it is awaiting you, ' +
+      'handing it your note and current progress; it can then keep waiting, steer you, or stop ' +
+      'you. This does not end your run and is not your deliverable: your deliverable is the ' +
+      'final message you produce when your work is done. Use notes for real signal, not to ' +
+      'narrate routine steps. Live progress (which tools you run) is tracked automatically — you ' +
+      'do not report it.',
+    inputSchema: zodSchema(noteInputSchema),
+    outputSchema: zodSchema(noteOutputSchema),
     metadata: { tanzo: { kind: 'read', component: 'SubagentCard' } },
     toModelOutput: toolResultToModelOutput,
-    execute({ phase, note, result }) {
-      if (!phase && !note && !result) {
-        return toolError('Provide a phase to report, a note to record, or a result to submit.')
-      }
-      if (phase) deps.reportTaskPhase(chatId, phase)
-      if (note) deps.addTaskNote(chatId, note)
-      if (result) deps.submitTaskResult(chatId, { summary: result })
+    execute({ note }) {
+      deps.addTaskNote(chatId, note)
       return { ok: true }
     }
   })
 }
 
-export function subagentReportTools(deps: ToolDeps, chatId: string): ToolSet {
+export function subagentNoteTools(deps: ToolDeps, chatId: string): ToolSet {
   return {
-    report: reportTool(deps, chatId)
+    note: noteTool(deps, chatId)
   }
 }

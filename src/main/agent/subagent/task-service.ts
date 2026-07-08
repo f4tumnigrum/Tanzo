@@ -26,6 +26,24 @@ const MAX_CONCURRENT_BACKGROUND = 100
 
 const MAX_CONCURRENT_PER_ROOT = 20
 
+// Human-readable progress label derived from the tool a sub-agent is running.
+// Unknown tools fall back to the tool name so new tools still render sensibly.
+const PHASE_LABELS: Record<string, string> = {
+  fileRead: 'reading files',
+  glob: 'searching files',
+  grep: 'searching code',
+  shell: 'running commands',
+  fileWrite: 'writing files',
+  fileEdit: 'editing files',
+  multiEdit: 'editing files',
+  skill: 'loading a skill',
+  note: 'noting for parent'
+}
+
+function phaseLabel(toolName: string): string {
+  return PHASE_LABELS[toolName] ?? `running ${toolName}`
+}
+
 class TaskInterrupted extends Error {
   constructor(
     readonly chatId: string,
@@ -53,9 +71,8 @@ export interface TaskService {
   cancel(rootChatId: string, taskId: string): void
   retry(rootChatId: string, taskId: string): void
   resumeByChat(chatId: string): Promise<void>
-  reportPhase(chatId: string, phase: string): void
   addNote(chatId: string, note: string): void
-  submitResult(chatId: string, result: SubagentTaskResult): void
+  waitForNote(rootChatId: string, taskId: string, signal?: AbortSignal): Promise<void>
   listApprovals(rootChatId: string): SubagentTaskApprovalView[]
   respondApproval(rootChatId: string, response: SubagentTaskApprovalResponse): Promise<void>
   cancelTree(chatId: string): void
@@ -94,6 +111,7 @@ export function createTaskService(
 
   const driverDone = new Map<string, Promise<void>>()
   const settleWaiters = new Map<string, Set<() => void>>()
+  const noteWaiters = new Map<string, Set<() => void>>()
   const approvalWaiters = new Map<string, () => void>()
   const approvalChains = new Map<string, Promise<void>>()
 
@@ -137,6 +155,18 @@ export function createTaskService(
     for (const resolve of waiters) resolve()
   }
 
+  // Soft wake: a mid-task note nudges any parent awaiting this task to return a
+  // progress snapshot without settling it. The task keeps running; the parent
+  // decides whether to keep waiting, steer, or stop. Waiters are drained (each
+  // await returns once); a parent that loops back re-registers.
+  function notifyNote(rootChatId: string, taskId: string): void {
+    const key = waiterKey(rootChatId, taskId)
+    const waiters = noteWaiters.get(key)
+    if (!waiters) return
+    noteWaiters.delete(key)
+    for (const resolve of waiters) resolve()
+  }
+
   const isTerminal = isTaskTerminal
 
   function dispatch(rootChatId: string, taskId: string, event: TaskEvent): SubagentTask | null {
@@ -147,6 +177,7 @@ export function createTaskService(
     for (const effect of result.effects) {
       if (effect.kind === 'persist') persist(result.state)
       else if (effect.kind === 'notify-settled') notifySettled(rootChatId, taskId)
+      else if (effect.kind === 'wake-note') notifyNote(rootChatId, taskId)
     }
     return result.state
   }
@@ -334,6 +365,11 @@ export function createTaskService(
     dispatch(rootChatId, taskId, { kind: 'set-phase', phase, now: Date.now() })
   }
 
+  function setPhaseByChat(chatId: string, phase: string): void {
+    const task = deps.store.tasks.getByChat(chatId)
+    if (task) setPhase(task.rootChatId, task.id, phase)
+  }
+
   async function acquireRunSlots(
     rootChatId: string,
     chatId: string,
@@ -383,6 +419,11 @@ export function createTaskService(
         runId,
         signal,
         onProgress: () => progress.signal(),
+        // Derive live progress from the sub-agent's own step activity instead of
+        // asking it to self-report: each tool it runs becomes its current phase.
+        onTrace: (entry) => {
+          if (entry.type === 'tool') setPhaseByChat(chatId, phaseLabel(entry.toolName))
+        },
         onStart: (token) => onEpoch(token.epoch)
       })
       .finally(() => progress.close())
@@ -479,15 +520,15 @@ export function createTaskService(
     const task = deps.store.tasks.get(rootChatId, taskId)
     if (!task || isTerminal(task.status)) return
 
-    const hasExplicitResult = Boolean(task.result && !task.result.failed)
-    const summary = hasExplicitResult ? task.result!.summary : lastAssistantText(messages)
-    const resultSource: 'explicit' | 'inferred' = hasExplicitResult ? 'explicit' : 'inferred'
+    // The deliverable is whatever the sub-agent's run naturally converged to:
+    // its final assistant message, passed through verbatim. No separate "submit"
+    // step and no confidence tiers — the last message is the answer.
+    const summary = lastAssistantText(messages)
 
-    if (resultSource === 'inferred' && summary.trim() === '') {
+    if (summary.trim() === '') {
       dispatch(rootChatId, taskId, {
         kind: 'fail',
-        message:
-          'Sub-agent finished without a deliverable: it never called report(result) and produced no final text.',
+        message: 'Sub-agent finished without producing any final text.',
         failureKind: 'logic-error',
         now: Date.now()
       })
@@ -496,7 +537,6 @@ export function createTaskService(
     dispatch(rootChatId, taskId, {
       kind: 'complete',
       summary,
-      resultSource,
       ...(task.notes.length > 0 ? { notes: task.notes } : {}),
       now: Date.now()
     })
@@ -686,6 +726,30 @@ export function createTaskService(
     return { summary: '' }
   }
 
+  // Resolve when the task emits a note (soft wake) OR settles OR the wait is
+  // aborted. Never rejects. The caller (await tool) re-checks task status to
+  // decide whether this was a settle or a still-running note snapshot.
+  function waitForNote(rootChatId: string, taskId: string, signal?: AbortSignal): Promise<void> {
+    const task = deps.store.tasks.get(rootChatId, taskId)
+    if (!task || isTerminal(task.status) || signal?.aborted) return Promise.resolve()
+    const key = waiterKey(rootChatId, taskId)
+    return new Promise<void>((resolve) => {
+      const waiters = noteWaiters.get(key) ?? new Set<() => void>()
+      const onWake = (): void => {
+        signal?.removeEventListener('abort', onAbort)
+        resolve()
+      }
+      const onAbort = (): void => {
+        waiters.delete(onWake)
+        if (waiters.size === 0) noteWaiters.delete(key)
+        resolve()
+      }
+      waiters.add(onWake)
+      noteWaiters.set(key, waiters)
+      signal?.addEventListener('abort', onAbort, { once: true })
+    })
+  }
+
   function cancel(rootChatId: string, taskId: string): void {
     const task = deps.store.tasks.get(rootChatId, taskId)
     if (!task || isTerminal(task.status)) return
@@ -833,30 +897,11 @@ export function createTaskService(
     cancel,
     retry,
     resumeByChat,
-    reportPhase: (chatId, phase) => {
-      const task = deps.store.tasks.getByChat(chatId)
-      if (task) setPhase(task.rootChatId, task.id, phase)
-    },
     addNote: (chatId, note) => {
       const task = deps.store.tasks.getByChat(chatId)
       if (task) dispatch(task.rootChatId, task.id, { kind: 'add-note', note, now: Date.now() })
     },
-    submitResult: (chatId, result) => {
-      const task = deps.store.tasks.getByChat(chatId)
-      if (!task || isTerminal(task.status)) return
-      // Submitting a result is terminal: complete the task now with the explicit
-      // summary (carrying any collected notes) and stop the sub-agent's run.
-      controllers.get(task.chatId)?.abort()
-      callbacks.abortRun(task.chatId)
-      callbacks.clearTransientChatState(task.chatId)
-      dispatch(task.rootChatId, task.id, {
-        kind: 'complete',
-        summary: result.summary,
-        resultSource: 'explicit',
-        ...(task.notes.length > 0 ? { notes: task.notes } : {}),
-        now: Date.now()
-      })
-    },
+    waitForNote,
     listApprovals,
     respondApproval,
     cancelTree,

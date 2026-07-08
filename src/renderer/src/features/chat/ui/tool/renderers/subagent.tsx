@@ -7,7 +7,6 @@ import {
   ChevronsUpDown,
   CircleCheckBig,
   GitBranch,
-  Info,
   ListTree,
   Pause
 } from 'lucide-react'
@@ -46,6 +45,7 @@ type AwaitOutput = {
   results: Array<{ task: string; result: SubagentTaskResult }>
   pending?: Array<string | AwaitPendingEntry>
   timedOut?: boolean
+  notedTasks?: string[]
 }
 type TasksOutput = { tasks: SubagentTask[] }
 type AckOutput =
@@ -106,7 +106,7 @@ function headerTitle(
   const input = context.input as Record<string, unknown> | undefined
   const output = context.output
   const task = stringValue(input?.task)
-  const phase = stringValue(input?.phase)
+  const note = stringValue(input?.note)
 
   if (context.shortName === 'spawn') {
     const specs = Array.isArray(input?.tasks) ? (input.tasks as Array<Record<string, unknown>>) : []
@@ -141,7 +141,7 @@ function headerTitle(
       : t('chat.tool.subagent.allTasks')
   }
 
-  if (context.shortName === 'report' && phase) return phase
+  if ((context.shortName === 'note' || context.shortName === 'report') && note) return note
   if (task) return task
   return t('chat.tool.subagent.run')
 }
@@ -221,7 +221,10 @@ function SubagentOutputComp({ context }: { context: ToolRenderContext }): React.
           ))
         )}
         {output.pending && output.pending.length > 0 ? (
-          <AwaitPendingList entries={normalizePending(output.pending)} />
+          <AwaitPendingList
+            entries={normalizePending(output.pending)}
+            notedTasks={output.notedTasks ?? []}
+          />
         ) : null}
       </div>
     )
@@ -287,12 +290,8 @@ function ackText(
       : t('chat.tool.subagent.ack.instructed')
   }
   if ('cancelled' in output) return t('chat.tool.subagent.ack.cancelled')
-  const input = context.input as Record<string, unknown> | undefined
-  if (context.shortName === 'report') {
-    if (stringValue(input?.result)) return t('chat.tool.subagent.ack.resultSubmitted')
-    if (stringValue(input?.note)) return t('chat.tool.subagent.ack.noteReported')
-    return t('chat.tool.subagent.ack.phaseReported')
-  }
+  if (context.shortName === 'note' || context.shortName === 'report')
+    return t('chat.tool.subagent.ack.noteReported')
   return t('chat.tool.subagent.acked')
 }
 
@@ -355,7 +354,7 @@ function ResultBlock({
   }
   return (
     <div className="space-y-1.5">
-      {hideLabel ? null : <ResultLabel task={task} inferred={result.resultSource === 'inferred'} />}
+      {hideLabel ? null : <ResultLabel task={task} />}
       <ToolScrollPanel tone="subtle" maxHeight={PANEL_HEIGHT_XL} contentClassName="px-2.5 py-2">
         <Response
           content={result.summary || ''}
@@ -434,10 +433,8 @@ function ResultMenuItem({
   active: boolean
   onSelect: () => void
 }): React.JSX.Element {
-  const { t } = useTranslation()
   const { task, result } = entry
   const { Icon, tone } = resultGlyph(result)
-  const inferred = !result.failed && result.resultSource === 'inferred'
 
   return (
     <DropdownMenuItem
@@ -452,12 +449,6 @@ function ResultMenuItem({
         aria-hidden="true"
       />
       <span className="min-w-0 flex-1 truncate">{task}</span>
-      {inferred ? (
-        <Info
-          className="size-2.5 shrink-0 text-muted-foreground/45"
-          aria-label={t('chat.tool.subagent.inferred')}
-        />
-      ) : null}
       {active ? <Check className="size-3 shrink-0 text-foreground/60" aria-hidden="true" /> : null}
     </DropdownMenuItem>
   )
@@ -472,12 +463,10 @@ function resultGlyph(result: SubagentTaskResult): {
 
 function ResultLabel({
   task,
-  failed = false,
-  inferred = false
+  failed = false
 }: {
   task: string
   failed?: boolean
-  inferred?: boolean
 }): React.JSX.Element {
   const { t } = useTranslation()
   return (
@@ -486,15 +475,6 @@ function ResultLabel({
         text={failed ? t('chat.tool.subagent.resultFailed') : t('chat.tool.subagent.result')}
       />
       <ToolMetaChip text={task} tone={failed ? 'danger' : 'info'} />
-      {inferred ? (
-        <span
-          className="ml-auto flex shrink-0 items-center gap-0.5 text-[0.5625rem] text-muted-foreground/40"
-          title={t('chat.tool.subagent.resultInferred')}
-        >
-          <Info className="size-2.5" aria-hidden="true" />
-          {t('chat.tool.subagent.inferred')}
-        </span>
-      ) : null}
     </div>
   )
 }
@@ -733,13 +713,26 @@ function normalizePending(pending: Array<string | AwaitPendingEntry>): AwaitPend
   )
 }
 
-function AwaitPendingList({ entries }: { entries: AwaitPendingEntry[] }): React.JSX.Element {
+function AwaitPendingList({
+  entries,
+  notedTasks = []
+}: {
+  entries: AwaitPendingEntry[]
+  notedTasks?: string[]
+}): React.JSX.Element {
   const { t } = useTranslation()
+  const noted = new Set(notedTasks)
+  const anyNoted = entries.some((entry) => noted.has(entry.task))
   return (
     <div className="space-y-1">
-      <SubagentSectionLabel text={t('chat.tool.subagent.stillRunning')} />
+      <SubagentSectionLabel
+        text={t(
+          anyNoted ? 'chat.tool.subagent.noteFromSubagent' : 'chat.tool.subagent.stillRunning'
+        )}
+      />
       {entries.map((entry) => {
         const { Icon, tone, spin } = taskStatusGlyph(entry.status)
+        const justNoted = noted.has(entry.task)
         return (
           <div key={entry.task} className="space-y-0.5 px-0.5">
             <div className="flex min-w-0 items-center gap-1.5 text-[0.6875rem]">
@@ -759,7 +752,12 @@ function AwaitPendingList({ entries }: { entries: AwaitPendingEntry[] }): React.
               ) : null}
             </div>
             {entry.latestNote ? (
-              <p className="min-w-0 truncate pl-[1.125rem] text-[0.625rem] text-muted-foreground/70">
+              <p
+                className={cn(
+                  'min-w-0 truncate pl-[1.125rem] text-[0.625rem]',
+                  justNoted ? 'font-medium text-foreground/75' : 'text-muted-foreground/70'
+                )}
+              >
                 {entry.latestNote}
               </p>
             ) : null}

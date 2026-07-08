@@ -135,6 +135,71 @@ describe('main/agent/store', () => {
     await expect(store.load(conversation.id)).resolves.toEqual([])
   })
 
+  it('clearMessages wipes messages but keeps the conversation', async () => {
+    const db = createRealDb()
+    const store = createAgentStore(db, identity(), logger(), root)
+    const conversation = store.createConversation({})
+    store.save(conversation.id, [textMessage('m1', 'Hello'), textMessage('m2', 'World')])
+
+    store.clearMessages(conversation.id)
+
+    expect(store.getConversation(conversation.id)).toBeDefined()
+    await expect(store.load(conversation.id)).resolves.toEqual([])
+  })
+
+  it('updateConversationCwd switches the workspace and registers it', async () => {
+    const db = createRealDb()
+    const store = createAgentStore(db, identity(), logger(), root)
+    const conversation = store.createConversation({})
+    const otherRoot = await realpath(await mkdtemp(join(tmpdir(), 'tanzo-agent-store-alt-')))
+
+    const updated = store.updateConversationCwd(conversation.id, otherRoot)
+
+    expect(updated.cwd).toBe(otherRoot)
+    expect(updated.workspaceName).toBe(basename(otherRoot))
+    expect(updated.workspaceId).not.toBe(conversation.workspaceId)
+    // Persisted on the conversation row.
+    expect(store.getConversation(conversation.id)?.cwd).toBe(otherRoot)
+    // The new workspace is registered and listable for switching.
+    expect(store.listWorkspaces()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: updated.workspaceId, rootPath: otherRoot })
+      ])
+    )
+    await rm(otherRoot, { recursive: true, force: true })
+  })
+
+  it('updateConversationCwd rejects a non-existent directory', () => {
+    const store = createAgentStore(createRealDb(), identity(), logger(), root)
+    const conversation = store.createConversation({})
+    expect(() => store.updateConversationCwd(conversation.id, join(root, 'nope'))).toThrow(
+      TanzoValidationError
+    )
+  })
+
+  it('switchConversationWorkspace reuses an existing workspace id without a root_path conflict', async () => {
+    const db = createRealDb()
+    const store = createAgentStore(db, identity(), logger(), root)
+    // A workspace whose id is a custom value, not the cwd-derived hash.
+    const target = await realpath(await mkdtemp(join(tmpdir(), 'tanzo-agent-store-custom-')))
+    const owner = store.createConversation({ workspaceId: 'ws_custom_id', cwd: target })
+    const conversation = store.createConversation({})
+
+    const updated = store.switchConversationWorkspace(
+      conversation.id,
+      owner.workspaceId,
+      owner.workspaceName,
+      target
+    )
+
+    expect(updated.workspaceId).toBe('ws_custom_id')
+    expect(updated.cwd).toBe(target)
+    expect(store.getConversation(conversation.id)?.workspaceId).toBe('ws_custom_id')
+    // No duplicate workspace row was created for the same root_path.
+    expect(store.listWorkspaces().filter((ws) => ws.rootPath === target)).toHaveLength(1)
+    await rm(target, { recursive: true, force: true })
+  })
+
   it('drops empty messages and assigns stable seqs before the next save', async () => {
     const db = createRealDb()
     const store = createAgentStore(db, identity(), logger(), root)
@@ -243,10 +308,7 @@ describe('main/agent/store', () => {
       parentConversationId: conversation.id,
       parentRelation: 'fork'
     })
-    await expect(store.loadFullHistory(result.conversation.id)).resolves.toEqual([
-      user,
-      assistant
-    ])
+    await expect(store.loadFullHistory(result.conversation.id)).resolves.toEqual([user, assistant])
     // The fork also carries the source's compaction overlay: the context
     // projection is the summary (both archived rows are covered by it).
     await expect(store.load(result.conversation.id)).resolves.toEqual([
@@ -273,10 +335,7 @@ describe('main/agent/store', () => {
 
     expect(result.conversation.parentConversationId).toBe(parent.id)
     expect(result.conversation.parentRelation).toBe('fork')
-    await expect(store.load(result.conversation.id)).resolves.toEqual([
-      branchUser,
-      branchAssistant
-    ])
+    await expect(store.load(result.conversation.id)).resolves.toEqual([branchUser, branchAssistant])
   })
 
   it('rejects invalid fork targets', async () => {
@@ -394,11 +453,7 @@ describe('main/agent/store', () => {
     const summary = summaryMessage('summary')
 
     store.save(conversation.id, [first, second, assistant, tail])
-    store.finalizeCompaction(conversation.id, ['m1', 'm2'], 'summary', [
-      summary,
-      assistant,
-      tail
-    ])
+    store.finalizeCompaction(conversation.id, ['m1', 'm2'], 'summary', [summary, assistant, tail])
 
     const fork = (
       await store.forkConversation({ sourceChatId: conversation.id, messageId: assistant.id })

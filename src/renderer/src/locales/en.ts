@@ -295,7 +295,15 @@ export const en = {
           descriptions: {
             compact: 'Compact the conversation context',
             goal: 'Set, change, or clear an autonomous goal',
-            agent: 'Switch the current conversation agent'
+            agent: 'Switch the current conversation agent',
+            status: 'Show goal and run status',
+            stop: 'Stop the in-progress task',
+            approve: 'Approve the pending action',
+            deny: 'Deny the pending action',
+            clear: 'Clear the current conversation history',
+            rename: 'Rename the current conversation',
+            workspace: 'List or switch the current workspace',
+            help: 'List the available commands'
           },
           subcommands: {
             goal: {
@@ -640,7 +648,8 @@ export const en = {
             tasks: 'Checked on',
             steer: 'Redirected',
             cancel: 'Stopped',
-            report: 'Reported'
+            note: 'Noted',
+            report: 'Noted'
           },
           status: {
             pending: 'Pending',
@@ -655,9 +664,7 @@ export const en = {
             instructed: 'Instruction sent.',
             redefined: 'Objective replaced.',
             cancelled: 'Subagent stopped.',
-            phaseReported: 'Phase updated.',
-            noteReported: 'Note recorded.',
-            resultSubmitted: 'Result submitted.'
+            noteReported: 'Note recorded.'
           },
           noTasks: 'No subagents yet.',
           allTasks: 'All subagents',
@@ -672,9 +679,7 @@ export const en = {
           blockedApproval: 'Waiting for approval.',
           awaitPending: 'Still running: {{tasks}}.',
           stillRunning: 'Still running',
-          inferred: 'inferred',
-          resultInferred:
-            'Result inferred from last assistant text — sub-agent did not call report().',
+          noteFromSubagent: 'Note from subagent',
           errors: {
             taskFailed: 'Subagent failed.'
           }
@@ -695,8 +700,7 @@ export const en = {
         steerSend: 'Send',
         openTranscript: 'Open transcript',
         readOnly: 'Read-only',
-        emptyTranscript: 'No activity yet.',
-        activity: 'Activity'
+        emptyTranscript: 'No activity yet.'
       },
       goal: {
         pause: 'Pause goal',
@@ -1530,7 +1534,7 @@ export const en = {
           tasks: 'Inspect sub-agent task status.',
           steer: 'Adjust a running sub-agent task.',
           cancel: 'Cancel a sub-agent task.',
-          report: 'Sub-agents deliver progress and results through this.',
+          note: 'Sub-agents send the parent a mid-task note through this.',
           exitPlanMode: 'Presents the plan for approval and exits plan mode.'
         }
       },

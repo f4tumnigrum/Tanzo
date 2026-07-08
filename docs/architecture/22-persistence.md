@@ -32,7 +32,7 @@ There is a single module, `tanzoMigrations` (moduleName `'tanzo'`, `database/sch
 `src/main/index.ts` (`migrations: [tanzoMigrations]`) — the only module registered. Its files start at v1
 `initial_schema` (the v2–v18 gap reflects a flattened history: the initial schema already contains everything
 through v18) and continue through incremental migrations up to v28 `subagent_task_notes` (adds
-`subagent_tasks.notes_json` for the sub-agent `report({note})` channel).
+`subagent_tasks.notes_json` for the sub-agent `note({note})` channel).
 
 ## 3. Tables and ownership
 

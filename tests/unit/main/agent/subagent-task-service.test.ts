@@ -338,7 +338,6 @@ describe('agent/subagent/task-service', () => {
       expect(tasks.get(spawned.id)?.status).toBe('done')
     })
     expect(tasks.get(spawned.id)?.result?.summary).toBe('verified: all green')
-    expect(tasks.get(spawned.id)?.result?.resultSource).toBe('inferred')
   })
 
   it('respects the per-root concurrency cap and starts queued work as slots free up', async () => {
@@ -459,9 +458,9 @@ describe('agent/subagent/task-service', () => {
     expect(tasks.get(spawned.id)?.result).toBeUndefined()
   })
 
-  it('fails a task that finishes with an empty inferred deliverable', async () => {
-    // Stream pass succeeds but the transcript has no assistant text and the
-    // sub-agent never called report(result).
+  it('fails a task that finishes without any final assistant text', async () => {
+    // Stream pass succeeds but the transcript has no assistant text, so there is
+    // no deliverable to hand back to the parent.
     let transcript: unknown[] = []
     const load = vi.fn(async () => transcript)
     const save = vi.fn((_chatId: string, messages: unknown[]) => {
@@ -485,7 +484,7 @@ describe('agent/subagent/task-service', () => {
     const result = tasks.get(spawned.id)?.result
     expect(result?.failed).toBe(true)
     expect(result?.failureKind).toBe('logic-error')
-    expect(result?.errorMessage).toContain('without a deliverable')
+    expect(result?.errorMessage).toContain('without producing any final text')
   })
 
   it('cancels a task without recursively cancelling itself forever', () => {
@@ -877,8 +876,8 @@ describe('agent/subagent/task-service', () => {
     expect(callbacks.startChatRun).not.toHaveBeenCalled()
   })
 
-  it('submitResult completes the task immediately and stops its run', async () => {
-    const { service, tasks, callbacks } = createHarness()
+  it('addNote wakes a parent that is waiting on the task, without settling it', async () => {
+    const { service, tasks } = createHarness()
     const spawned = service.spawn({
       parentChatId: 'root-chat',
       objective: 'inspect',
@@ -886,76 +885,62 @@ describe('agent/subagent/task-service', () => {
     })
     expect(tasks.get(spawned.id)?.status).toBe('running')
 
-    service.submitResult(spawned.chatId, { summary: 'final findings' })
-
-    const settled = tasks.get(spawned.id)
-    expect(settled?.status).toBe('done')
-    expect(settled?.result).toMatchObject({ summary: 'final findings', resultSource: 'explicit' })
-    expect(callbacks.abortRun).toHaveBeenCalledWith(spawned.chatId)
-    // An already-settled awaiter resolves with the explicit result.
-    await expect(service.await('root-chat', spawned.id)).resolves.toMatchObject({
-      summary: 'final findings',
-      resultSource: 'explicit'
+    // A parent parks on waitForNote; the note must resolve it while the task
+    // stays running (soft wake), so the parent can inspect and keep waiting.
+    const woke = service.waitForNote('root-chat', spawned.id)
+    let resolved = false
+    void woke.then(() => {
+      resolved = true
     })
+    service.addNote(spawned.chatId, 'found a surprise')
+    await woke
+    expect(resolved).toBe(true)
+    expect(tasks.get(spawned.id)?.status).toBe('running')
+    expect(tasks.get(spawned.id)?.notes.map((n) => n.text)).toEqual(['found a surprise'])
   })
 
-  it('submitResult carries collected notes into the final result', () => {
+  it('waitForNote on an already-terminal task resolves immediately', async () => {
     const { service, tasks } = createHarness()
     const spawned = service.spawn({
       parentChatId: 'root-chat',
       objective: 'inspect',
       agentType: 'explore'
     })
+    service.cancel('root-chat', spawned.id)
+    expect(tasks.get(spawned.id)?.status).toBe('cancelled')
+    // Must not hang: a terminal task can never emit a note.
+    await expect(service.waitForNote('root-chat', spawned.id)).resolves.toBeUndefined()
+  })
+
+  it('carries collected notes into the result when the run completes naturally', async () => {
+    let transcript: unknown[] = []
+    const load = vi.fn(async () => transcript)
+    const save = vi.fn((_chatId: string, messages: unknown[]) => {
+      transcript = messages
+    })
+    const startChatRun = vi.fn(async () => {
+      transcript = [
+        { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'objective' }] },
+        { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'final findings' }] }
+      ]
+      return { aborted: false, streamFailed: false }
+    })
+    const { service, tasks } = createHarness({ startChatRun, load, save })
+
+    const spawned = service.spawn({
+      parentChatId: 'root-chat',
+      objective: 'inspect',
+      agentType: 'explore'
+    })
     service.addNote(spawned.chatId, 'found a surprise')
-    service.submitResult(spawned.chatId, { summary: 'done' })
 
-    const settled = tasks.get(spawned.id)
-    expect(settled?.result?.notes).toEqual([expect.objectContaining({ text: 'found a surprise' })])
-  })
-
-  it('submitResult completes an approval-blocked task and clears its block', () => {
-    const { service, tasks, callbacks } = createHarness()
-    const spawned = service.spawn({
-      parentChatId: 'root-chat',
-      objective: 'inspect',
-      agentType: 'explore'
+    await vi.waitFor(() => {
+      expect(tasks.get(spawned.id)?.status).toBe('done')
     })
-    // Simulate the driver having surfaced an approval block.
-    tasks.set(spawned.id, {
-      ...tasks.get(spawned.id)!,
-      status: 'blocked',
-      block: {
-        kind: 'approval',
-        approvals: [{ approvalId: 'a1', toolName: 'shell', input: {} }]
-      }
-    })
-
-    service.submitResult(spawned.chatId, { summary: 'answered before approval' })
-
-    const settled = tasks.get(spawned.id)
-    expect(settled?.status).toBe('done')
-    expect(settled?.block).toBeUndefined()
-    expect(settled?.result).toMatchObject({
-      summary: 'answered before approval',
-      resultSource: 'explicit'
-    })
-    expect(callbacks.abortRun).toHaveBeenCalledWith(spawned.chatId)
-  })
-
-  it('submitResult on a terminal task is a no-op', () => {
-    const { service, tasks, callbacks } = createHarness()
-    const spawned = service.spawn({
-      parentChatId: 'root-chat',
-      objective: 'inspect',
-      agentType: 'explore'
-    })
-    service.submitResult(spawned.chatId, { summary: 'first' })
-    callbacks.abortRun.mockClear()
-
-    service.submitResult(spawned.chatId, { summary: 'second' })
-
-    expect(tasks.get(spawned.id)?.result?.summary).toBe('first')
-    expect(callbacks.abortRun).not.toHaveBeenCalled()
+    expect(tasks.get(spawned.id)?.result?.summary).toBe('final findings')
+    expect(tasks.get(spawned.id)?.result?.notes).toEqual([
+      expect.objectContaining({ text: 'found a surprise' })
+    ])
   })
 
   it('addNote appends to the task and is cleared on redefine', async () => {

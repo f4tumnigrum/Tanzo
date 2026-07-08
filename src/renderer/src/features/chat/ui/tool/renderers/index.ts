@@ -28,6 +28,9 @@ toolRendererRegistry.registerMany({
   tasks: subagentRenderer,
   steer: subagentRenderer,
   cancel: subagentRenderer,
+  note: subagentRenderer,
+  // Back-compat: historical conversations persist tool-call parts keyed `report`
+  // (the sub-agent note tool's former name). Keep the mapping so they still render.
   report: subagentRenderer,
   todo: todoRenderer,
   updateGoal: goalRenderer,

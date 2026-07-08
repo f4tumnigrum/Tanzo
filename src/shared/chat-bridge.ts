@@ -2,6 +2,25 @@ export type ChannelId = 'qq' | 'wechat' | 'lark' | 'discord'
 
 export const CHANNEL_IDS: readonly ChannelId[] = ['qq', 'wechat', 'lark', 'discord'] as const
 
+/** A workspace a channel conversation can switch to via `/workspace`. */
+export interface ChannelWorkspaceOption {
+  id: string
+  name: string
+  rootPath: string
+  isCurrent: boolean
+}
+
+/** The switchable workspaces plus the conversation's current one. */
+export interface ChannelWorkspaceView {
+  workspaces: ChannelWorkspaceOption[]
+  currentName: string | undefined
+}
+
+/** Result of a `/workspace <selector>` switch attempt. */
+export type ChannelWorkspaceSwitch =
+  | { ok: true; name: string }
+  | { ok: false; reason: 'no_conversation' | 'not_found' | 'already_current' }
+
 export interface ChannelMeta {
   id: ChannelId
 

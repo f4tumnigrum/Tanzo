@@ -320,7 +320,6 @@ const subagentTaskResultSchema = z.object({
   summary: z.string(),
   failed: z.boolean().optional(),
   errorMessage: z.string().optional(),
-  resultSource: z.enum(['explicit', 'inferred']).optional(),
   failureKind: z.enum(['app-restart', 'logic-error', 'await-cancelled']).optional(),
   failedDependencyId: z.string().optional(),
   notes: z.array(subagentTaskNoteSchema).optional()
@@ -440,7 +439,8 @@ export const awaitOutputSchema = z.union([
     pending: z.array(subagentPendingViewSchema).optional(),
 
     unknown: z.array(z.string()).optional(),
-    timedOut: z.boolean().optional()
+    timedOut: z.boolean().optional(),
+    notedTasks: z.array(z.string()).optional()
   }),
   toolErrorSchema
 ])
@@ -503,38 +503,23 @@ export const cancelTaskOutputSchema = z.union([
   toolErrorSchema
 ])
 
-export const reportInputSchema = z
+export const noteInputSchema = z
   .object({
-    phase: z
-      .string()
-      .min(1)
-      .max(120)
-      .optional()
-      .describe(
-        'Short label for the step you are starting. Shown live in the UI; the parent sees your ' +
-          'latest phase only when it inspects or awaits you.'
-      ),
     note: z
       .string()
       .min(1)
       .max(2000)
-      .optional()
       .describe(
-        'A mid-task finding the parent should know now (e.g. a surprise, a fork in approach). ' +
-          'Surfaced to the parent via await; use for signal, not for narrating every step.'
-      ),
-    result: z
-      .string()
-      .min(1)
-      .optional()
-      .describe(
-        'Concise, self-contained final deliverable for the parent. Submitting this ends your ' +
-          'run immediately and returns to the parent — call it once you have the answer, then stop.'
+        'A mid-task finding the parent should know now — a surprise, a fork in approach, a ' +
+          'blocker, or a partial result worth acting on early. Sending a note immediately wakes ' +
+          'the parent if it is awaiting you, handing it this note and your current progress. Use ' +
+          'it for genuine signal, not to narrate routine steps. This does not end your run; your ' +
+          'deliverable is still the final message you produce when your work is done.'
       )
   })
   .strict()
 
-export const reportOutputSchema = z.union([z.object({ ok: z.literal(true) }), toolErrorSchema])
+export const noteOutputSchema = z.union([z.object({ ok: z.literal(true) }), toolErrorSchema])
 
 export const skillInputSchema = z
   .object({

@@ -8,7 +8,7 @@ import type {
 import type { TanzoDataParts, TanzoUIMessage } from '@shared/agent-message'
 import { TanzoError } from '@shared/errors'
 import { applyApprovalResponses } from '@shared/approval-responses'
-import { deriveStatus, type ThreadGoal } from '@shared/goal'
+import { deriveStatus, GOAL_COMMAND_KEYS, parseGoalCommand, type ThreadGoal } from '@shared/goal'
 import i18n from '@/i18n'
 import { chatClient } from '@/platform/electron/chat-client'
 import { goalClient } from '@/platform/electron/goal-client'
@@ -471,37 +471,41 @@ function createChatSession(chatId: string): ChatSession & {
   }
 
   const goalCommand = async (args: string): Promise<string> => {
-    const trimmed = args.trim()
-    const lower = trimmed.toLowerCase()
-    if (!trimmed) {
-      const current = await goalClient.get(chatId)
-      return current
-        ? i18n.t('chat.goal.command.current', {
-            objective: current.objective,
-            status: deriveStatus(current)
+    const intent = parseGoalCommand(args)
+    switch (intent.op) {
+      case 'show': {
+        const current = await goalClient.get(chatId)
+        return current
+          ? i18n.t(GOAL_COMMAND_KEYS.current, {
+              objective: current.objective,
+              status: deriveStatus(current)
+            })
+          : i18n.t(GOAL_COMMAND_KEYS.none)
+      }
+      case 'clear':
+        await goalClient.clear(chatId)
+        sidecar.setState({ goal: null })
+        return i18n.t(GOAL_COMMAND_KEYS.cleared)
+      case 'pause':
+        sidecar.setState({ goal: toGoalView(await goalClient.setStatus(chatId, 'paused')) })
+        return i18n.t(GOAL_COMMAND_KEYS.paused)
+      case 'resume':
+        sidecar.setState({ goal: toGoalView(await goalClient.setStatus(chatId, 'active')) })
+        return i18n.t(GOAL_COMMAND_KEYS.resumed)
+      case 'set': {
+        const existing = await goalClient.get(chatId)
+        if (existing) {
+          sidecar.setState({
+            goal: toGoalView(await goalClient.updateObjective(chatId, intent.objective))
           })
-        : i18n.t('chat.goal.command.none')
+          return i18n.t(GOAL_COMMAND_KEYS.objectiveUpdated)
+        }
+        sidecar.setState({
+          goal: toGoalView(await goalClient.create(chatId, { objective: intent.objective }))
+        })
+        return i18n.t(GOAL_COMMAND_KEYS.set)
+      }
     }
-    if (lower === 'clear') {
-      await goalClient.clear(chatId)
-      sidecar.setState({ goal: null })
-      return i18n.t('chat.goal.command.cleared')
-    }
-    if (lower === 'pause') {
-      sidecar.setState({ goal: toGoalView(await goalClient.setStatus(chatId, 'paused')) })
-      return i18n.t('chat.goal.command.paused')
-    }
-    if (lower === 'resume') {
-      sidecar.setState({ goal: toGoalView(await goalClient.setStatus(chatId, 'active')) })
-      return i18n.t('chat.goal.command.resumed')
-    }
-    const existing = await goalClient.get(chatId)
-    if (existing) {
-      sidecar.setState({ goal: toGoalView(await goalClient.updateObjective(chatId, trimmed)) })
-      return i18n.t('chat.goal.command.objectiveUpdated')
-    }
-    sidecar.setState({ goal: toGoalView(await goalClient.create(chatId, { objective: trimmed })) })
-    return i18n.t('chat.goal.command.set')
   }
 
   return {

@@ -38,8 +38,8 @@ const mocks = vi.hoisted(() => {
     instructTask: vi.fn(async () => undefined),
     redefineTask: vi.fn(async () => undefined),
     cancelTask: vi.fn(),
-    reportTaskPhase: vi.fn(),
-    submitTaskResult: vi.fn()
+    addTaskNote: vi.fn(),
+    waitForNoteTask: vi.fn(async () => undefined)
   }
   const unregisterIpc = vi.fn()
   let identityOptions: { defaultModelRef(): string } | undefined

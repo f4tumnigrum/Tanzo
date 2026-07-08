@@ -170,6 +170,7 @@ export type TanzoTools = {
           pending?: SubagentTaskPendingWire[]
           unknown?: string[]
           timedOut?: boolean
+          notedTasks?: string[]
         }
       | ToolError
   }
@@ -185,8 +186,8 @@ export type TanzoTools = {
     input: { task: string }
     output: { cancelled: true } | ToolError
   }
-  report: {
-    input: { phase?: string; note?: string; result?: string }
+  note: {
+    input: { note: string }
     output: { ok: true } | ToolError
   }
   skill: {

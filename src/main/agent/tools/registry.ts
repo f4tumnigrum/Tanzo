@@ -9,7 +9,7 @@ import { mcpTools, normalizeMcpToolPattern } from './mcp'
 import { providerTools } from './provider'
 import { skillTool } from './skill'
 import { shellBackgroundTools } from './shell-background'
-import { subagentReportTools } from './subagent-control'
+import { subagentNoteTools } from './subagent-control'
 import { subagentTools, type SubagentType } from './subagent'
 import { goalTools } from './goal'
 import { todoTool } from './todo'
@@ -41,7 +41,7 @@ const READ_ONLY_SUBAGENT_TOOLS = new Set([
   'skill',
   'await',
   'tasks',
-  'report',
+  'note',
   'shellPoll',
   'shellList',
   'web_search'
@@ -108,7 +108,7 @@ export function createBuildTools(deps: ToolDeps): BuildTools {
       ...(isMainAgent ? { askQuestion: askQuestionTool(deps, chatId) } : {}),
       ...shellBackgroundTools(deps, chatId),
       ...(canDelegate ? subagentTools(deps, chatId, subAgentTypes) : {}),
-      ...(isSubagent ? subagentReportTools(deps, chatId) : {}),
+      ...(isSubagent ? subagentNoteTools(deps, chatId) : {}),
       ...(isMainAgent ? goalTools(deps, chatId, context.runId) : {}),
       ...(shouldIncludeExitPlanMode ? { exitPlanMode: exitPlanModeTool() } : {})
     }

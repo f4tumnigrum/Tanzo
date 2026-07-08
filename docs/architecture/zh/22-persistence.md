@@ -20,7 +20,7 @@ temp_store   = MEMORY
 
 `database/migrations.ts` 维护注册表 `_tanzo_migrations(module, version, name, applied_at)`。每个 `ModuleMigrations` 按模块、按版本追踪；每条迁移的 `up(db)` 在事务内运行并插入 applied 行，版本须严格递增。
 
-只有一个模块 `tanzoMigrations`（moduleName `'tanzo'`，`database/schema.ts`），在 `src/main/index.ts`（`migrations: [tanzoMigrations]`）接线——唯一注册的模块。其文件自 v1 `initial_schema` 起（v2–v18 缺口反映扁平化历史：初始 schema 已含至 v18 的一切），经增量迁移至 v28 `subagent_task_notes`（为子代理 `report({note})` 通道新增 `subagent_tasks.notes_json` 列）。
+只有一个模块 `tanzoMigrations`（moduleName `'tanzo'`，`database/schema.ts`），在 `src/main/index.ts`（`migrations: [tanzoMigrations]`）接线——唯一注册的模块。其文件自 v1 `initial_schema` 起（v2–v18 缺口反映扁平化历史：初始 schema 已含至 v18 的一切），经增量迁移至 v28 `subagent_task_notes`（为子代理 `note({note})` 通道新增 `subagent_tasks.notes_json` 列）。
 
 ## 3. 表与归属
 

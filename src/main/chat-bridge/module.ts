@@ -1,7 +1,10 @@
 import type { IpcMain } from 'electron'
 import type { PermissionMode } from '@shared/policy'
 import type { TanzoUIMessage } from '@shared/agent-message'
-import type { ChatApprovalResponse, QuestionReply } from '@shared/chat'
+import type { ChatApprovalResponse, CompactionOutcome, QuestionReply } from '@shared/chat'
+import type { SlashCommandDef } from '@shared/slash-command'
+import type { GoalCommandResult } from '@shared/goal'
+import type { ChannelWorkspaceSwitch, ChannelWorkspaceView } from '@shared/chat-bridge'
 import { createSecretCodec } from '../provider/secret'
 import { createLogger } from '../logger'
 import { createChatBridgeStore } from './store'
@@ -17,6 +20,15 @@ export interface ChatBridgeAgentPort {
   isRunning(chatId: string): boolean
   loadConversationMessages(chatId: string): TanzoUIMessage[]
   setPermissionMode(chatId: string, mode: PermissionMode): void
+  listChannelCommands(chatId: string): SlashCommandDef[]
+  compact(chatId: string): Promise<CompactionOutcome>
+  goalCommand(chatId: string, args: string): GoalCommandResult
+  status(chatId: string): string
+  cancel(chatId: string): void
+  clearConversation(chatId: string): void
+  renameConversation(chatId: string, title: string): string | undefined
+  listChannelWorkspaces(chatId: string): ChannelWorkspaceView
+  setChannelWorkspace(chatId: string, selector: string): ChannelWorkspaceSwitch
 }
 
 export interface CreateChatBridgeModuleOptions {
@@ -60,7 +72,16 @@ export function createChatBridgeModule(options: CreateChatBridgeModuleOptions): 
       options.agent.answerQuestion(chatId, questionId, reply),
     isRunning: (chatId) => options.agent.isRunning(chatId),
     loadMessages: async (chatId) => options.agent.loadConversationMessages(chatId),
-    setPermissionMode: (chatId, mode) => options.agent.setPermissionMode(chatId, mode)
+    setPermissionMode: (chatId, mode) => options.agent.setPermissionMode(chatId, mode),
+    listChannelCommands: (chatId) => options.agent.listChannelCommands(chatId),
+    compact: (chatId) => options.agent.compact(chatId),
+    goalCommand: (chatId, args) => options.agent.goalCommand(chatId, args),
+    status: (chatId) => options.agent.status(chatId),
+    cancel: (chatId) => options.agent.cancel(chatId),
+    clearConversation: (chatId) => options.agent.clearConversation(chatId),
+    renameConversation: (chatId, title) => options.agent.renameConversation(chatId, title),
+    listChannelWorkspaces: (chatId) => options.agent.listChannelWorkspaces(chatId),
+    setChannelWorkspace: (chatId, selector) => options.agent.setChannelWorkspace(chatId, selector)
   }
 
   let serviceRef: ChatBridgeService | null = null

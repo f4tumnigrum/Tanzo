@@ -70,7 +70,7 @@ export const TOOL_CATALOG: readonly ToolCategoryDef[] = [
   },
   {
     id: 'core',
-    tools: [entry('report', 'core', true, true), entry('exitPlanMode', 'core', false, true)]
+    tools: [entry('note', 'core', true, true), entry('exitPlanMode', 'core', false, true)]
   }
 ]
 

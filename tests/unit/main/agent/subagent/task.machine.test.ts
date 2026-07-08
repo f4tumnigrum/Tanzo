@@ -59,10 +59,10 @@ describe('agent/subagent/task.machine', () => {
     expect(cleared.state.block).toBeUndefined()
   })
 
-  it('appends notes while active and ignores them once terminal', () => {
+  it('appends notes while active (waking awaiters) and ignores them once terminal', () => {
     const active = taskTransition(task(), { kind: 'add-note', note: 'found a surprise', now: 4 })
     expect(active.state.notes).toEqual([{ text: 'found a surprise', at: 4 }])
-    expect(active.effects).toEqual([{ kind: 'persist' }])
+    expect(active.effects).toEqual([{ kind: 'persist' }, { kind: 'wake-note' }])
 
     const done = task({ status: 'done' })
     const ignored = taskTransition(done, { kind: 'add-note', note: 'late', now: 9 })
@@ -75,13 +75,11 @@ describe('agent/subagent/task.machine', () => {
     const completed = taskTransition(withNotes, {
       kind: 'complete',
       summary: 'done',
-      resultSource: 'explicit',
       notes: withNotes.notes,
       now: 9
     })
     expect(completed.state.result).toEqual({
       summary: 'done',
-      resultSource: 'explicit',
       notes: [{ text: 'n1', at: 2 }]
     })
 
@@ -160,23 +158,6 @@ describe('agent/subagent/task.machine', () => {
       { name: 'reading', at: 2 },
       { name: 'writing', at: 4 }
     ])
-  })
-
-  it('ignores a late set-result after the task reached a terminal state', () => {
-    const done = task({ status: 'done', result: { summary: 'final', resultSource: 'inferred' } })
-    const result = taskTransition(done, {
-      kind: 'set-result',
-      result: { summary: 'late overwrite' }
-    })
-    expect(result.state).toBe(done)
-    expect(result.effects).toEqual([])
-    expect(done.result).toEqual({ summary: 'final', resultSource: 'inferred' })
-  })
-
-  it('applies set-result while the task is still running', () => {
-    const result = taskTransition(task(), { kind: 'set-result', result: { summary: 'progress' } })
-    expect(result.state.result).toEqual({ summary: 'progress' })
-    expect(result.effects).toEqual([{ kind: 'persist' }])
   })
 
   it('exposes a terminal predicate matching done/failed/cancelled', () => {

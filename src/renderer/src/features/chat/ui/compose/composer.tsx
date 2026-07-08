@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from 'react'
 import type { FileUIPart } from 'ai'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { expandTemplate, isSlashCommandAvailable, parseSlashInput } from '@shared/slash-command'
+import { isSlashCommandAvailable, resolveSlashInvocation } from '@shared/slash-command'
 import type { PermissionMode } from '@shared/policy'
 import { useAgents, usePolicyMode, useConversations } from '../../model/queries'
 import {
@@ -134,12 +134,10 @@ export function Composer({ chatId }: ComposerProps): React.JSX.Element {
       const trimmed = text.trim()
       if (!trimmed && (!files || files.length === 0)) return
 
-      const parsed = parseSlashInput(trimmed)
-      const command = parsed
-        ? slashCommands.find((candidate) => candidate.name === parsed.name)
-        : undefined
+      const invocation = resolveSlashInvocation(trimmed, slashCommands)
 
-      if (parsed && command?.kind === 'action') {
+      if (invocation.type === 'action') {
+        const { command, args } = invocation
         // The agent branch below emits its own, more specific during-run error.
         if (command.source !== 'agent' && !isSlashCommandAvailable(command, isStreaming)) {
           toast.info(t('chat.errors.commandUnavailableDuringRun', { command: command.name }))
@@ -148,7 +146,7 @@ export function Composer({ chatId }: ComposerProps): React.JSX.Element {
         if (command.name === 'compact') await handleCompact()
         else if (command.name === 'goal') {
           try {
-            const message = await session.goalCommand(parsed.args)
+            const message = await session.goalCommand(args)
             toast.success(message)
           } catch (error) {
             toast.error(error instanceof Error ? error.message : t('chat.errors.goalCommand'))
@@ -160,8 +158,8 @@ export function Composer({ chatId }: ComposerProps): React.JSX.Element {
           }
           const query =
             command.name === 'agent'
-              ? parsed.args.trim()
-              : (agentQueryFromInsertText(command.insertText) ?? parsed.args.trim())
+              ? args.trim()
+              : (agentQueryFromInsertText(command.insertText) ?? args.trim())
           if (!query) {
             toast.error(t('chat.errors.agentCommandMissing'))
             return
@@ -191,17 +189,9 @@ export function Composer({ chatId }: ComposerProps): React.JSX.Element {
         }
       }
 
-      if (parsed && command) {
-        if (command.kind === 'prompt' && command.template) {
-          session.sendMessage({ text: expandTemplate(command.template, parsed.args) })
-          return
-        }
-
-        if (command.kind === 'skill' && command.skillName) {
-          const suffix = parsed.args.trim() ? ` ${parsed.args}` : ''
-          session.sendMessage({ text: `Use the ${command.skillName} skill.${suffix}` })
-          return
-        }
+      if (invocation.type === 'prompt' || invocation.type === 'skill') {
+        session.sendMessage({ text: invocation.text })
+        return
       }
 
       session.sendMessage({ text: trimmed, ...(files && files.length > 0 ? { files } : {}) })

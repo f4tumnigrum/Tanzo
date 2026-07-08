@@ -1,9 +1,4 @@
-import type {
-  SubagentTask,
-  SubagentTaskApproval,
-  SubagentTaskNote,
-  SubagentTaskResult
-} from '@shared/subagent-task'
+import type { SubagentTask, SubagentTaskApproval, SubagentTaskNote } from '@shared/subagent-task'
 import { next, stay, type Transition } from '../runtime/machine/types'
 
 export const TASK_TERMINAL_STATUSES = new Set(['done', 'failed', 'cancelled'] as const)
@@ -25,7 +20,6 @@ export type TaskEvent =
   | {
       kind: 'complete'
       summary: string
-      resultSource: 'explicit' | 'inferred'
       notes?: SubagentTaskNote[]
       now: number
     }
@@ -37,15 +31,15 @@ export type TaskEvent =
   | { kind: 'retry'; now: number }
   | { kind: 'set-phase'; phase: string; now: number }
   | { kind: 'add-note'; note: string; now: number }
-  | { kind: 'set-result'; result: SubagentTaskResult }
   /** Reset a failed/cancelled task back to pending-with-dependency-block so that
    *  when its dependencies complete it can start automatically (used by cascadeRetry). */
   | { kind: 'reset-dependency'; taskIds: string[]; now: number }
 
-export type TaskEffect = { kind: 'persist' } | { kind: 'notify-settled' }
+export type TaskEffect = { kind: 'persist' } | { kind: 'notify-settled' } | { kind: 'wake-note' }
 
 const PERSIST: readonly TaskEffect[] = [{ kind: 'persist' }]
 const PERSIST_AND_SETTLE: readonly TaskEffect[] = [{ kind: 'persist' }, { kind: 'notify-settled' }]
+const PERSIST_AND_WAKE: readonly TaskEffect[] = [{ kind: 'persist' }, { kind: 'wake-note' }]
 
 function withoutBlock(task: SubagentTask): SubagentTask {
   const rest = { ...task }
@@ -88,7 +82,6 @@ export function taskTransition(
         completedAt: event.now,
         result: {
           summary: event.summary,
-          resultSource: event.resultSource,
           ...(event.notes && event.notes.length > 0 ? { notes: event.notes } : {})
         }
       }
@@ -168,11 +161,10 @@ export function taskTransition(
 
     case 'add-note':
       if (isTaskTerminal(task.status)) return stay(task)
-      return next({ ...task, notes: [...task.notes, { text: event.note, at: event.now }] }, PERSIST)
-
-    case 'set-result':
-      if (isTaskTerminal(task.status)) return stay(task)
-      return next({ ...task, result: event.result }, PERSIST)
+      return next(
+        { ...task, notes: [...task.notes, { text: event.note, at: event.now }] },
+        PERSIST_AND_WAKE
+      )
 
     case 'reset-dependency': {
       if (task.status !== 'failed' && task.status !== 'cancelled') return stay(task)

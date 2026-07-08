@@ -167,7 +167,7 @@ describe('main/preferences', () => {
           'shell',
           'mcp__context7__search_docs',
           // Locked tools cannot be disabled.
-          'report',
+          'note',
           'exitPlanMode',
           // Unknown builtin ids are dropped.
           'nonexistentTool'

@@ -14,7 +14,7 @@
 3. `providerTools(def)` — **currently a no-op stub** returning `{}` (`tools/provider.ts:4-7`). The "three
    sources" are therefore effectively builtin + MCP, plus the orchestration tools injected next.
 4. Orchestration tools, added conditionally: `skill`, `todo` always; `askQuestion` only for the main agent;
-   `shellBackgroundTools`; `subagentTools` only if `canDelegate`; the sub-agent `report` tool only if the agent
+   `shellBackgroundTools`; `subagentTools` only if `canDelegate`; the sub-agent `note` tool only if the agent
    is itself a sub-agent; `goalTools` (`updateGoal`) only for the main agent; `exitPlanMode` only in plan mode
    or after a prior `exitPlanMode` approval.
 
@@ -42,7 +42,7 @@ built-ins (`tools/builtin/index.ts:18-29`):
 | `shell` | `exec` | no |
 | `browserOpen` | `exec` | no |
 
-Orchestration tools follow the same rule: `skill`, `askQuestion`, `await`, `tasks`, `report`, `shellPoll`,
+Orchestration tools follow the same rule: `skill`, `askQuestion`, `await`, `tasks`, `note`, `shellPoll`,
 `shellList` are `read` (auto-approvable); `shellStart` / `shellWrite` / `shellStop`, `spawn` / `steer` /
 `cancel`, `todo`, and `updateGoal` are `exec` (require approval). `exitPlanMode` has no `kind` — it always
 requires approval (see [13 Policy & Approval](./13-policy-and-approval.md)).
@@ -151,26 +151,35 @@ head 50, max 500.
   id) are rejected before any writes, so a bad spawn leaves no orphaned executor conversation. If a later spec
   in a batch fails, the error names the already-started ids. `kind: 'exec'`.
 - `await` blocks on `deps.awaitTask` with `settle: 'all' | 'first'` and an optional `timeoutMs` (tasks keep
-  running past a timeout). On timeout, `pending` is a structured snapshot per unfinished task —
-  `{ task, status, phase, latestNote, updatedAt }` — so the parent can sample progress and mid-task findings
-  and decide to keep waiting, `steer`, or `cancel`. Unknown ids are returned in the `unknown` field rather
-  than silently dropped; results carry `failureKind` (`app-restart` | `logic-error` | `await-cancelled`),
-  `resultSource` (`explicit` | `inferred`), and any collected `notes` so the parent can judge confidence.
-  `kind: 'read'`.
+  running past a timeout). It is **event-driven, not poll-driven**: the wait races task settlement against a
+  **note wake** and the optional timeout. When an awaited task sends a note (`waitForNoteTask`), `await`
+  returns early instead of forcing the parent to poll. `notedTasks` lists **exactly which awaited tasks
+  produced a new note during this call** — computed from a per-task note-count baseline taken at the start of
+  the wait, so it is precise in the multi-task case and survives the "one task settles while another notes in
+  the same pass" race (a single boolean could not). On a note wake or timeout, `pending` is a structured
+  snapshot per unfinished task — `{ task, status, phase, latestNote, updatedAt }` — where `phase` is derived
+  automatically from the sub-agent's tool activity (not self-reported). Unknown ids are returned in the
+  `unknown` field rather than silently dropped; results carry `failureKind`
+  (`app-restart` | `logic-error` | `await-cancelled`) and any collected `notes`. Each `await` pass scopes its
+  settle/note waiters to a local `AbortController` so abandoned waiters detach rather than accumulate across
+  repeated awaits. `kind: 'read'`.
 - `tasks` (read), `steer` (`instruction` appends via `instructTask`; `objective` restarts via `redefineTask` —
   the input schema is a union so exactly one is required), `cancel`.
 
 Steering is rejected with an actionable error when the task is already settled (its result is final; spawn a
 new task instead) or dependency-blocked (the gate may not be bypassed).
 
-The sub-agent side reports back via the `report` tool (`tools/subagent-control.ts`): `phase → reportTaskPhase`
-(live UI progress, sampled by the parent via `await`'s structured `pending`), `note → addTaskNote` (mid-task
-findings for the parent, carried into `pending.latestNote` and `result.notes`), and `result → submitTaskResult`
-(**terminal**: completes the task immediately with `resultSource: 'explicit'` and aborts the sub-agent's run);
-this tool is added only for sub-agents. A sub-agent that finishes without calling `report(result)` gets its
-result inferred from the last assistant text (`resultSource: 'inferred'`); if that text is empty too, the task
-**fails** (`failureKind: 'logic-error'`) instead of completing with an empty summary. Progress reaches the UI
-over `chat:task-event` (see [04 IPC & Contracts](./04-ipc-and-contracts.md)).
+The sub-agent is a standard agent loop: its **deliverable is the final assistant message its run naturally
+converges to**, taken verbatim by `completeTask` via `lastAssistantText` — there is no separate "submit" step
+and no `explicit`/`inferred` confidence tiers. If that final text is empty, the task **fails**
+(`failureKind: 'logic-error'`) rather than completing with an empty summary. The one thing a sub-agent reports
+back is a **note**, via the `note` tool (`tools/subagent-control.ts`, `note → addTaskNote`; added only for
+sub-agents): a mid-task signal — a surprise, a blocker, a fork in approach, a partial result — that is carried
+into `pending.latestNote` and `result.notes` **and wakes any parent currently awaiting the task** (the
+`wake-note` effect drains note waiters without settling). Notes are not the deliverable and do not end the run.
+Live progress needs no self-reporting: `runStreamPass` wires the run's `onTrace` to `setPhaseByChat`, so each
+tool the sub-agent runs becomes its current `phase`. Progress reaches the UI over `chat:task-event` (see
+[04 IPC & Contracts](./04-ipc-and-contracts.md)).
 
 Foreground vs background: spawning is always background/async; "foreground" is simply the parent calling `await`
 to block on results. The actual scheduling is delegated to `AgentService` (`deps.spawnTask` / `awaitTask`), and
@@ -183,7 +192,7 @@ task ids are rooted at `deps.rootOf(parentChatId)`.
 
 **Plan-mode restriction:** in `plan` mode only read-only sub-agents are available. A sub-agent is "safe
 read-only" iff its `allowedTools` are all in `READ_ONLY_SUBAGENT_TOOLS` (`fileRead`, `glob`, `grep`, `skill`,
-`await`, `tasks`, `report`, `shellPoll`, `shellList`, `web_search`). Unavailable types carry the reason "plan
+`await`, `tasks`, `note`, `shellPoll`, `shellList`, `web_search`). Unavailable types carry the reason "plan
 mode allows read-only sub-agents only".
 
 The four built-in agents (`tanzo`, `explore`, `verify`, `review`) are defined as markdown at

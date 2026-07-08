@@ -128,6 +128,7 @@ export interface AgentService {
   settleRuns(timeoutMs: number): Promise<boolean>
   deleteWorkspace(workspaceId: string): void
   deleteConversation(chatId: string): void
+  clearMessages(chatId: string): void
   forkConversation(input: ForkConversationInput): Promise<ForkConversationResult>
   submitUserMessage(chatId: string, message: string): Promise<void>
   submitMessage(chatId: string, message: TanzoUIMessage): Promise<void>
@@ -144,9 +145,8 @@ export interface AgentService {
   redefineTask(rootChatId: string, taskId: string, objective: string): Promise<SteerTaskOutcome>
   cancelTask(rootChatId: string, taskId: string): void
   retryTask(rootChatId: string, taskId: string): void
-  reportTaskPhase(chatId: string, phase: string): void
   addTaskNote(chatId: string, note: string): void
-  submitTaskResult(chatId: string, result: SubagentTaskResult): void
+  waitForNoteTask(rootChatId: string, taskId: string, signal?: AbortSignal): Promise<void>
   respondTaskApproval(rootChatId: string, response: SubagentTaskApprovalResponse): Promise<void>
   listTaskApprovals(rootChatId: string): SubagentTaskApprovalView[]
   answerQuestion(input: QuestionResponse): Promise<void>

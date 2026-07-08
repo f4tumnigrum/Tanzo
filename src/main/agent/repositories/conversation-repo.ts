@@ -45,6 +45,13 @@ export interface ConversationRepo {
   touch(chatId: string, updatedAt: number): void
   setTitle(chatId: string, title: string): void
   setModelRef(chatId: string, modelRef: string, updatedAt: number): void
+  setWorkspace(
+    chatId: string,
+    workspaceId: string,
+    cwd: string,
+    workspaceName: string,
+    updatedAt: number
+  ): void
   setSubagentModelRef(chatId: string, modelRef: string, updatedAt: number): void
   setReasoningEffort(chatId: string, effort: string, updatedAt: number): void
   setAgentId(chatId: string, agentId: string, updatedAt: number): void
@@ -125,6 +132,9 @@ export function createConversationRepo(db: SqlDatabase, fallbackCwd: string): Co
   )
   const setSubagentModelRefRow = db.prepare(
     'UPDATE conversations SET subagent_model_ref = @subagent_model_ref, updated_at = @t WHERE id = @id'
+  )
+  const setWorkspaceRow = db.prepare(
+    'UPDATE conversations SET workspace_id = @workspace_id, cwd = @cwd, updated_at = @t WHERE id = @id'
   )
   const setReasoningEffortRow = db.prepare(
     'UPDATE conversations SET reasoning_effort = @reasoning_effort, updated_at = @t WHERE id = @id'
@@ -231,6 +241,18 @@ export function createConversationRepo(db: SqlDatabase, fallbackCwd: string): Co
     },
     setModelRef(chatId, modelRef, updatedAt) {
       setModelRefRow.run({ id: chatId, model_ref: modelRef, t: updatedAt })
+    },
+    setWorkspace(chatId, workspaceId, cwd, workspaceName, updatedAt) {
+      db.transaction(() => {
+        upsertWorkspace.run({
+          id: workspaceId,
+          name: workspaceName || workspaceId,
+          root_path: cwd,
+          created_at: updatedAt,
+          updated_at: updatedAt
+        })
+        setWorkspaceRow.run({ id: chatId, workspace_id: workspaceId, cwd, t: updatedAt })
+      })
     },
     setSubagentModelRef(chatId, modelRef, updatedAt) {
       setSubagentModelRefRow.run({ id: chatId, subagent_model_ref: modelRef, t: updatedAt })

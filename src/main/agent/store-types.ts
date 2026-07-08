@@ -42,8 +42,16 @@ export interface AgentStore {
   rootOf(chatId: string): string
   deleteWorkspace(workspaceId: string): void
   deleteConversation(chatId: string): void
+  clearMessages(chatId: string): void
   setConversationModel(chatId: string, modelRef: string): ConversationSummary
   setConversationTitle(chatId: string, title: string): ConversationSummary
+  updateConversationCwd(chatId: string, cwd: string): ConversationSummary
+  switchConversationWorkspace(
+    chatId: string,
+    workspaceId: string,
+    workspaceName: string,
+    cwd: string
+  ): ConversationSummary
   setConversationSubagentModel(chatId: string, modelRef: string): ConversationSummary
   setConversationReasoningEffort(chatId: string, effort: string): ConversationSummary
   setConversationAgent(chatId: string, agentId: string): ConversationSummary

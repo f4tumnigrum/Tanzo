@@ -1,6 +1,6 @@
 {
   "name": "tanzo",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "AI-native desktop workspace for planning, coding, and automation.",
   "main": "./out/main/index.js",
   "license": "Apache-2.0",

@@ -7,7 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.4.3] - 2026-07-08
+## [0.4.4] - 2026-07-08
+
+### Added
+
+- Telemetry: a model-call ledger (`model_calls` table) plus per-run metrics —
+  time-to-first-token, retry count, aborted flag, and error kind. Activity now
+  reports TTFT p50/p95 and per-provider reliability (call/retry counts, error
+  kinds, aborted runs). Timing uses monotonic clocks, and raw payloads are only
+  captured for sinks that opt in via `wantsRaw`.
+- Sub-agents: tasks persist per-step notes, and `await` on pending tasks now
+  surfaces the latest note and phase, mirrored in the transcript and task
+  overview UI.
+- Slash commands: commands can declare availability (`always` vs `idle`) so
+  selected commands stay usable while a run is streaming, plus optional
+  subcommands.
+
+
 
 ### Added
 

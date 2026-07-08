@@ -11,7 +11,19 @@ import type { PermissionMode } from '@shared/policy'
 import { gitEventChannel, type GitChangedEvent } from '@shared/git'
 import { PET_CHANNELS, type PetPresencePayload } from '@shared/pet'
 import { BROWSER_CHANNELS } from '@shared/browser-control'
-import { deriveStatus, type ThreadGoal, type ThreadGoalStatus } from '@shared/goal'
+import {
+  deriveStatus,
+  GOAL_COMMAND_KEYS,
+  parseGoalCommand,
+  type GoalCommandResult,
+  type ThreadGoal,
+  type ThreadGoalStatus
+} from '@shared/goal'
+import type {
+  ChannelWorkspaceOption,
+  ChannelWorkspaceSwitch,
+  ChannelWorkspaceView
+} from '@shared/chat-bridge'
 import type { SqlDatabase } from '../database/types'
 import { createLogger } from '../logger'
 import type { McpService } from '../mcp/service'
@@ -65,6 +77,31 @@ export interface AgentModule {
   setPermissionMode(chatId: string, mode: PermissionMode): void
 
   loadConversationMessages(chatId: string): TanzoUIMessage[]
+
+  /** The workspace root of a conversation, if it exists. */
+  conversationCwd(chatId: string): string | undefined
+
+  /** Execute a `/goal` command against the goal service. */
+  goalCommand(chatId: string, args: string): GoalCommandResult
+
+  /** A one-line status summary (goal state) for a conversation. */
+  goalStatusLine(chatId: string): string
+
+  /** Clear all messages of a conversation, keeping the conversation itself. */
+  clearConversation(chatId: string): void
+
+  /** Rename a conversation. Returns the new title, or undefined if it does not exist. */
+  renameConversation(chatId: string, title: string): string | undefined
+
+  /** Workspaces available for switching, plus the conversation's current workspace id. */
+  listChannelWorkspaces(chatId: string): ChannelWorkspaceView
+
+  /**
+   * Switch the conversation to an existing workspace, chosen by 1-based index
+   * (matching listChannelWorkspaces order) or by case-insensitive name.
+   * Only workspaces already known to the app are accepted (strict allowlist).
+   */
+  setChannelWorkspace(chatId: string, selector: string): ChannelWorkspaceSwitch
 
   ensureConversation(chatId: string, cwd?: string): void
   registerIpc(ipcMain: IpcMain): void
@@ -416,10 +453,9 @@ export function createAgentModule(options: AgentModuleOptions): AgentModule {
       redefineTask: (rootChatId, taskId, objective) =>
         requireService(serviceRef).redefineTask(rootChatId, taskId, objective),
       cancelTask: (rootChatId, taskId) => requireService(serviceRef).cancelTask(rootChatId, taskId),
-      reportTaskPhase: (chatId, phase) => requireService(serviceRef).reportTaskPhase(chatId, phase),
       addTaskNote: (chatId, note) => requireService(serviceRef).addTaskNote(chatId, note),
-      submitTaskResult: (chatId, result) =>
-        requireService(serviceRef).submitTaskResult(chatId, result),
+      waitForNoteTask: (rootChatId, taskId, signal) =>
+        requireService(serviceRef).waitForNoteTask(rootChatId, taskId, signal),
       goal: {
         get: (chatId) => goalService.get(chatId),
         markOutcome: (chatId, status, opts) => {
@@ -463,6 +499,28 @@ export function createAgentModule(options: AgentModuleOptions): AgentModule {
 
   let unregisterIpc: (() => void) | undefined
 
+  function listChannelWorkspaces(chatId: string): ChannelWorkspaceView {
+    const conversation = store.getConversation(chatId)
+    const currentId = conversation?.workspaceId
+    const options: ChannelWorkspaceOption[] = store.listWorkspaces().map((ws) => ({
+      id: ws.id,
+      name: ws.name,
+      rootPath: ws.rootPath,
+      isCurrent: ws.id === currentId
+    }))
+    // Include the conversation's current workspace even if the table has not
+    // caught up (e.g. a fresh channel thread on the default root).
+    if (conversation && currentId && !options.some((o) => o.id === currentId)) {
+      options.unshift({
+        id: currentId,
+        name: conversation.workspaceName || currentId,
+        rootPath: conversation.cwd,
+        isCurrent: true
+      })
+    }
+    return { workspaces: options, currentName: conversation?.workspaceName || undefined }
+  }
+
   return {
     service,
     skills,
@@ -473,6 +531,84 @@ export function createAgentModule(options: AgentModuleOptions): AgentModule {
     },
     loadConversationMessages(chatId) {
       return store.loadUnvalidated(chatId)
+    },
+    conversationCwd(chatId) {
+      return store.getConversation(chatId)?.cwd
+    },
+    goalCommand(chatId, args): GoalCommandResult {
+      const intent = parseGoalCommand(args)
+      switch (intent.op) {
+        case 'show': {
+          const current = goalService.get(chatId)
+          return current
+            ? {
+                key: GOAL_COMMAND_KEYS.current,
+                objective: current.objective,
+                status: deriveStatus(current)
+              }
+            : { key: GOAL_COMMAND_KEYS.none }
+        }
+        case 'clear':
+          goalService.clear(chatId)
+          return { key: GOAL_COMMAND_KEYS.cleared }
+        case 'pause':
+          goalService.setUserState(chatId, 'paused')
+          return { key: GOAL_COMMAND_KEYS.paused }
+        case 'resume':
+          goalService.setUserState(chatId, 'active')
+          return { key: GOAL_COMMAND_KEYS.resumed }
+        case 'set': {
+          if (goalService.get(chatId)) {
+            goalService.updateObjective(chatId, intent.objective)
+            return { key: GOAL_COMMAND_KEYS.objectiveUpdated }
+          }
+          goalService.create(chatId, { objective: intent.objective })
+          return { key: GOAL_COMMAND_KEYS.set }
+        }
+      }
+    },
+    goalStatusLine(chatId) {
+      const goal = goalService.get(chatId)
+      const running = service.isRunning(chatId)
+      const runLine = running ? '运行中' : '空闲'
+      const workspace = store.getConversation(chatId)?.workspaceName
+      const wsLine = workspace ? `工作区:${workspace};` : ''
+      if (!goal) return `${wsLine}状态:${runLine};当前没有活动目标。`
+      return `${wsLine}状态:${runLine};目标:${goal.objective}(${deriveStatus(goal)})`
+    },
+    clearConversation(chatId) {
+      service.clearMessages(chatId)
+    },
+    renameConversation(chatId, title) {
+      if (!store.getConversation(chatId)) return undefined
+      return store.setConversationTitle(chatId, title).title
+    },
+    listChannelWorkspaces(chatId): ChannelWorkspaceView {
+      return listChannelWorkspaces(chatId)
+    },
+    setChannelWorkspace(chatId, selector): ChannelWorkspaceSwitch {
+      const conversation = store.getConversation(chatId)
+      if (!conversation) return { ok: false, reason: 'no_conversation' }
+      const { workspaces } = listChannelWorkspaces(chatId)
+      const trimmed = selector.trim()
+      // Prefer an exact (case-insensitive) name match so a workspace literally
+      // named "2" stays selectable; fall back to a 1-based index.
+      const byName = workspaces.find((ws) => ws.name.toLowerCase() === trimmed.toLowerCase())
+      const asIndex = Number.parseInt(trimmed, 10)
+      const byIndex =
+        /^\d+$/.test(trimmed) && asIndex >= 1 && asIndex <= workspaces.length
+          ? workspaces[asIndex - 1]
+          : undefined
+      const target = byName ?? byIndex
+      if (!target) return { ok: false, reason: 'not_found' }
+      if (target.isCurrent) return { ok: false, reason: 'already_current' }
+      try {
+        store.switchConversationWorkspace(chatId, target.id, target.name, target.rootPath)
+      } catch {
+        // The allowlisted directory no longer exists (e.g. deleted since listing).
+        return { ok: false, reason: 'not_found' }
+      }
+      return { ok: true, name: target.name }
     },
     ensureConversation(chatId, cwd) {
       store.ensureConversation(chatId, { cwd: cwd ?? options.workspaceRoot })

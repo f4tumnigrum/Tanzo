@@ -162,6 +162,13 @@ export function createAgentService(deps: AgentServiceDeps): AgentService {
     deps.store.deleteConversation(chatId)
   }
 
+  function clearMessages(chatId: string): void {
+    cancel(chatId)
+    tasks.cancelTree(chatId)
+    messageQueue.clear(chatId)
+    deps.store.clearMessages(chatId)
+  }
+
   async function forkConversation(input: ForkConversationInput): Promise<ForkConversationResult> {
     const sourceMode = deps.policy.getMode(deps.store.rootOf(input.sourceChatId))
     const result = await deps.store.forkConversation(input)
@@ -260,6 +267,7 @@ export function createAgentService(deps: AgentServiceDeps): AgentService {
     settleRuns: (timeoutMs) => engine.settle(timeoutMs),
     deleteWorkspace,
     deleteConversation,
+    clearMessages,
     forkConversation,
     submitUserMessage: submitUserMessageQueued,
     submitMessage: (chatId, message) =>
@@ -281,9 +289,8 @@ export function createAgentService(deps: AgentServiceDeps): AgentService {
     redefineTask: (rootChatId, taskId, objective) => tasks.redefine(rootChatId, taskId, objective),
     cancelTask: (rootChatId, taskId) => tasks.cancel(rootChatId, taskId),
     retryTask: (rootChatId, taskId) => tasks.retry(rootChatId, taskId),
-    reportTaskPhase: (chatId, phase) => tasks.reportPhase(chatId, phase),
     addTaskNote: (chatId, note) => tasks.addNote(chatId, note),
-    submitTaskResult: (chatId, result) => tasks.submitResult(chatId, result),
+    waitForNoteTask: (rootChatId, taskId, signal) => tasks.waitForNote(rootChatId, taskId, signal),
     respondTaskApproval: (rootChatId, response) => tasks.respondApproval(rootChatId, response),
     listTaskApprovals: (rootChatId) => tasks.listApprovals(rootChatId),
     answerQuestion: (response) =>

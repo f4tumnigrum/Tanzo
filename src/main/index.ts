@@ -13,6 +13,7 @@ import { createFileMentionModule, type FileMentionModule } from './file-mention/
 import { createPetAssetsModule, type PetAssetsModule } from './pet/module'
 import { createChatBridgeModule, type ChatBridgeModule } from './chat-bridge/module'
 import { chatBridgeEventChannel, type ChatBridgeEvent } from '@shared/chat-bridge'
+import { surfaceSlashCommands } from '@shared/slash-command'
 import {
   initPreferences,
   getPreferences,
@@ -262,7 +263,20 @@ function bootstrap(): void {
         agentModule!.service.answerQuestion({ chatId, questionId, ...reply }),
       isRunning: (chatId) => agentModule!.service.isRunning(chatId),
       loadConversationMessages: (chatId) => agentModule!.loadConversationMessages(chatId),
-      setPermissionMode: (chatId, mode) => agentModule!.setPermissionMode(chatId, mode)
+      setPermissionMode: (chatId, mode) => agentModule!.setPermissionMode(chatId, mode),
+      listChannelCommands: (chatId) => {
+        const cwd = agentModule!.conversationCwd(chatId)
+        const dynamic = cwd ? slashCommandModule!.service.listCommands(cwd) : []
+        return surfaceSlashCommands('channel', dynamic)
+      },
+      compact: (chatId) => agentModule!.service.compact(chatId),
+      goalCommand: (chatId, args) => agentModule!.goalCommand(chatId, args),
+      status: (chatId) => agentModule!.goalStatusLine(chatId),
+      cancel: (chatId) => agentModule!.service.cancel(chatId),
+      clearConversation: (chatId) => agentModule!.clearConversation(chatId),
+      renameConversation: (chatId, title) => agentModule!.renameConversation(chatId, title),
+      listChannelWorkspaces: (chatId) => agentModule!.listChannelWorkspaces(chatId),
+      setChannelWorkspace: (chatId, selector) => agentModule!.setChannelWorkspace(chatId, selector)
     },
     broadcast: (event: ChatBridgeEvent) => {
       for (const window of BrowserWindow.getAllWindows()) {
