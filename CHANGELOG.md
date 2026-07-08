@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-07-08
+
+### Added
+
+- Channels: a multi-channel Chat SDK bridge connects the local agent to QQ,
+  Discord, Lark, and WeChat. Each channel is independent — its own adapter,
+  encrypted secret, and permission posture — sharing one agent and one safety
+  model. New Channels settings feature with per-channel credential forms and an
+  allowlist editor. Secrets are write-only from the renderer and stored via the
+  shared secret codec (OS keyring when available).
+- Browser: allowed popups are forwarded to a new tab; added keyboard shortcuts,
+  a loading indicator, an `about:blank` home with Bing search, and an
+  address-bar editing guard.
+- Providers: Zhipu and MiniMax support.
+
+### Changed
+
+- Reasoning: unified reasoning-effort into a single provider capability model
+  derived from each AI SDK options type, routed through the `getReasoning` IPC.
+  The composer badge now reads provider defaults instead of a duplicated
+  string/select schema.
+- MCP: reconnect once and retry remote requests on stale connections, wiring the
+  session-expired hook, `maxRetries`, and redirect following.
+- CI/build: enable macOS hardened runtime, code signing, and notarization via
+  GitHub Secrets.
+
+### Fixed
+
+- Permission badge no longer flickers to `default` on conversation switch;
+  `permissionMode` is carried on the conversation summary and resolved at the
+  chat IPC boundary.
+- Cross-platform: resolved Windows/POSIX path handling in plugin manifest
+  containment, MCP cwd detection, and git/marketplace tests.
+
 ## [0.4.2] - 2026-07-06
 
 ### Added
