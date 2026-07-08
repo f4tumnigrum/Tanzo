@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Blocks, File, Folder } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -16,6 +16,11 @@ interface MentionMenuProps {
 type MentionKind = MentionItem['kind']
 
 const KIND_ORDER: readonly MentionKind[] = ['plugin', 'file']
+
+const MENU_GLASS_STYLE = {
+  '--glass-surface-blur': '6px',
+  '--glass-surface-bg': 'color-mix(in oklab, var(--card) 56%, transparent)'
+} as CSSProperties
 
 function MentionRow({
   item,
@@ -101,7 +106,8 @@ export function MentionMenu({
 
   return (
     <LiquidGlass
-      aberration
+      intensity={1.15}
+      style={MENU_GLASS_STYLE}
       className={cn(
         'pointer-events-auto w-[min(440px,calc(100vw-2rem))] overflow-hidden rounded-[calc(var(--radius)+8px)] shadow-none!',
         className

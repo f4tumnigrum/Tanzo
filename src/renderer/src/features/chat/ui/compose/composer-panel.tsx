@@ -29,7 +29,6 @@ export function ComposerPanel({
 
   return (
     <LiquidGlass
-      aberration
       intensity={1.15}
       style={
         {

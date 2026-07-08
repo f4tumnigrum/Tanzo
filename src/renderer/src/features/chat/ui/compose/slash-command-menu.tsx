@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Archive, Bot, FileText, Sparkles, Terminal, type LucideIcon } from 'lucide-react'
 import {
@@ -29,6 +29,11 @@ const SOURCE_ICON: Record<SlashCommandSource, LucideIcon> = {
 const BUILTIN_ICON: Record<string, LucideIcon> = {
   compact: Archive
 }
+
+const MENU_GLASS_STYLE = {
+  '--glass-surface-blur': '6px',
+  '--glass-surface-bg': 'color-mix(in oklab, var(--card) 56%, transparent)'
+} as CSSProperties
 
 export function SlashCommandMenu({
   commands,
@@ -62,7 +67,8 @@ export function SlashCommandMenu({
   if (commands.length === 0) {
     return (
       <LiquidGlass
-        aberration
+        intensity={1.15}
+        style={MENU_GLASS_STYLE}
         className={cn(
           'pointer-events-auto w-[min(440px,calc(100vw-2rem))] rounded-[calc(var(--radius)+8px)] p-3 shadow-none!',
           className
@@ -77,7 +83,8 @@ export function SlashCommandMenu({
 
   return (
     <LiquidGlass
-      aberration
+      intensity={1.15}
+      style={MENU_GLASS_STYLE}
       className={cn(
         'pointer-events-auto w-[min(440px,calc(100vw-2rem))] overflow-hidden rounded-[calc(var(--radius)+8px)] shadow-none!',
         className
