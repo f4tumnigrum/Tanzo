@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Globe,
+  Loader2,
   Lock,
   Maximize2,
   Minimize2,
@@ -25,6 +26,8 @@ import { TokenTip } from './token-panel'
 import type { WebviewElement } from '../webview'
 
 const PARTITION = 'embedded-browser'
+
+const displayUrl = (url: string): string => (url === 'about:blank' ? '' : url)
 
 export function ToolbarButton({
   label,
@@ -71,12 +74,16 @@ export function BrowserView({ tab }: { tab: BrowserTab }): React.JSX.Element {
   const setOpen = useBrowserUiStore((s) => s.setOpen)
   const updateTab = useBrowserUiStore((s) => s.updateTab)
   const newTab = useBrowserUiStore((s) => s.newTab)
+  const closeTab = useBrowserUiStore((s) => s.closeTab)
+  const isActive = useBrowserUiStore((s) => s.activeTabId === tab.id)
 
   const webviewRef = useRef<WebviewElement | null>(null)
   const viewportRef = useRef<HTMLDivElement | null>(null)
+  const addressInputRef = useRef<HTMLInputElement | null>(null)
+  const addressFocusedRef = useRef(false)
   const tabId = tab.id
 
-  const [address, setAddress] = useState(tab.initialUrl)
+  const [address, setAddress] = useState(displayUrl(tab.initialUrl))
   const [pageUrl, setPageUrl] = useState(tab.initialUrl)
   const [canGoBack, setCanGoBack] = useState(false)
   const [canGoForward, setCanGoForward] = useState(false)
@@ -94,14 +101,23 @@ export function BrowserView({ tab }: { tab: BrowserTab }): React.JSX.Element {
       setCanGoBack(view.canGoBack())
       setCanGoForward(view.canGoForward())
     }
+    const setAddressUnlessEditing = (url: string): void => {
+      if (!addressFocusedRef.current) setAddress(displayUrl(url))
+    }
     const handleReady = (): void => {
       setNavSeq((n) => n + 1)
+      syncNav()
+    }
+    const handleStartNavigation = (event: Event): void => {
+      const e = event as unknown as { url?: string; isMainFrame?: boolean }
+      if (e.isMainFrame === false) return
+      if (typeof e.url === 'string') setAddressUnlessEditing(e.url)
       syncNav()
     }
     const handleNavigate = (event: Event): void => {
       const url = (event as unknown as { url?: string }).url
       if (typeof url === 'string') {
-        setAddress(url)
+        setAddressUnlessEditing(url)
         setPageUrl(url)
         updateTab(tabId, { url })
       }
@@ -138,6 +154,7 @@ export function BrowserView({ tab }: { tab: BrowserTab }): React.JSX.Element {
     }
 
     view.addEventListener('dom-ready', handleReady)
+    view.addEventListener('did-start-navigation', handleStartNavigation)
     view.addEventListener('did-navigate', handleNavigate)
     view.addEventListener('did-navigate-in-page', handleNavigate)
     view.addEventListener('page-title-updated', handleTitle)
@@ -146,6 +163,7 @@ export function BrowserView({ tab }: { tab: BrowserTab }): React.JSX.Element {
     view.addEventListener('did-fail-load', handleFail)
     return () => {
       view.removeEventListener('dom-ready', handleReady)
+      view.removeEventListener('did-start-navigation', handleStartNavigation)
       view.removeEventListener('did-navigate', handleNavigate)
       view.removeEventListener('did-navigate-in-page', handleNavigate)
       view.removeEventListener('page-title-updated', handleTitle)
@@ -179,6 +197,51 @@ export function BrowserView({ tab }: { tab: BrowserTab }): React.JSX.Element {
   const goBack = useCallback(() => callView((view) => view.goBack()), [callView])
   const goForward = useCallback(() => callView((view) => view.goForward()), [callView])
   const reload = useCallback(() => callView((view) => view.reload()), [callView])
+
+  const focusAddress = useCallback((): void => {
+    const input = addressInputRef.current
+    if (!input) return
+    input.focus()
+    input.select()
+  }, [])
+
+  useEffect(() => {
+    if (!isActive) return undefined
+    const onKeyDown = (event: KeyboardEvent): void => {
+      const mod = event.metaKey || event.ctrlKey
+      if (mod && !event.altKey && !event.shiftKey) {
+        switch (event.key.toLowerCase()) {
+          case 'l':
+            event.preventDefault()
+            focusAddress()
+            return
+          case 'r':
+            event.preventDefault()
+            reload()
+            return
+          case 't':
+            event.preventDefault()
+            newTab()
+            return
+          case 'w':
+            event.preventDefault()
+            closeTab(tabId)
+            return
+        }
+      }
+      if (event.altKey && !mod && !event.shiftKey) {
+        if (event.key === 'ArrowLeft') {
+          event.preventDefault()
+          goBack()
+        } else if (event.key === 'ArrowRight') {
+          event.preventDefault()
+          goForward()
+        }
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [isActive, tabId, focusAddress, reload, newTab, closeTab, goBack, goForward])
 
   useEffect(() => {
     if (!picking) return undefined
@@ -253,7 +316,12 @@ export function BrowserView({ tab }: { tab: BrowserTab }): React.JSX.Element {
 
         <form onSubmit={submitAddress} className="mx-1 min-w-0 flex-1">
           <div className="group/address flex h-8 items-center gap-2 rounded-[var(--radius-lg)] border border-border/40 bg-secondary px-2.5 transition-colors focus-within:border-border/70">
-            {isSecure ? (
+            {loading ? (
+              <Loader2
+                className="size-3.5 shrink-0 animate-spin text-foreground/40"
+                aria-hidden="true"
+              />
+            ) : isSecure ? (
               <Lock className="size-3.5 shrink-0 text-emerald-500/70" aria-hidden="true" />
             ) : (
               <Globe
@@ -262,8 +330,16 @@ export function BrowserView({ tab }: { tab: BrowserTab }): React.JSX.Element {
               />
             )}
             <Input
+              ref={addressInputRef}
               value={address}
               onChange={(event) => setAddress(event.target.value)}
+              onFocus={(event) => {
+                addressFocusedRef.current = true
+                event.target.select()
+              }}
+              onBlur={() => {
+                addressFocusedRef.current = false
+              }}
               spellCheck={false}
               autoComplete="off"
               aria-label={t('browser.address')}
@@ -307,12 +383,13 @@ export function BrowserView({ tab }: { tab: BrowserTab }): React.JSX.Element {
       </div>
       <div ref={viewportRef} className="relative min-h-0 flex-1">
         {/* `partition` is an Electron webview attr unknown to React's DOM typings.
-            Popups are denied in the main process (setWindowOpenHandler). */}
+            Native popups are denied in the main process; allowed popup URLs are
+            forwarded back and opened as a new tab (setWindowOpenHandler). */}
         <webview
           ref={webviewRef}
           src={tab.initialUrl}
           className="absolute inset-0 h-full w-full"
-          {...({ partition: PARTITION } as Record<string, string>)}
+          {...({ partition: PARTITION, allowpopups: '' } as Record<string, string>)}
         />
         {picked ? (
           <TokenTip picked={picked} containerRef={viewportRef} onClose={() => setPicked(null)} />

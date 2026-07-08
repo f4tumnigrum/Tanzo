@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
 import { normalizeAddressInput } from './normalize-url'
 
-const DEFAULT_HOME = 'https://www.google.com'
+const DEFAULT_HOME = 'about:blank'
 
 let tabSeq = 0
 const nextTabId = (): string => `tab-${Date.now().toString(36)}-${(tabSeq++).toString(36)}`

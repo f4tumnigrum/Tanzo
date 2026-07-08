@@ -33,6 +33,7 @@ interface McpClientOptions {
   connectTimeoutMs?: number
   requestTimeoutMs?: number
   enableReconnect?: boolean
+  maxToolRetries?: number
   handleElicitationRequest?: (input: {
     serverName: string
     message: string
@@ -42,6 +43,7 @@ interface McpClientOptions {
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 120_000
 const DEFAULT_REQUEST_TIMEOUT_MS = 60_000
+const DEFAULT_MAX_TOOL_RETRIES = 2
 const MAX_RECONNECT_ATTEMPTS = 5
 const INITIAL_RECONNECT_DELAY_MS = 1_000
 const MAX_RECONNECT_DELAY_MS = 30_000
@@ -75,6 +77,17 @@ function disabled(serverName: string): Error {
   return new TanzoOperationError('MCP_SERVER_DISABLED', `MCP server "${serverName}" is disabled.`, {
     details: { serverName }
   })
+}
+
+function isStaleConnectionError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  const message = error.message.toLowerCase()
+  return (
+    message.includes('closed client') ||
+    message.includes('session') ||
+    message.includes('econnreset') ||
+    message.includes('socket hang up')
+  )
 }
 
 function closeTransport(transport: unknown): void {
@@ -182,6 +195,7 @@ export class McpClient {
   readonly #connectTimeoutMs: number
   readonly #requestTimeoutMs: number
   readonly #enableReconnect: boolean
+  readonly #maxToolRetries: number
   readonly #handleElicitationRequest: NonNullable<McpClientOptions['handleElicitationRequest']>
 
   constructor(options: McpClientOptions = {}) {
@@ -190,6 +204,7 @@ export class McpClient {
     this.#connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS
     this.#requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
     this.#enableReconnect = options.enableReconnect ?? true
+    this.#maxToolRetries = options.maxToolRetries ?? DEFAULT_MAX_TOOL_RETRIES
     this.#handleElicitationRequest =
       options.handleElicitationRequest ?? (async () => ({ action: 'cancel' }))
   }
@@ -257,51 +272,62 @@ export class McpClient {
   }
 
   async listTools(serverName: string): Promise<McpListToolsResult> {
-    const connection = await this.#ensureConnected(serverName)
-    const result = await this.#listAllTools(connection.client, serverName)
-    this.#updateState(serverName, {
-      name: serverName,
-      status: 'connected',
-      toolCount: result.tools.length,
-      serverInfo: toImplementationInfo(connection.client.serverInfo),
-      ...(connection.client.instructions ? { instructions: connection.client.instructions } : {})
+    return this.#withConnection(serverName, async (connection) => {
+      const result = await this.#listAllTools(connection.client, serverName)
+      this.#updateState(serverName, {
+        name: serverName,
+        status: 'connected',
+        toolCount: result.tools.length,
+        serverInfo: toImplementationInfo(connection.client.serverInfo),
+        ...(connection.client.instructions
+          ? { instructions: connection.client.instructions }
+          : {})
+      })
+      return result as McpListToolsResult
     })
-    return result as McpListToolsResult
   }
 
   async listResources(serverName: string): Promise<McpListResourcesResult> {
-    const connection = await this.#ensureConnected(serverName)
-    return this.#listAllResources(connection.client, serverName)
+    return this.#withConnection(serverName, (connection) =>
+      this.#listAllResources(connection.client, serverName)
+    )
   }
 
   async readResource(serverName: string, uri: string): Promise<McpReadResourceResult> {
-    const connection = await this.#ensureConnected(serverName)
-    return (await withAbortTimeout(
-      (signal) =>
-        connection.client.readResource({
-          uri,
-          options: requestOptions(signal, this.#requestTimeoutMs)
-        }),
-      this.#requestTimeoutMs,
-      `Reading resource "${uri}" from "${serverName}" timed out.`
-    )) as McpReadResourceResult
+    return this.#withConnection(
+      serverName,
+      async (connection) =>
+        (await withAbortTimeout(
+          (signal) =>
+            connection.client.readResource({
+              uri,
+              options: requestOptions(signal, this.#requestTimeoutMs)
+            }),
+          this.#requestTimeoutMs,
+          `Reading resource "${uri}" from "${serverName}" timed out.`
+        )) as McpReadResourceResult
+    )
   }
 
   async listResourceTemplates(serverName: string): Promise<McpListResourceTemplatesResult> {
-    const connection = await this.#ensureConnected(serverName)
-    return (await withAbortTimeout(
-      (signal) =>
-        connection.client.listResourceTemplates({
-          options: requestOptions(signal, this.#requestTimeoutMs)
-        }),
-      this.#requestTimeoutMs,
-      `Listing resource templates for "${serverName}" timed out.`
-    )) as McpListResourceTemplatesResult
+    return this.#withConnection(
+      serverName,
+      async (connection) =>
+        (await withAbortTimeout(
+          (signal) =>
+            connection.client.listResourceTemplates({
+              options: requestOptions(signal, this.#requestTimeoutMs)
+            }),
+          this.#requestTimeoutMs,
+          `Listing resource templates for "${serverName}" timed out.`
+        )) as McpListResourceTemplatesResult
+    )
   }
 
   async listPrompts(serverName: string): Promise<McpListPromptsResult> {
-    const connection = await this.#ensureConnected(serverName)
-    return this.#listAllPrompts(connection.client, serverName)
+    return this.#withConnection(serverName, (connection) =>
+      this.#listAllPrompts(connection.client, serverName)
+    )
   }
 
   async getPrompt(
@@ -309,25 +335,29 @@ export class McpClient {
     promptName: string,
     args?: Record<string, unknown>
   ): Promise<McpGetPromptResult> {
-    const connection = await this.#ensureConnected(serverName)
-    return (await withAbortTimeout(
-      (signal) =>
-        connection.client.experimental_getPrompt({
-          name: promptName,
-          ...(args ? { arguments: args } : {}),
-          options: requestOptions(signal, this.#requestTimeoutMs)
-        }),
-      this.#requestTimeoutMs,
-      `Getting prompt "${promptName}" from "${serverName}" timed out.`
-    )) as McpGetPromptResult
+    return this.#withConnection(
+      serverName,
+      async (connection) =>
+        (await withAbortTimeout(
+          (signal) =>
+            connection.client.experimental_getPrompt({
+              name: promptName,
+              ...(args ? { arguments: args } : {}),
+              options: requestOptions(signal, this.#requestTimeoutMs)
+            }),
+          this.#requestTimeoutMs,
+          `Getting prompt "${promptName}" from "${serverName}" timed out.`
+        )) as McpGetPromptResult
+    )
   }
 
   async toolsForServer(serverName: string): Promise<Awaited<ReturnType<MCPClient['tools']>>> {
-    const connection = await this.#ensureConnected(serverName)
-    const definitions = await this.#listAllTools(connection.client, serverName)
-    return connection.client.toolsFromDefinitions(
-      definitions as Parameters<MCPClient['toolsFromDefinitions']>[0]
-    )
+    return this.#withConnection(serverName, async (connection) => {
+      const definitions = await this.#listAllTools(connection.client, serverName)
+      return connection.client.toolsFromDefinitions(
+        definitions as Parameters<MCPClient['toolsFromDefinitions']>[0]
+      )
+    })
   }
 
   async #listAllTools(client: MCPClient, serverName: string): Promise<McpListToolsResult> {
@@ -493,6 +523,27 @@ export class McpClient {
     return connected
   }
 
+  async #withConnection<T>(
+    serverName: string,
+    operation: (connection: ManagedConnection) => Promise<T>
+  ): Promise<T> {
+    const connection = await this.#ensureConnected(serverName)
+    try {
+      return await operation(connection)
+    } catch (error) {
+      if (this.#disposed || !isStaleConnectionError(error)) throw error
+      const config = this.#configs.get(serverName)
+      if (!config || !config.enabled || !isRemoteTransport(config)) throw error
+      log.warn('mcp request hit stale connection; reconnecting once', { serverName })
+      await this.#withServerOperation(serverName, async () => {
+        this.#clearReconnect(serverName)
+        await this.#connect(config)
+      })
+      const retried = await this.#ensureConnected(serverName)
+      return operation(retried)
+    }
+  }
+
   async #connect(config: McpServerConfig, options?: { throwOnFailure?: boolean }): Promise<void> {
     if (this.#disposed) return
     this.#clearReconnectTimer(config.name)
@@ -506,12 +557,20 @@ export class McpClient {
     let client: MCPClient | null = null
     let transport: Awaited<ReturnType<typeof createMcpTransport>> | null = null
     try {
-      transport = await createMcpTransport(config)
+      transport = await createMcpTransport(config, {
+        onSessionExpired: () => {
+          if (this.#disposed || !this.#enableReconnect) return
+          if (!this.#connections.has(config.name)) return
+          log.warn('mcp session expired', { serverName: config.name })
+          this.#scheduleReconnect(config.name)
+        }
+      })
       client = await withTimeout(
         createMCPClient({
           transport,
           clientName: this.#appName,
           version: this.#appVersion,
+          maxRetries: this.#maxToolRetries,
           capabilities: { elicitation: {} },
           onUncaughtError: (error) => {
             const connection = this.#connections.get(config.name)

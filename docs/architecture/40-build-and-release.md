@@ -37,8 +37,8 @@ From `package.json`:
 
 - **Windows** — NSIS installer (non-one-click, custom install dir, `installer.nsh`, always creates a desktop
   shortcut).
-- **macOS** — DMG, with `entitlements.mac.plist` and camera/mic/documents/downloads usage strings;
-  `notarize: false`.
+- **macOS** — DMG, with `entitlements.mac.plist`, hardened runtime, notarization enabled, and
+  camera/mic/documents/downloads usage strings.
 - **Linux** — AppImage + deb; maintainer "Lumin Studio"; category "Utility".
 - `asarUnpack: resources/**` (assets must be readable outside the asar); `npmRebuild: false`.
 
@@ -62,8 +62,8 @@ Three jobs:
 1. **quality** (ubuntu) — `pnpm install --frozen-lockfile`, then `pnpm typecheck`, `pnpm lint`, `pnpm test`.
    This is the same gate developers run locally.
 2. **package** — `needs: quality`, only on `push`; a matrix of macOS / Windows / Linux running
-   `pnpm build && pnpm exec electron-builder --{mac,win,linux} --publish never` (with
-   `CSC_IDENTITY_AUTO_DISCOVERY: false`), uploading the artifacts.
+   `pnpm build && pnpm exec electron-builder --{mac,win,linux} --publish never`, uploading the artifacts. macOS
+   signing/notarization is enabled when the corresponding GitHub Secrets are present.
 3. **release** — `needs: package`, only on `v*` tags; downloads the artifacts and creates a GitHub release via
    `softprops/action-gh-release`, marking it a prerelease when the tag contains `-`.
 

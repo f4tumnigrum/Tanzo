@@ -56,7 +56,10 @@ function fakeEmitter(): FakeEmitter {
 
 describe('installEmbeddedBrowserHardening', () => {
   function setup() {
-    const contents = fakeEmitter()
+    const contents = Object.assign(fakeEmitter(), {
+      send: vi.fn(),
+      isDestroyed: vi.fn(() => false)
+    })
     const window = { webContents: contents } as never
     installEmbeddedBrowserHardening(window)
     return contents
@@ -123,7 +126,17 @@ describe('installEmbeddedBrowserHardening', () => {
     expect(badEvent.preventDefault).toHaveBeenCalled()
 
     expect(setWindowOpenHandler).toHaveBeenCalled()
-    const handler = setWindowOpenHandler.mock.calls[0][0] as () => unknown
-    expect(handler()).toEqual({ action: 'deny' })
+    const handler = setWindowOpenHandler.mock.calls[0][0] as (details: {
+      url: string
+    }) => unknown
+
+    expect(handler({ url: 'https://popup.example' })).toEqual({ action: 'deny' })
+    expect(contents.send).toHaveBeenCalledWith('browser:open-request', {
+      url: 'https://popup.example'
+    })
+
+    contents.send.mockClear()
+    expect(handler({ url: 'file:///etc/passwd' })).toEqual({ action: 'deny' })
+    expect(contents.send).not.toHaveBeenCalled()
   })
 })

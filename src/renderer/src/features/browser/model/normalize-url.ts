@@ -1,4 +1,4 @@
-const SEARCH_PREFIX = 'https://www.google.com/search?q='
+const SEARCH_PREFIX = 'https://www.bing.com/search?q='
 
 export function normalizeAddressInput(raw: string): string | null {
   const input = raw.trim()

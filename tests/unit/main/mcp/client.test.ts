@@ -148,12 +148,16 @@ describe('mcp/client', () => {
     await client.syncServers([enabledServer])
     const sdk = mocks.clients[0]
 
-    expect(mocks.createMcpTransport).toHaveBeenCalledWith(enabledServer)
+    expect(mocks.createMcpTransport).toHaveBeenCalledWith(
+      enabledServer,
+      expect.objectContaining({ onSessionExpired: expect.any(Function) })
+    )
     expect(mocks.createMCPClient).toHaveBeenCalledWith(
       expect.objectContaining({
         transport: mocks.transports[0],
         clientName: 'Tanzo Test',
         version: '2.0.0',
+        maxRetries: expect.any(Number),
         capabilities: { elicitation: {} },
         onUncaughtError: expect.any(Function)
       })
@@ -307,5 +311,44 @@ describe('mcp/client', () => {
 
     await vi.advanceTimersByTimeAsync(1000)
     expect(mocks.createMCPClient).toHaveBeenCalledTimes(2)
+  })
+
+  it('reconnects once and retries when a remote request hits a stale connection', async () => {
+    const client = new McpClient({ enableReconnect: true })
+    const remote: McpServerConfig = {
+      id: 4,
+      name: 'remote',
+      transport: 'http',
+      url: 'https://mcp.example.test',
+      enabled: true
+    }
+
+    await client.syncServers([remote])
+    const firstSdk = mocks.clients[0]
+    firstSdk.listTools.mockRejectedValueOnce(
+      new Error('Attempted to send a request from a closed client')
+    )
+
+    await expect(client.listTools('remote')).resolves.toEqual({
+      tools: [
+        { name: 'tool-a', inputSchema: { type: 'object' } },
+        { name: 'tool-b', inputSchema: { type: 'object' } }
+      ]
+    })
+
+    expect(mocks.createMCPClient).toHaveBeenCalledTimes(2)
+    expect(firstSdk.close).toHaveBeenCalled()
+    await client.dispose()
+  })
+
+  it('does not reconnect-retry stale errors for stdio transports', async () => {
+    const client = new McpClient({ enableReconnect: false })
+    await client.syncServers([enabledServer])
+    const sdk = mocks.clients[0]
+    sdk.listTools.mockRejectedValueOnce(new Error('closed client'))
+
+    await expect(client.listTools('local')).rejects.toThrow('closed client')
+    expect(mocks.createMCPClient).toHaveBeenCalledTimes(1)
+    await client.dispose()
   })
 })

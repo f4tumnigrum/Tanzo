@@ -33,6 +33,7 @@ export interface CreateMcpModuleOptions {
   connectTimeoutMs?: number
   requestTimeoutMs?: number
   enableReconnect?: boolean
+  maxToolRetries?: number
   appName?: string
   appVersion?: string
 
@@ -117,6 +118,7 @@ export function createMcpModule(options: CreateMcpModuleOptions): McpModule {
       ? { requestTimeoutMs: options.requestTimeoutMs }
       : {}),
     ...(options.enableReconnect !== undefined ? { enableReconnect: options.enableReconnect } : {}),
+    ...(options.maxToolRetries !== undefined ? { maxToolRetries: options.maxToolRetries } : {}),
     handleElicitationRequest: async (request) => {
       const requestId = randomUUID()
 

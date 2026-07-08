@@ -1,4 +1,5 @@
 import type { WebContents, BrowserWindow } from 'electron'
+import { BROWSER_CHANNELS } from '@shared/browser-control'
 import { createLogger } from './logger'
 
 const log = createLogger('embedded-browser')
@@ -53,6 +54,11 @@ export function installEmbeddedBrowserHardening(window: BrowserWindow): void {
     guest.on('will-navigate', blockDisallowed)
     guest.on('will-redirect', blockDisallowed)
 
-    guest.setWindowOpenHandler(() => ({ action: 'deny' }))
+    guest.setWindowOpenHandler(({ url }) => {
+      if (isAllowedEmbeddedBrowserUrl(url) && !contents.isDestroyed()) {
+        contents.send(BROWSER_CHANNELS.openRequest, { url })
+      }
+      return { action: 'deny' }
+    })
   })
 }

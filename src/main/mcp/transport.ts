@@ -4,7 +4,12 @@ import { TanzoValidationError } from '@shared/errors'
 import { expandMcpServerConfig, normalizeStdioEnv } from './env'
 import { resolveStdioLaunchCommand } from './stdio-command'
 
-export async function createMcpTransport(config: McpServerConfig) {
+export interface RemoteTransportHooks {
+  onSessionExpired?: (sessionId: string) => void
+  onSessionIdChange?: (sessionId: string | undefined) => void
+}
+
+export async function createMcpTransport(config: McpServerConfig, hooks?: RemoteTransportHooks) {
   const expanded = expandMcpServerConfig(config)
 
   if (expanded.transport === 'stdio') {
@@ -58,6 +63,8 @@ export async function createMcpTransport(config: McpServerConfig) {
     ...(expanded.headers && Object.keys(expanded.headers).length > 0
       ? { headers: { ...expanded.headers } }
       : {}),
-    redirect: expanded.redirect ?? 'error'
+    redirect: expanded.redirect ?? 'follow',
+    ...(hooks?.onSessionExpired ? { onSessionExpired: hooks.onSessionExpired } : {}),
+    ...(hooks?.onSessionIdChange ? { onSessionIdChange: hooks.onSessionIdChange } : {})
   }
 }
