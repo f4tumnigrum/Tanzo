@@ -67,6 +67,8 @@ export interface AgentStreamFinalState {
   aborted: boolean
   turnStartedAt: number
   lastFinishReason?: string
+  ttftMs?: number
+  retryCount?: number
 
   inlineCompaction?: InlineCompactionRecord
   isGoalContinuation: boolean
@@ -355,6 +357,11 @@ export function startAgentStream(
         ...(agentCall.toolChoice ? { toolChoice: agentCall.toolChoice } : {}),
         messages: initialMessages,
         abortSignal: opts.signal,
+        // Keep this callback synchronous and O(1): the SDK pauses stream processing
+        // until it resolves, so any async/heavy work here would throttle streaming.
+        onChunk: () => {
+          telemetry.recordChunk()
+        },
         onError: ({ error }) => {
           if (rawStreamError === undefined) rawStreamError = error
         },
@@ -610,6 +617,8 @@ export function startAgentStream(
         ...(streamError ? { streamError } : {}),
         ...(streamErrorCode ? { streamErrorCode } : {}),
         ...(streamErrorDetail ? { streamErrorDetail } : {}),
+        ...(telemetry.ttftMs() !== undefined ? { ttftMs: telemetry.ttftMs() } : {}),
+        retryCount: telemetry.retryCount(),
         aborted,
         turnStartedAt,
         ...(lastFinishReason ? { lastFinishReason } : {}),

@@ -1,6 +1,18 @@
 export type SlashCommandKind = 'action' | 'prompt' | 'skill'
 export type SlashCommandSource = 'builtin' | 'agent' | 'command' | 'skill'
 
+/**
+ * When a command may run. 'always' keeps it usable while a run is streaming;
+ * 'idle' (the default) disables it until the active run finishes.
+ */
+export type SlashCommandAvailability = 'always' | 'idle'
+
+export interface SlashCommandSubcommand {
+  value: string
+  descriptionKey?: string
+  description?: string
+}
+
 export interface SlashCommandDef {
   name: string
   kind: SlashCommandKind
@@ -11,6 +23,18 @@ export interface SlashCommandDef {
   template?: string
   skillName?: string
   insertText?: string
+  availability?: SlashCommandAvailability
+  subcommands?: SlashCommandSubcommand[]
+}
+
+/** Resolve availability, defaulting to 'idle' when unspecified. */
+export function slashCommandAvailability(command: SlashCommandDef): SlashCommandAvailability {
+  return command.availability ?? 'idle'
+}
+
+/** Whether a command can be invoked given the current streaming state. */
+export function isSlashCommandAvailable(command: SlashCommandDef, isStreaming: boolean): boolean {
+  return !isStreaming || slashCommandAvailability(command) === 'always'
 }
 
 export interface ParsedSlashInput {

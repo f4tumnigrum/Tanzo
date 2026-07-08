@@ -294,6 +294,13 @@ export const zhCN = {
             compact: '压缩当前会话上下文',
             goal: '设定、更换或清除自主目标',
             agent: '切换当前会话智能体'
+          },
+          subcommands: {
+            goal: {
+              clear: '清除当前目标',
+              pause: '暂停当前目标',
+              resume: '恢复已暂停的目标'
+            }
           }
         },
         mentions: {
@@ -647,6 +654,7 @@ export const zhCN = {
             redefined: '已替换目标。',
             cancelled: '已停止子代理。',
             phaseReported: '已更新阶段。',
+            noteReported: '已记录发现。',
             resultSubmitted: '已提交结果。'
           },
           noTasks: '暂无子代理。',
@@ -661,6 +669,7 @@ export const zhCN = {
           waitingFor: '等待',
           blockedApproval: '等待批准。',
           awaitPending: '仍在运行：{{tasks}}。',
+          stillRunning: '仍在运行',
           inferred: '推断',
           resultInferred: '结果由最后一条助手消息推断——子代理未调用 report()。',
           errors: {
@@ -683,7 +692,8 @@ export const zhCN = {
         steerSend: '发送',
         openTranscript: '查看转录',
         readOnly: '只读',
-        emptyTranscript: '暂无活动。'
+        emptyTranscript: '暂无活动。',
+        activity: '活动'
       },
       goal: {
         pause: '暂停目标',
@@ -723,6 +733,7 @@ export const zhCN = {
         agentCommandMissing: '用法：/agent <名称|ID>。',
         agentCommandUnknown: '未找到“{{agent}}”对应的智能体。',
         agentCommandDuringRun: '请等待当前运行结束后再切换智能体。',
+        commandUnavailableDuringRun: '运行进行中，/{{command}} 暂不可用。',
         setReasoningEffort: '更新思考强度失败。',
         compactRequiresConversation: '请先打开一个对话再压缩上下文。',
         compactDuringRun: '请等待当前运行结束后再压缩上下文。',

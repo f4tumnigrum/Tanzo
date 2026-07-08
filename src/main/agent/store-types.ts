@@ -25,6 +25,8 @@ import type {
   PromptDiagnosticPrevious
 } from './diagnostics/prompt-cache'
 import type { ToolExecutionRecord } from './repositories/tool-execution-repo'
+import type { ModelCallRecord } from './repositories/model-call-repo'
+import type { RunOutcomeAggregates } from './repositories/prompt-diagnostic-repo'
 import type { SubagentTaskRepo } from './repositories/subagent-task-repo'
 
 export interface AgentStore {
@@ -64,6 +66,14 @@ export interface AgentStore {
   resolveAgentDefinition(chatId: string): Promise<AgentDefinition>
 
   getLatestPromptDiagnostic(chatId: string): PromptDiagnosticPrevious | undefined
+  ensureRunStep(input: {
+    conversationId: string
+    runId: string
+    stepNumber: number
+    modelRef: string
+    provider: string
+    createdAt: number
+  }): void
   recordPromptDiagnostic(record: PromptCacheDiagnosticRecord): void
   finishPromptDiagnostic(finish: PromptCacheDiagnosticFinish): void
 
@@ -71,7 +81,8 @@ export interface AgentStore {
     chatId: string,
     runId: string,
     status: 'finished' | 'failed',
-    errorJson?: string
+    errorJson?: string,
+    aggregates?: RunOutcomeAggregates
   ): void
   getLatestRunOutcome(chatId: string): ChatRunOutcome | null
   sweepInterruptedRuns(): number
@@ -82,6 +93,7 @@ export interface AgentStore {
   tasks: SubagentTaskRepo
 
   recordToolExecution(record: ToolExecutionRecord): void
+  recordModelCall(record: ModelCallRecord): void
 
   getActivitySummary(range: ActivityRange): ActivitySummary
   getActivityTrend(range: ActivityRange): ActivityTrend

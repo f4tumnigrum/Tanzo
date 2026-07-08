@@ -282,6 +282,7 @@ export function createAgentService(deps: AgentServiceDeps): AgentService {
     cancelTask: (rootChatId, taskId) => tasks.cancel(rootChatId, taskId),
     retryTask: (rootChatId, taskId) => tasks.retry(rootChatId, taskId),
     reportTaskPhase: (chatId, phase) => tasks.reportPhase(chatId, phase),
+    addTaskNote: (chatId, note) => tasks.addNote(chatId, note),
     submitTaskResult: (chatId, result) => tasks.submitResult(chatId, result),
     respondTaskApproval: (rootChatId, response) => tasks.respondApproval(rootChatId, response),
     listTaskApprovals: (rootChatId) => tasks.listApprovals(rootChatId),

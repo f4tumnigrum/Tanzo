@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from 'react'
 import type { FileUIPart } from 'ai'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { expandTemplate, parseSlashInput } from '@shared/slash-command'
+import { expandTemplate, isSlashCommandAvailable, parseSlashInput } from '@shared/slash-command'
 import type { PermissionMode } from '@shared/policy'
 import { useAgents, usePolicyMode, useConversations } from '../../model/queries'
 import {
@@ -140,6 +140,11 @@ export function Composer({ chatId }: ComposerProps): React.JSX.Element {
         : undefined
 
       if (parsed && command?.kind === 'action') {
+        // The agent branch below emits its own, more specific during-run error.
+        if (command.source !== 'agent' && !isSlashCommandAvailable(command, isStreaming)) {
+          toast.info(t('chat.errors.commandUnavailableDuringRun', { command: command.name }))
+          return
+        }
         if (command.name === 'compact') await handleCompact()
         else if (command.name === 'goal') {
           try {

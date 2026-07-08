@@ -145,6 +145,7 @@ export interface AgentService {
   cancelTask(rootChatId: string, taskId: string): void
   retryTask(rootChatId: string, taskId: string): void
   reportTaskPhase(chatId: string, phase: string): void
+  addTaskNote(chatId: string, note: string): void
   submitTaskResult(chatId: string, result: SubagentTaskResult): void
   respondTaskApproval(rootChatId: string, response: SubagentTaskApprovalResponse): Promise<void>
   listTaskApprovals(rootChatId: string): SubagentTaskApprovalView[]

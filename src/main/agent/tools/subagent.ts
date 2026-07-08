@@ -1,6 +1,10 @@
 import { tool, zodSchema, type Tool, type ToolSet } from 'ai'
 import type { TanzoTools } from '@shared/agent-message'
-import type { SubagentTask, SubagentTaskResult } from '@shared/subagent-task'
+import type {
+  SubagentTask,
+  SubagentTaskPendingView,
+  SubagentTaskResult
+} from '@shared/subagent-task'
 import type { ToolDeps } from './types'
 import { toolResultToModelOutput } from './model-output'
 import { toolError } from './builtin/shared'
@@ -102,6 +106,21 @@ export function spawnTool(
   )
 }
 
+function pendingView(id: string, task: SubagentTask | undefined): SubagentTaskPendingView {
+  if (!task) return { task: id, status: 'running', updatedAt: Date.now() }
+  const notes = task.notes ?? []
+  const phases = task.phases ?? []
+  const latestNote = notes.length > 0 ? notes[notes.length - 1] : undefined
+  const latestPhase = phases.length > 0 ? phases[phases.length - 1] : undefined
+  return {
+    task: id,
+    status: task.status,
+    ...(task.phase ? { phase: task.phase } : {}),
+    ...(latestNote ? { latestNote: latestNote.text } : {}),
+    updatedAt: Math.max(latestPhase?.at ?? 0, latestNote?.at ?? 0, task.startedAt ?? task.createdAt)
+  }
+}
+
 export function awaitTool(
   deps: ToolDeps,
   parentChatId: string
@@ -112,8 +131,9 @@ export function awaitTool(
       description:
         'Wait for sub-agent tasks to finish and return their results. settle:"all" (default) ' +
         'waits for every listed task; settle:"first" returns as soon as one finishes. Pass ' +
-        'timeoutMs to cap the wait — tasks keep running and can be awaited again. Use after spawn ' +
-        'when you need the deliverable before continuing. Ids that do not exist are listed in ' +
+        'timeoutMs to cap the wait — tasks keep running and can be awaited again; on timeout, ' +
+        "'pending' carries each unfinished task's current status, phase, and latest note so you " +
+        'can decide to keep waiting, steer, or cancel. Ids that do not exist are listed in ' +
         "'unknown' — check it whenever a result seems missing. A failed result's failureKind " +
         "tells you why: 'app-restart' (interrupted; retry or respawn), 'await-cancelled' (your " +
         'wait was aborted — the task may still be running), otherwise a genuine task failure. ' +
@@ -169,7 +189,9 @@ export function awaitTool(
         const results = known
           .filter((id) => settled.has(id))
           .map((id) => ({ task: id, result: settled.get(id)! }))
-        const pending = known.filter((id) => !settled.has(id))
+        const pending = known
+          .filter((id) => !settled.has(id))
+          .map((id) => pendingView(id, deps.getTask(rootChatId, id)))
         return {
           results,
           ...(pending.length > 0 ? { pending } : {}),

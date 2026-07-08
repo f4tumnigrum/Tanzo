@@ -14,6 +14,7 @@ function task(overrides: Partial<SubagentTask> = {}): SubagentTask {
     dependsOn: [],
     allowedTools: null,
     phases: [],
+    notes: [],
     createdAt: 1,
     ...overrides
   }
@@ -56,6 +57,36 @@ describe('agent/subagent/task.machine', () => {
     const cleared = taskTransition(surfaced.state, { kind: 'clear-approval-block' })
     expect(cleared.state.status).toBe('running')
     expect(cleared.state.block).toBeUndefined()
+  })
+
+  it('appends notes while active and ignores them once terminal', () => {
+    const active = taskTransition(task(), { kind: 'add-note', note: 'found a surprise', now: 4 })
+    expect(active.state.notes).toEqual([{ text: 'found a surprise', at: 4 }])
+    expect(active.effects).toEqual([{ kind: 'persist' }])
+
+    const done = task({ status: 'done' })
+    const ignored = taskTransition(done, { kind: 'add-note', note: 'late', now: 9 })
+    expect(ignored.state).toBe(done)
+    expect(ignored.effects).toEqual([])
+  })
+
+  it('carries notes into the result on complete and clears them on redefine', () => {
+    const withNotes = task({ notes: [{ text: 'n1', at: 2 }] })
+    const completed = taskTransition(withNotes, {
+      kind: 'complete',
+      summary: 'done',
+      resultSource: 'explicit',
+      notes: withNotes.notes,
+      now: 9
+    })
+    expect(completed.state.result).toEqual({
+      summary: 'done',
+      resultSource: 'explicit',
+      notes: [{ text: 'n1', at: 2 }]
+    })
+
+    const redefined = taskTransition(withNotes, { kind: 'redefine', objective: 'new', now: 10 })
+    expect(redefined.state.notes).toEqual([])
   })
 
   it('does not clear a non-approval block', () => {

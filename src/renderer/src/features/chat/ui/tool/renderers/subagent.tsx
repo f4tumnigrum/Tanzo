@@ -5,14 +5,11 @@ import {
   Bot,
   Check,
   ChevronsUpDown,
-  CircleAlert,
   CircleCheckBig,
-  CircleDashed,
   GitBranch,
   Info,
   ListTree,
-  Pause,
-  PowerOff
+  Pause
 } from 'lucide-react'
 import type { SubagentTask, SubagentTaskResult } from '@shared/subagent-task'
 import { isRecord } from '@/common/lib/type-guards'
@@ -36,12 +33,18 @@ import type { ToolRenderContext } from '../render-context'
 import type { ToolRenderer } from '../renderer-types'
 import { Response } from '../../message/response'
 import { renderToolError } from './render-error'
-import { isToolError } from './shared'
+import { isToolError, taskStatusGlyph } from './shared'
 
 type SpawnOutput = { tasks: Array<{ task: string; status: SubagentTask['status'] }> }
+type AwaitPendingEntry = {
+  task: string
+  status: SubagentTask['status']
+  phase?: string
+  latestNote?: string
+}
 type AwaitOutput = {
   results: Array<{ task: string; result: SubagentTaskResult }>
-  pending?: string[]
+  pending?: Array<string | AwaitPendingEntry>
   timedOut?: boolean
 }
 type TasksOutput = { tasks: SubagentTask[] }
@@ -218,11 +221,7 @@ function SubagentOutputComp({ context }: { context: ToolRenderContext }): React.
           ))
         )}
         {output.pending && output.pending.length > 0 ? (
-          <SubagentStatusLine
-            icon={Pause}
-            tone="warning"
-            text={t('chat.tool.subagent.awaitPending', { tasks: output.pending.join(', ') })}
-          />
+          <AwaitPendingList entries={normalizePending(output.pending)} />
         ) : null}
       </div>
     )
@@ -268,23 +267,7 @@ function SpawnSummary({
               taskId={entry.task}
             />
             {dependsOn.length > 0 ? (
-              <div
-                className={cn(
-                  'flex flex-wrap items-center gap-1 px-0.5 text-[0.6875rem]',
-                  STATUS_TONE['warning']
-                )}
-              >
-                <GitBranch className="size-3 shrink-0" aria-hidden="true" />
-                <span className="shrink-0">{t('chat.tool.subagent.waitingFor')}</span>
-                {dependsOn.map((depId) => (
-                  <code
-                    key={depId}
-                    className="rounded bg-amber-500/12 px-1 py-px font-mono text-[length:var(--code-font-size-xs)] text-amber-700 dark:text-amber-300"
-                  >
-                    {depId}
-                  </code>
-                ))}
-              </div>
+              <DependencyChips label={t('chat.tool.subagent.waitingFor')} taskIds={dependsOn} />
             ) : null}
           </TaskShell>
         )
@@ -306,9 +289,9 @@ function ackText(
   if ('cancelled' in output) return t('chat.tool.subagent.ack.cancelled')
   const input = context.input as Record<string, unknown> | undefined
   if (context.shortName === 'report') {
-    return stringValue(input?.result)
-      ? t('chat.tool.subagent.ack.resultSubmitted')
-      : t('chat.tool.subagent.ack.phaseReported')
+    if (stringValue(input?.result)) return t('chat.tool.subagent.ack.resultSubmitted')
+    if (stringValue(input?.note)) return t('chat.tool.subagent.ack.noteReported')
+    return t('chat.tool.subagent.ack.phaseReported')
   }
   return t('chat.tool.subagent.acked')
 }
@@ -355,19 +338,13 @@ function ResultBlock({
   const { t } = useTranslation()
   if (result.failed) {
     const isInterrupted = result.failureKind === 'app-restart'
+    const { Icon, tone } = resultGlyph(result)
     return (
       <div className="space-y-1.5">
         {hideLabel ? null : <ResultLabel task={task} failed />}
         <ToolPanel tone={isInterrupted ? 'subtle' : 'danger'}>
           <div className="flex items-start gap-1.5 px-2.5 py-1.75">
-            {isInterrupted ? (
-              <PowerOff
-                className="mt-px size-3 shrink-0 text-muted-foreground/55"
-                aria-hidden="true"
-              />
-            ) : (
-              <CircleAlert className="mt-px size-3 shrink-0 text-red-500/80" aria-hidden="true" />
-            )}
+            <Icon className={cn('mt-px size-3 shrink-0', tone)} aria-hidden="true" />
             <p className="min-w-0 whitespace-pre-wrap break-words text-[0.625rem] leading-[1.45] text-foreground/70">
               {result.errorMessage ?? t('chat.tool.subagent.errors.taskFailed')}
             </p>
@@ -490,12 +467,7 @@ function resultGlyph(result: SubagentTaskResult): {
   Icon: React.ElementType
   tone: string
 } {
-  if (result.failed) {
-    return result.failureKind === 'app-restart'
-      ? { Icon: PowerOff, tone: 'text-muted-foreground/60' }
-      : { Icon: CircleAlert, tone: 'text-red-500/80' }
-  }
-  return { Icon: CircleCheckBig, tone: 'text-emerald-500/85' }
+  return taskStatusGlyph(result.failed ? 'failed' : 'done', result.failureKind)
 }
 
 function ResultLabel({
@@ -591,14 +563,11 @@ function SubagentEntity({
   truncate?: boolean
 }): React.JSX.Element {
   const { t } = useTranslation()
-  const { Icon, spin } = statusIcon(status)
+  const { Icon, tone, spin } = taskStatusGlyph(status)
   const objectiveText = objective || t('chat.tool.subagent.run')
   const isActive = status === 'running' || status === 'pending' || status === 'blocked'
   const StatusGlyph = (
-    <Icon
-      className={cn('size-3.5 shrink-0', STATUS_ICON_TONE[status], spin && 'animate-spin')}
-      aria-hidden="true"
-    />
+    <Icon className={cn('size-3.5 shrink-0', tone, spin && 'animate-spin')} aria-hidden="true" />
   )
 
   if (truncate) {
@@ -659,27 +628,39 @@ function SubagentEntity({
   )
 }
 
+function DependencyChips({
+  label,
+  taskIds
+}: {
+  label: string
+  taskIds: string[]
+}): React.JSX.Element {
+  return (
+    <div
+      className={cn(
+        'flex flex-wrap items-center gap-1 px-0.5 text-[0.6875rem]',
+        STATUS_TONE['warning']
+      )}
+    >
+      <GitBranch className="size-3 shrink-0" aria-hidden="true" />
+      <span className="shrink-0">{label}</span>
+      {taskIds.map((depId) => (
+        <code
+          key={depId}
+          className="rounded bg-amber-500/12 px-1 py-px font-mono text-[length:var(--code-font-size-xs)] text-amber-700 dark:text-amber-300"
+        >
+          {depId}
+        </code>
+      ))}
+    </div>
+  )
+}
+
 function TaskBlockLine({ task }: { task: SubagentTask }): React.JSX.Element | null {
   const { t } = useTranslation()
   if (task.block?.kind === 'dependency') {
     return (
-      <div
-        className={cn(
-          'flex flex-wrap items-center gap-1 px-0.5 text-[0.6875rem]',
-          STATUS_TONE['warning']
-        )}
-      >
-        <GitBranch className="size-3 shrink-0" aria-hidden="true" />
-        <span className="shrink-0">{t('chat.tool.subagent.blockedBy')}</span>
-        {task.block.taskIds.map((depId) => (
-          <code
-            key={depId}
-            className="rounded bg-amber-500/12 px-1 py-px font-mono text-[length:var(--code-font-size-xs)] text-amber-700 dark:text-amber-300"
-          >
-            {depId}
-          </code>
-        ))}
-      </div>
+      <DependencyChips label={t('chat.tool.subagent.blockedBy')} taskIds={task.block.taskIds} />
     )
   }
   if (task.block?.kind === 'approval') {
@@ -692,25 +673,7 @@ function TaskBlockLine({ task }: { task: SubagentTask }): React.JSX.Element | nu
     )
   }
   if (task.dependsOn.length > 0 && task.status === 'pending') {
-    return (
-      <div
-        className={cn(
-          'flex flex-wrap items-center gap-1 px-0.5 text-[0.6875rem]',
-          STATUS_TONE['warning']
-        )}
-      >
-        <GitBranch className="size-3 shrink-0" aria-hidden="true" />
-        <span className="shrink-0">{t('chat.tool.subagent.waitingFor')}</span>
-        {task.dependsOn.map((depId) => (
-          <code
-            key={depId}
-            className="rounded bg-amber-500/12 px-1 py-px font-mono text-[length:var(--code-font-size-xs)] text-amber-700 dark:text-amber-300"
-          >
-            {depId}
-          </code>
-        ))}
-      </div>
-    )
+    return <DependencyChips label={t('chat.tool.subagent.waitingFor')} taskIds={task.dependsOn} />
   }
   return null
 }
@@ -747,32 +710,6 @@ const STATUS_TONE: Record<ToolBadgeTone, string> = {
   danger: 'text-red-600/90 dark:text-red-400/90'
 }
 
-const STATUS_ICON_TONE: Record<SubagentTask['status'], string> = {
-  pending: 'text-muted-foreground/70',
-  running: 'text-primary',
-  blocked: 'text-amber-500',
-  done: 'text-emerald-500/85',
-  failed: 'text-red-500',
-  cancelled: 'text-muted-foreground/70'
-}
-
-function statusIcon(status: SubagentTask['status']): { Icon: React.ElementType; spin?: boolean } {
-  switch (status) {
-    case 'done':
-      return { Icon: CircleCheckBig }
-    case 'failed':
-      return { Icon: CircleAlert }
-    case 'cancelled':
-      return { Icon: Ban }
-    case 'blocked':
-      return { Icon: Pause }
-    case 'running':
-      return { Icon: CircleDashed, spin: true }
-    default:
-      return { Icon: CircleDashed }
-  }
-}
-
 function SubagentStatusLine({
   icon: Icon,
   text,
@@ -786,6 +723,49 @@ function SubagentStatusLine({
     <div className={cn('flex items-center gap-1.5 px-0.5 text-[0.6875rem]', STATUS_TONE[tone])}>
       <Icon className="size-3 shrink-0" aria-hidden="true" />
       <span className="min-w-0 break-words">{text}</span>
+    </div>
+  )
+}
+
+function normalizePending(pending: Array<string | AwaitPendingEntry>): AwaitPendingEntry[] {
+  return pending.map((entry) =>
+    typeof entry === 'string' ? { task: entry, status: 'running' as const } : entry
+  )
+}
+
+function AwaitPendingList({ entries }: { entries: AwaitPendingEntry[] }): React.JSX.Element {
+  const { t } = useTranslation()
+  return (
+    <div className="space-y-1">
+      <SubagentSectionLabel text={t('chat.tool.subagent.stillRunning')} />
+      {entries.map((entry) => {
+        const { Icon, tone, spin } = taskStatusGlyph(entry.status)
+        return (
+          <div key={entry.task} className="space-y-0.5 px-0.5">
+            <div className="flex min-w-0 items-center gap-1.5 text-[0.6875rem]">
+              <Icon
+                className={cn('size-3 shrink-0', tone, spin && 'animate-spin')}
+                aria-hidden="true"
+              />
+              <ToolMetaChip text={entry.task} tone={STATUS_CHIP_TONE[entry.status]} />
+              {entry.phase ? (
+                entry.status === 'running' ? (
+                  <ShimmerText text={entry.phase} className="min-w-0 truncate text-[0.6875rem]" />
+                ) : (
+                  <span className="min-w-0 truncate text-[0.6875rem] text-foreground/60">
+                    {entry.phase}
+                  </span>
+                )
+              ) : null}
+            </div>
+            {entry.latestNote ? (
+              <p className="min-w-0 truncate pl-[1.125rem] text-[0.625rem] text-muted-foreground/70">
+                {entry.latestNote}
+              </p>
+            ) : null}
+          </div>
+        )
+      })}
     </div>
   )
 }

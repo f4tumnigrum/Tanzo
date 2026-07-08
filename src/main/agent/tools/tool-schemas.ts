@@ -314,13 +314,16 @@ const subagentTaskStatusSchema = z.enum([
   'cancelled'
 ])
 
+const subagentTaskNoteSchema = z.object({ text: z.string(), at: z.number() })
+
 const subagentTaskResultSchema = z.object({
   summary: z.string(),
   failed: z.boolean().optional(),
   errorMessage: z.string().optional(),
   resultSource: z.enum(['explicit', 'inferred']).optional(),
   failureKind: z.enum(['app-restart', 'logic-error', 'await-cancelled']).optional(),
-  failedDependencyId: z.string().optional()
+  failedDependencyId: z.string().optional(),
+  notes: z.array(subagentTaskNoteSchema).optional()
 })
 
 const subagentTaskBlockSchema = z.union([
@@ -351,6 +354,7 @@ const subagentTaskSchema = z.object({
   block: subagentTaskBlockSchema.optional(),
   phase: z.string().optional(),
   phases: z.array(z.object({ name: z.string(), at: z.number() })),
+  notes: z.array(subagentTaskNoteSchema),
   result: subagentTaskResultSchema.optional(),
   createdAt: z.number(),
   startedAt: z.number().optional(),
@@ -422,10 +426,18 @@ export const awaitInputSchema = z
   })
   .strict()
 
+const subagentPendingViewSchema = z.object({
+  task: z.string(),
+  status: subagentTaskStatusSchema,
+  phase: z.string().optional(),
+  latestNote: z.string().optional(),
+  updatedAt: z.number()
+})
+
 export const awaitOutputSchema = z.union([
   z.object({
     results: z.array(z.object({ task: z.string(), result: subagentTaskResultSchema })),
-    pending: z.array(z.string()).optional(),
+    pending: z.array(subagentPendingViewSchema).optional(),
 
     unknown: z.array(z.string()).optional(),
     timedOut: z.boolean().optional()
@@ -498,14 +510,26 @@ export const reportInputSchema = z
       .min(1)
       .max(120)
       .optional()
-      .describe('Short label for the step you are starting.'),
+      .describe(
+        'Short label for the step you are starting. Shown live in the UI; the parent sees your ' +
+          'latest phase only when it inspects or awaits you.'
+      ),
+    note: z
+      .string()
+      .min(1)
+      .max(2000)
+      .optional()
+      .describe(
+        'A mid-task finding the parent should know now (e.g. a surprise, a fork in approach). ' +
+          'Surfaced to the parent via await; use for signal, not for narrating every step.'
+      ),
     result: z
       .string()
       .min(1)
       .optional()
       .describe(
-        'Concise, self-contained final deliverable for the parent. Providing this records your ' +
-          'result snapshot — call it once you have the answer, then stop.'
+        'Concise, self-contained final deliverable for the parent. Submitting this ends your ' +
+          'run immediately and returns to the parent — call it once you have the answer, then stop.'
       )
   })
   .strict()

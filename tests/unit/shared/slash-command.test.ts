@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { expandTemplate, parseSlashInput } from '@shared/slash-command'
+import {
+  expandTemplate,
+  isSlashCommandAvailable,
+  parseSlashInput,
+  slashCommandAvailability,
+  type SlashCommandDef
+} from '@shared/slash-command'
 
 describe('shared/slash-command parseSlashInput', () => {
   it('parses a bare command', () => {
@@ -47,5 +53,30 @@ describe('shared/slash-command expandTemplate', () => {
 
   it('leaves template untouched when no placeholders present', () => {
     expect(expandTemplate('static prompt', 'ignored')).toBe('static prompt')
+  })
+})
+
+describe('shared/slash-command availability', () => {
+  const idle: SlashCommandDef = { name: 'compact', kind: 'action', source: 'builtin' }
+  const always: SlashCommandDef = {
+    name: 'goal',
+    kind: 'action',
+    source: 'builtin',
+    availability: 'always'
+  }
+
+  it('defaults to idle when unspecified', () => {
+    expect(slashCommandAvailability(idle)).toBe('idle')
+    expect(slashCommandAvailability(always)).toBe('always')
+  })
+
+  it('idle commands are available only when not streaming', () => {
+    expect(isSlashCommandAvailable(idle, false)).toBe(true)
+    expect(isSlashCommandAvailable(idle, true)).toBe(false)
+  })
+
+  it('always commands stay available while streaming', () => {
+    expect(isSlashCommandAvailable(always, true)).toBe(true)
+    expect(isSlashCommandAvailable(always, false)).toBe(true)
   })
 })

@@ -21,7 +21,10 @@ export interface AgentTelemetryController {
   emit(input: AgentTelemetryEmitInput, raw?: unknown): AgentTelemetryEvent
   emitError(error: unknown, raw?: unknown): AgentTelemetryEvent
   emitRaw(kind: string, raw: unknown): void
+  recordChunk(): void
   flushChunkSummary(): void
+  ttftMs(): number | undefined
+  retryCount(): number
 }
 
 export interface CreateAgentTelemetryInput {
@@ -44,11 +47,19 @@ interface ChunkStats {
   firstChunkMs?: number
 }
 
+function monotonicNow(): number {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now()
+}
+
 export function createAgentTelemetry(input: CreateAgentTelemetryInput): AgentTelemetryController {
   let sequence = 0
   let terminalErrorEmitted = false
   let terminalErrorEvent: AgentTelemetryEvent | undefined
-  let operationStartedAt: number | undefined
+  let operationStartedMonotonic: number | undefined
+  let firstChunkMonotonic: number | undefined
+  let maxAttempt = 1
   const stepStartedAt = new Map<number, number>()
   const modelCallStartedAt = new Map<string, number>()
   const toolStartedAt = new Map<string, number>()
@@ -68,9 +79,14 @@ export function createAgentTelemetry(input: CreateAgentTelemetryInput): AgentTel
     createLoggerTelemetrySink(input.logger),
     ...(input.sinks ?? [])
   ]
+  const anyWantsRaw = sinks.some((sink) => sink.wantsRaw === true)
 
   function timestamp(): number {
     return Date.now()
+  }
+
+  function elapsedSince(startMonotonic: number | undefined): number | undefined {
+    return startMonotonic !== undefined ? Math.round(monotonicNow() - startMonotonic) : undefined
   }
 
   function emit(record: AgentTelemetryEmitInput, raw?: unknown): AgentTelemetryEvent {
@@ -84,7 +100,7 @@ export function createAgentTelemetry(input: CreateAgentTelemetryInput): AgentTel
     }
     emitToSinks(
       sinks,
-      { data, ...(raw !== undefined ? { raw: rawRecord(record.event, raw) } : {}) },
+      { data, ...(anyWantsRaw && raw !== undefined ? { raw: rawRecord(record.event, raw) } : {}) },
       input.logger
     )
     return data
@@ -102,7 +118,19 @@ export function createAgentTelemetry(input: CreateAgentTelemetryInput): AgentTel
   }
 
   function emitRaw(kind: string, raw: unknown): void {
+    if (!anyWantsRaw) return
     emitToSinks(sinks, { raw: rawRecord(kind, raw) }, input.logger)
+  }
+
+  function recordChunk(): void {
+    const now = timestamp()
+    chunks.count += 1
+    if (chunks.firstTimestamp === undefined) {
+      chunks.firstTimestamp = now
+      firstChunkMonotonic = monotonicNow()
+      chunks.firstChunkMs = elapsedSince(operationStartedMonotonic)
+    }
+    chunks.lastTimestamp = now
   }
 
   function flushChunkSummary(): void {
@@ -116,8 +144,8 @@ export function createAgentTelemetry(input: CreateAgentTelemetryInput): AgentTel
         ...(chunks.firstTimestamp !== undefined ? { firstTimestamp: chunks.firstTimestamp } : {}),
         ...(chunks.lastTimestamp !== undefined ? { lastTimestamp: chunks.lastTimestamp } : {}),
         ...(chunks.firstChunkMs !== undefined ? { firstChunkMs: chunks.firstChunkMs } : {}),
-        ...(chunks.firstTimestamp !== undefined && chunks.lastTimestamp !== undefined
-          ? { durationMs: chunks.lastTimestamp - chunks.firstTimestamp }
+        ...(elapsedSince(firstChunkMonotonic) !== undefined
+          ? { durationMs: elapsedSince(firstChunkMonotonic) }
           : {})
       }
     })
@@ -141,7 +169,7 @@ export function createAgentTelemetry(input: CreateAgentTelemetryInput): AgentTel
     terminalErrorEvent = emit(
       {
         event: 'operation-error',
-        durationMs: operationStartedAt !== undefined ? timestamp() - operationStartedAt : undefined,
+        durationMs: elapsedSince(operationStartedMonotonic),
         error: normalizeTelemetryError(error)
       },
       raw ?? error
@@ -168,7 +196,7 @@ export function createAgentTelemetry(input: CreateAgentTelemetryInput): AgentTel
   const integration: Telemetry = {
     onStart(event) {
       const raw = recordField(event)
-      operationStartedAt = timestamp()
+      operationStartedMonotonic = monotonicNow()
       retryTracker.startOperation(event)
       emit(
         {
@@ -185,7 +213,7 @@ export function createAgentTelemetry(input: CreateAgentTelemetryInput): AgentTel
       const raw = recordField(event)
       retryTracker.startStep(event)
       const stepNumber = numberField(raw?.stepNumber)
-      if (stepNumber !== undefined) stepStartedAt.set(stepNumber, timestamp())
+      if (stepNumber !== undefined) stepStartedAt.set(stepNumber, monotonicNow())
       emit(
         {
           event: 'step-start',
@@ -201,7 +229,8 @@ export function createAgentTelemetry(input: CreateAgentTelemetryInput): AgentTel
       const raw = recordField(event)
       const attempt = retryTracker.startModelCall(event)
       const callId = stringField(raw?.callId)
-      modelCallStartedAt.set(callKey(callId, attempt.attempt), timestamp())
+      if (attempt.attempt > maxAttempt) maxAttempt = attempt.attempt
+      modelCallStartedAt.set(callKey(callId, attempt.attempt), monotonicNow())
       if (attempt.retry) {
         emit(
           {
@@ -234,7 +263,9 @@ export function createAgentTelemetry(input: CreateAgentTelemetryInput): AgentTel
       const raw = recordField(event)
       const callId = stringField(raw?.callId)
       const attempt = retryTracker.currentModelCall({ callId })
-      const startedAt = modelCallStartedAt.get(callKey(callId, attempt.attempt))
+      const key = callKey(callId, attempt.attempt)
+      const startedAt = modelCallStartedAt.get(key)
+      modelCallStartedAt.delete(key)
       emit(
         {
           event: 'model-call-finish',
@@ -242,8 +273,12 @@ export function createAgentTelemetry(input: CreateAgentTelemetryInput): AgentTel
           ...(attempt.stepNumber !== undefined ? { stepNumber: attempt.stepNumber } : {}),
           provider: stringField(raw?.provider),
           modelId: stringField(raw?.modelId),
-          durationMs: startedAt !== undefined ? timestamp() - startedAt : undefined,
-          usage: normalizeTelemetryUsage(raw?.usage)
+          durationMs: elapsedSince(startedAt),
+          usage: normalizeTelemetryUsage(raw?.usage),
+          retry: {
+            attempt: attempt.attempt,
+            ...(attempt.maxRetries !== undefined ? { maxRetries: attempt.maxRetries } : {})
+          }
         },
         event
       )
@@ -252,7 +287,7 @@ export function createAgentTelemetry(input: CreateAgentTelemetryInput): AgentTel
       const raw = recordField(event)
       const toolCall = recordField(raw?.toolCall)
       const toolCallId = stringField(toolCall?.toolCallId)
-      if (toolCallId) toolStartedAt.set(toolCallId, timestamp())
+      if (toolCallId) toolStartedAt.set(toolCallId, monotonicNow())
       emit(
         {
           event: 'tool-start',
@@ -274,8 +309,9 @@ export function createAgentTelemetry(input: CreateAgentTelemetryInput): AgentTel
       const durationMs =
         numberField(raw?.durationMs) ??
         (toolCallId && toolStartedAt.has(toolCallId)
-          ? timestamp() - (toolStartedAt.get(toolCallId) as number)
+          ? elapsedSince(toolStartedAt.get(toolCallId))
           : undefined)
+      if (toolCallId) toolStartedAt.delete(toolCallId)
       emit(
         {
           event: 'tool-finish',
@@ -302,11 +338,12 @@ export function createAgentTelemetry(input: CreateAgentTelemetryInput): AgentTel
       const raw = recordField(event)
       const stepNumber = numberField(raw?.stepNumber)
       const startedAt = stepNumber !== undefined ? stepStartedAt.get(stepNumber) : undefined
+      if (stepNumber !== undefined) stepStartedAt.delete(stepNumber)
       emit(
         {
           event: 'step-finish',
           ...(stepNumber !== undefined ? { stepNumber } : {}),
-          durationMs: startedAt !== undefined ? timestamp() - startedAt : undefined,
+          durationMs: elapsedSince(startedAt),
           usage: normalizeTelemetryUsage(raw?.usage)
         },
         event
@@ -322,9 +359,18 @@ export function createAgentTelemetry(input: CreateAgentTelemetryInput): AgentTel
           callId: stringField(raw?.callId),
           provider: stringField(raw?.provider),
           modelId: stringField(raw?.modelId),
-          durationMs:
-            operationStartedAt !== undefined ? timestamp() - operationStartedAt : undefined,
-          usage: normalizeTelemetryUsage(raw?.totalUsage ?? raw?.usage)
+          durationMs: elapsedSince(operationStartedMonotonic),
+          usage: normalizeTelemetryUsage(raw?.totalUsage ?? raw?.usage),
+          ...(chunks.count > 0
+            ? {
+                chunks: {
+                  count: chunks.count,
+                  ...(chunks.firstChunkMs !== undefined
+                    ? { firstChunkMs: chunks.firstChunkMs }
+                    : {})
+                }
+              }
+            : {})
         },
         event
       )
@@ -364,7 +410,10 @@ export function createAgentTelemetry(input: CreateAgentTelemetryInput): AgentTel
     emit,
     emitError,
     emitRaw,
-    flushChunkSummary
+    recordChunk,
+    flushChunkSummary,
+    ttftMs: () => chunks.firstChunkMs,
+    retryCount: () => maxAttempt
   }
 }
 

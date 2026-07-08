@@ -25,32 +25,52 @@ export function createUiTelemetrySink(input: {
   }
 }
 
+const INFO_LEVEL_EVENTS = new Set<string>([
+  'operation-start',
+  'operation-finish',
+  'operation-error',
+  'retry-attempt'
+])
+
 export function createLoggerTelemetrySink(logger: Logger | undefined): AgentTelemetrySink {
   return {
     emit(record) {
       if (!logger || !record.data) return
+      const data = record.data
       const payload = {
-        event: record.data.event,
-        runId: record.data.runId,
-        chatId: record.data.chatId,
-        scope: record.data.scope,
-        sequence: record.data.sequence,
-        provider: record.data.provider,
-        modelId: record.data.modelId,
-        callId: record.data.callId,
-        stepNumber: record.data.stepNumber,
-        durationMs: record.data.durationMs,
-        retry: record.data.retry,
-        error: record.data.error
+        event: data.event,
+        runId: data.runId,
+        chatId: data.chatId,
+        scope: data.scope,
+        sequence: data.sequence,
+        provider: data.provider,
+        modelId: data.modelId,
+        callId: data.callId,
+        stepNumber: data.stepNumber,
+        durationMs: data.durationMs,
+        retry: data.retry,
+        error: data.error,
+        ...(data.event === 'operation-finish'
+          ? {
+              usage: data.usage,
+              ttftMs: data.chunks?.firstChunkMs,
+              chunkCount: data.chunks?.count
+            }
+          : {})
       }
-      if (record.data.error) logger.warn('agent telemetry event', payload)
-      else logger.info('agent telemetry event', payload)
+      // High-frequency per-step/model/tool events go to debug so they stay out of
+      // the on-disk log (file transport level is info) but remain visible in dev.
+      if (data.error || data.event === 'retry-exhausted')
+        logger.warn('agent telemetry event', payload)
+      else if (INFO_LEVEL_EVENTS.has(data.event)) logger.info('agent telemetry event', payload)
+      else logger.debug('agent telemetry event', payload)
     }
   }
 }
 
 export function createMemoryTelemetrySink(target: AgentTelemetrySinkRecord[]): AgentTelemetrySink {
   return {
+    wantsRaw: true,
     emit(record) {
       target.push(record)
     }
@@ -58,36 +78,78 @@ export function createMemoryTelemetrySink(target: AgentTelemetrySinkRecord[]): A
 }
 
 export function createDbTelemetrySink(input: {
-  store: Pick<AgentStore, 'recordToolExecution'>
+  store: Pick<AgentStore, 'recordToolExecution' | 'recordModelCall'>
   logger?: Logger
 }): AgentTelemetrySink {
   return {
     emit(record) {
       const data = record.data
-      if (!data || data.event !== 'tool-finish') return
-      if (data.scope !== 'chat' || !data.chatId) return
-      try {
-        input.store.recordToolExecution({
-          id: randomUUID(),
-          runId: `${data.chatId}:${data.runId}`,
-          conversationId: data.chatId,
-          toolName: data.tool?.name ?? 'unknown',
-          ...(data.tool?.callId ? { toolCallId: data.tool.callId } : {}),
-          success: data.tool?.success !== false,
-          ...(typeof (data.tool?.durationMs ?? data.durationMs) === 'number'
-            ? { durationMs: data.tool?.durationMs ?? data.durationMs }
-            : {}),
-          ...(data.error?.kind ? { errorKind: data.error.kind } : {}),
-          ...(data.error?.message ? { errorMessage: data.error.message } : {}),
-          createdAt: data.timestamp
-        })
-      } catch (error) {
-        input.logger?.warn('tool execution telemetry persist failed', {
-          chatId: data.chatId,
-          runId: data.runId,
-          tool: data.tool?.name,
-          error
-        })
+      if (!data) return
+      if (data.event === 'tool-finish') {
+        if (data.scope !== 'chat' || !data.chatId) return
+        try {
+          input.store.recordToolExecution({
+            id: randomUUID(),
+            runId: `${data.chatId}:${data.runId}`,
+            conversationId: data.chatId,
+            toolName: data.tool?.name ?? 'unknown',
+            ...(data.tool?.callId ? { toolCallId: data.tool.callId } : {}),
+            success: data.tool?.success !== false,
+            ...(typeof (data.tool?.durationMs ?? data.durationMs) === 'number'
+              ? { durationMs: data.tool?.durationMs ?? data.durationMs }
+              : {}),
+            ...(data.error?.kind ? { errorKind: data.error.kind } : {}),
+            ...(data.error?.message ? { errorMessage: data.error.message } : {}),
+            createdAt: data.timestamp
+          })
+        } catch (error) {
+          input.logger?.warn('tool execution telemetry persist failed', {
+            chatId: data.chatId,
+            runId: data.runId,
+            tool: data.tool?.name,
+            error
+          })
+        }
+        return
+      }
+      if (data.event === 'model-call-finish') {
+        // chat runs and compaction forks both carry a chatId; embed/rerank do not.
+        if ((data.scope !== 'chat' && data.scope !== 'compaction') || !data.chatId) return
+        try {
+          input.store.recordModelCall({
+            id: randomUUID(),
+            runId: `${data.chatId}:${data.runId}`,
+            conversationId: data.chatId,
+            scope: data.scope,
+            ...(data.provider ? { provider: data.provider } : {}),
+            ...(data.modelId ? { modelId: data.modelId } : {}),
+            ...(typeof data.stepNumber === 'number' ? { stepNumber: data.stepNumber } : {}),
+            attempt: data.retry?.attempt ?? 1,
+            success: !data.error,
+            ...(typeof data.durationMs === 'number' ? { durationMs: data.durationMs } : {}),
+            ...(data.error?.kind ? { errorKind: data.error.kind } : {}),
+            ...(typeof data.error?.statusCode === 'number'
+              ? { statusCode: data.error.statusCode }
+              : {}),
+            ...(typeof data.usage?.inputTokens === 'number'
+              ? { inputTokens: data.usage.inputTokens }
+              : {}),
+            ...(typeof data.usage?.outputTokens === 'number'
+              ? { outputTokens: data.usage.outputTokens }
+              : {}),
+            ...(typeof data.usage?.cacheReadTokens === 'number'
+              ? { cacheReadTokens: data.usage.cacheReadTokens }
+              : {}),
+            createdAt: data.timestamp
+          })
+        } catch (error) {
+          input.logger?.warn('model call telemetry persist failed', {
+            chatId: data.chatId,
+            runId: data.runId,
+            provider: data.provider,
+            error
+          })
+        }
       }
     }
   }

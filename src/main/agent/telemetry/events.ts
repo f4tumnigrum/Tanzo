@@ -22,6 +22,7 @@ export interface AgentTelemetrySinkRecord {
 
 export interface AgentTelemetrySink {
   emit(record: AgentTelemetrySinkRecord): void | Promise<void>
+  wantsRaw?: boolean
 }
 
 export type AgentTelemetryEmitInput = Omit<

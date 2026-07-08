@@ -2,6 +2,7 @@ import type {
   ActivityBucketUnit,
   ActivityConversationList,
   ActivityConversationSummary,
+  ActivityErrorBucket,
   ActivityKpis,
   ActivityModelBreakdownRow,
   ActivityRange,
@@ -114,6 +115,11 @@ export function createActivityRepo(db: SqlDatabase): ActivityRepo {
     FROM tool_executions
     WHERE created_at BETWEEN @from AND @to AND duration_ms IS NOT NULL
     ORDER BY tool_name, duration_ms
+  `)
+  const selectTtftDurations = db.prepare(`
+    SELECT ttft_ms FROM runs
+    WHERE started_at BETWEEN @from AND @to AND ttft_ms IS NOT NULL
+    ORDER BY ttft_ms
   `)
   const selectRunCount = db.prepare(`
     SELECT COUNT(*) AS total FROM runs WHERE started_at BETWEEN @from AND @to
@@ -252,6 +258,34 @@ export function createActivityRepo(db: SqlDatabase): ActivityRepo {
     SELECT COUNT(*) AS count FROM runs
     WHERE started_at BETWEEN @from AND @to AND status = 'failed'
   `)
+  const selectAbortedRunCount = db.prepare(`
+    SELECT COUNT(*) AS count FROM runs
+    WHERE started_at BETWEEN @from AND @to AND aborted = 1
+  `)
+  const selectRunErrorKinds = db.prepare(`
+    SELECT error_kind AS kind, COUNT(*) AS count
+    FROM runs
+    WHERE started_at BETWEEN @from AND @to AND error_kind IS NOT NULL
+    GROUP BY error_kind ORDER BY count DESC
+  `)
+  const selectProviderCallStats = db.prepare(`
+    SELECT
+      COALESCE(provider, 'unknown') AS provider,
+      COUNT(*) AS call_count,
+      SUM(CASE WHEN attempt > 1 THEN 1 ELSE 0 END) AS retried_call_count
+    FROM model_calls
+    WHERE created_at BETWEEN @from AND @to
+    GROUP BY provider ORDER BY call_count DESC
+  `)
+  const selectProviderErrorKinds = db.prepare(`
+    SELECT
+      COALESCE(provider, 'unknown') AS provider,
+      COALESCE(error_kind, 'unknown') AS kind,
+      COUNT(*) AS count
+    FROM model_calls
+    WHERE created_at BETWEEN @from AND @to AND success = 0
+    GROUP BY provider, error_kind ORDER BY count DESC
+  `)
 
   function mapRun(row: Record<string, unknown>): ActivityRunSummary {
     return {
@@ -333,6 +367,9 @@ export function createActivityRepo(db: SqlDatabase): ActivityRepo {
     const failedCount = num(totals.failed_count)
     const cacheReadTokens = num(cache.cache_read_tokens)
     const stepInputTokens = num(cache.step_input_tokens)
+    const ttfts = (selectTtftDurations.all(bindRange(range)) as Array<{ ttft_ms: number }>).map(
+      (row) => row.ttft_ms
+    )
     return {
       runCount,
       finishedCount: num(totals.finished_count),
@@ -343,7 +380,9 @@ export function createActivityRepo(db: SqlDatabase): ActivityRepo {
       totalTokens: num(totals.total_tokens),
       cacheReadTokens,
       cacheWriteTokens: num(cache.cache_write_tokens),
-      cacheHitRatio: boundedCacheHitRatio(cacheReadTokens, stepInputTokens)
+      cacheHitRatio: boundedCacheHitRatio(cacheReadTokens, stepInputTokens),
+      ttftP50Ms: percentile(ttfts, 50),
+      ttftP95Ms: percentile(ttfts, 95)
     }
   }
 
@@ -385,7 +424,41 @@ export function createActivityRepo(db: SqlDatabase): ActivityRepo {
     const failedRuns = num(
       (selectFailedRunCount.get(bindRange(range)) as Record<string, unknown>).count
     )
-    return { toolErrorKinds, finishReasons, failedToolCalls, failedRuns }
+    const abortedRuns = num(
+      (selectAbortedRunCount.get(bindRange(range)) as Record<string, unknown>).count
+    )
+    const runErrorKinds = (
+      selectRunErrorKinds.all(bindRange(range)) as Array<Record<string, unknown>>
+    ).map((row) => ({ kind: String(row.kind), count: num(row.count) }))
+    const providerErrorsByProvider = new Map<string, ActivityErrorBucket[]>()
+    for (const row of selectProviderErrorKinds.all(bindRange(range)) as Array<
+      Record<string, unknown>
+    >) {
+      const provider = String(row.provider)
+      const bucket = providerErrorsByProvider.get(provider) ?? []
+      bucket.push({ kind: String(row.kind), count: num(row.count) })
+      providerErrorsByProvider.set(provider, bucket)
+    }
+    const providerReliability = (
+      selectProviderCallStats.all(bindRange(range)) as Array<Record<string, unknown>>
+    ).map((row) => {
+      const provider = String(row.provider)
+      return {
+        provider,
+        callCount: num(row.call_count),
+        retriedCallCount: num(row.retried_call_count),
+        errorKinds: providerErrorsByProvider.get(provider) ?? []
+      }
+    })
+    return {
+      toolErrorKinds,
+      finishReasons,
+      failedToolCalls,
+      failedRuns,
+      abortedRuns,
+      runErrorKinds,
+      providerReliability
+    }
   }
 
   return {

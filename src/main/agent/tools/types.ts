@@ -52,6 +52,7 @@ export interface ToolDeps {
   redefineTask: AgentService['redefineTask']
   cancelTask: AgentService['cancelTask']
   reportTaskPhase: AgentService['reportTaskPhase']
+  addTaskNote: AgentService['addTaskNote']
   submitTaskResult: AgentService['submitTaskResult']
   goal: GoalToolAccess
   browser: BrowserOpener

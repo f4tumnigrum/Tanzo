@@ -240,6 +240,7 @@ CREATE TABLE subagent_tasks (
   block_json       TEXT CHECK (block_json IS NULL OR json_valid(block_json)),
   phase            TEXT,
   phases_json      TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(phases_json)),
+  notes_json       TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(notes_json)),
   result_json      TEXT CHECK (result_json IS NULL OR json_valid(result_json)),
   seq              INTEGER NOT NULL,
   created_at       INTEGER NOT NULL,
@@ -266,6 +267,10 @@ CREATE TABLE runs (
   output_tokens   INTEGER,
   total_tokens    INTEGER,
   error_json      TEXT CHECK (error_json IS NULL OR json_valid(error_json)),
+  aborted         INTEGER NOT NULL DEFAULT 0,
+  error_kind      TEXT,
+  ttft_ms         INTEGER,
+  retry_count     INTEGER,
   UNIQUE (conversation_id, external_run_id)
 );
 CREATE INDEX idx_runs__conversation_started ON runs (conversation_id, started_at DESC);
@@ -357,6 +362,28 @@ CREATE TABLE tool_executions (
 CREATE INDEX idx_tool_executions__created ON tool_executions (created_at DESC);
 CREATE INDEX idx_tool_executions__tool_created ON tool_executions (tool_name, created_at DESC);
 CREATE INDEX idx_tool_executions__run ON tool_executions (run_id);
+
+CREATE TABLE model_calls (
+  id                TEXT PRIMARY KEY,
+  run_id            TEXT NOT NULL,
+  conversation_id   TEXT NOT NULL,
+  scope             TEXT NOT NULL,
+  provider          TEXT,
+  model_id          TEXT,
+  step_number       INTEGER,
+  attempt           INTEGER NOT NULL DEFAULT 1,
+  success           INTEGER NOT NULL DEFAULT 1 CHECK (success IN (0, 1)),
+  duration_ms       INTEGER,
+  error_kind        TEXT,
+  status_code       INTEGER,
+  input_tokens      INTEGER,
+  output_tokens     INTEGER,
+  cache_read_tokens INTEGER,
+  created_at        INTEGER NOT NULL
+);
+CREATE INDEX idx_model_calls__created ON model_calls (created_at DESC);
+CREATE INDEX idx_model_calls__provider ON model_calls (provider, created_at DESC);
+CREATE INDEX idx_model_calls__run ON model_calls (run_id);
 
 CREATE TABLE quarantined_messages (
   conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
@@ -690,6 +717,65 @@ export const tanzoMigrations: ModuleMigrations = {
       version: 27,
       name: 'provider_zhipu_minimax',
       up: (db) => db.exec(PROVIDER_TABLES_V27)
+    },
+    {
+      version: 28,
+      name: 'subagent_task_notes',
+      up: (db) => {
+        const columns = db.prepare('PRAGMA table_info(subagent_tasks)').all() as Array<{
+          name: string
+        }>
+        if (columns.some((column) => column.name === 'notes_json')) return
+        db.exec(
+          "ALTER TABLE subagent_tasks ADD COLUMN notes_json TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(notes_json))"
+        )
+      }
+    },
+    {
+      version: 29,
+      name: 'telemetry_v2',
+      up: (db) => {
+        const runColumns = new Set(
+          (db.prepare('PRAGMA table_info(runs)').all() as Array<{ name: string }>).map(
+            (column) => column.name
+          )
+        )
+        if (!runColumns.has('aborted')) {
+          db.exec('ALTER TABLE runs ADD COLUMN aborted INTEGER NOT NULL DEFAULT 0')
+        }
+        if (!runColumns.has('error_kind')) {
+          db.exec('ALTER TABLE runs ADD COLUMN error_kind TEXT')
+        }
+        if (!runColumns.has('ttft_ms')) {
+          db.exec('ALTER TABLE runs ADD COLUMN ttft_ms INTEGER')
+        }
+        if (!runColumns.has('retry_count')) {
+          db.exec('ALTER TABLE runs ADD COLUMN retry_count INTEGER')
+        }
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS model_calls (
+            id                TEXT PRIMARY KEY,
+            run_id            TEXT NOT NULL,
+            conversation_id   TEXT NOT NULL,
+            scope             TEXT NOT NULL,
+            provider          TEXT,
+            model_id          TEXT,
+            step_number       INTEGER,
+            attempt           INTEGER NOT NULL DEFAULT 1,
+            success           INTEGER NOT NULL DEFAULT 1 CHECK (success IN (0, 1)),
+            duration_ms       INTEGER,
+            error_kind        TEXT,
+            status_code       INTEGER,
+            input_tokens      INTEGER,
+            output_tokens     INTEGER,
+            cache_read_tokens INTEGER,
+            created_at        INTEGER NOT NULL
+          );
+          CREATE INDEX IF NOT EXISTS idx_model_calls__created ON model_calls (created_at DESC);
+          CREATE INDEX IF NOT EXISTS idx_model_calls__provider ON model_calls (provider, created_at DESC);
+          CREATE INDEX IF NOT EXISTS idx_model_calls__run ON model_calls (run_id);
+        `)
+      }
     }
   ]
 }

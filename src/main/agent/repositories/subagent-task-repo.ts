@@ -1,6 +1,7 @@
 import type {
   SubagentTask,
   SubagentTaskBlock,
+  SubagentTaskNote,
   SubagentTaskPhase,
   SubagentTaskResult,
   SubagentTaskStatus
@@ -20,6 +21,7 @@ interface TaskRow {
   block_json: string | null
   phase: string | null
   phases_json: string
+  notes_json: string
   result_json: string | null
   seq: number
   created_at: number
@@ -63,6 +65,7 @@ function rowToTask(row: TaskRow): SubagentTask {
     ...(block ? { block } : {}),
     ...(row.phase ? { phase: row.phase } : {}),
     phases: parseJson<SubagentTaskPhase[]>(row.phases_json, []),
+    notes: parseJson<SubagentTaskNote[]>(row.notes_json, []),
     ...(result ? { result } : {}),
     createdAt: row.created_at,
     ...(row.started_at != null ? { startedAt: row.started_at } : {}),
@@ -74,12 +77,12 @@ export function createSubagentTaskRepo(db: SqlDatabase): SubagentTaskRepo {
   const insertRow = db.prepare(`
     INSERT INTO subagent_tasks (
       id, root_chat_id, chat_id, parent_chat_id, agent_type, objective, status,
-      depends_on_json, allowed_tools_json, block_json, phase, phases_json, result_json,
-      seq, created_at, started_at, completed_at
+      depends_on_json, allowed_tools_json, block_json, phase, phases_json, notes_json,
+      result_json, seq, created_at, started_at, completed_at
     ) VALUES (
       @id, @root_chat_id, @chat_id, @parent_chat_id, @agent_type, @objective, @status,
-      @depends_on_json, @allowed_tools_json, @block_json, @phase, @phases_json, @result_json,
-      @seq, @created_at, @started_at, @completed_at
+      @depends_on_json, @allowed_tools_json, @block_json, @phase, @phases_json, @notes_json,
+      @result_json, @seq, @created_at, @started_at, @completed_at
     )
   `)
   const updateRow = db.prepare(`
@@ -91,6 +94,7 @@ export function createSubagentTaskRepo(db: SqlDatabase): SubagentTaskRepo {
       block_json = @block_json,
       phase = @phase,
       phases_json = @phases_json,
+      notes_json = @notes_json,
       result_json = @result_json,
       started_at = @started_at,
       completed_at = @completed_at
@@ -120,6 +124,7 @@ export function createSubagentTaskRepo(db: SqlDatabase): SubagentTaskRepo {
       block_json: task.block ? JSON.stringify(task.block) : null,
       phase: task.phase ?? null,
       phases_json: JSON.stringify(task.phases),
+      notes_json: JSON.stringify(task.notes),
       result_json: task.result ? JSON.stringify(task.result) : null,
       started_at: task.startedAt ?? null,
       completed_at: task.completedAt ?? null

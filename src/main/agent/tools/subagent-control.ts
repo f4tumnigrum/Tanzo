@@ -15,17 +15,22 @@ export function reportTool(
     Record<string, unknown>
   >({
     description:
-      'Report progress to the parent. Pass phase to announce the step you are starting (call ' +
-      'before each major phase). Pass result to submit your final, self-contained deliverable — ' +
-      'that snapshot is what reaches the parent, so call it once you have the answer and then ' +
-      'stop. You may pass both to report a phase and submit the result together.',
+      'Report progress and findings. Pass phase to announce the step you are starting (call ' +
+      'before each major phase; shown live in the UI, sampled by the parent when it awaits ' +
+      'you). Pass note for a mid-task finding the parent should know (surfaced via await; use ' +
+      'for signal, not narration). Pass result to submit your final, self-contained ' +
+      'deliverable — submitting a result ends your run immediately, so call it exactly once, ' +
+      'when you have the answer.',
     inputSchema: zodSchema(reportInputSchema),
     outputSchema: zodSchema(reportOutputSchema),
     metadata: { tanzo: { kind: 'read', component: 'SubagentCard' } },
     toModelOutput: toolResultToModelOutput,
-    execute({ phase, result }) {
-      if (!phase && !result) return toolError('Provide a phase to report or a result to submit.')
+    execute({ phase, note, result }) {
+      if (!phase && !note && !result) {
+        return toolError('Provide a phase to report, a note to record, or a result to submit.')
+      }
       if (phase) deps.reportTaskPhase(chatId, phase)
+      if (note) deps.addTaskNote(chatId, note)
       if (result) deps.submitTaskResult(chatId, { summary: result })
       return { ok: true }
     }

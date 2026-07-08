@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   recordFinishedStepDiagnostic,
-  recordPreparedStepDiagnostic
+  recordPreparedStepDiagnostic,
+  resetPromptDiagnosticModeCache
 } from '@main/agent/runtime/prompt-diagnostics'
 import type { AgentDefinition } from '@main/agent/agents/types'
 
@@ -24,12 +25,18 @@ function createDeps() {
   return {
     store: {
       getLatestPromptDiagnostic: vi.fn(() => undefined),
+      ensureRunStep: vi.fn(),
       recordPromptDiagnostic: vi.fn(),
       finishPromptDiagnostic: vi.fn()
     },
     logger: { warn: vi.fn() }
   }
 }
+
+afterEach(() => {
+  delete process.env.TANZO_PROMPT_DIAGNOSTICS
+  resetPromptDiagnosticModeCache()
+})
 
 describe('main/agent/runtime/prompt-diagnostics', () => {
   it('records a prepared-step diagnostic from the built record', () => {
@@ -111,5 +118,74 @@ describe('main/agent/runtime/prompt-diagnostics', () => {
       'prompt cache diagnostic record failed',
       expect.objectContaining({ chatId: 'chat-1' })
     )
+  })
+
+  it('in sampled mode records step 1 fully but only ensures run-step on non-sampled steps', () => {
+    process.env.TANZO_PROMPT_DIAGNOSTICS = 'sampled'
+    resetPromptDiagnosticModeCache()
+    const deps = createDeps()
+
+    const prepared = { def, tools: {} as never, prepared: { system: [], messages: [] } }
+    // Step 1 -> full record (baseline). Step 2/3 -> ensureRunStep only. Step 4 -> full record.
+    recordPreparedStepDiagnostic(deps as never, {
+      chatId: 'c',
+      runId: 'r',
+      stepNumber: 1,
+      ...prepared
+    })
+    recordPreparedStepDiagnostic(deps as never, {
+      chatId: 'c',
+      runId: 'r',
+      stepNumber: 2,
+      ...prepared
+    })
+    recordPreparedStepDiagnostic(deps as never, {
+      chatId: 'c',
+      runId: 'r',
+      stepNumber: 3,
+      ...prepared
+    })
+    recordPreparedStepDiagnostic(deps as never, {
+      chatId: 'c',
+      runId: 'r',
+      stepNumber: 4,
+      ...prepared
+    })
+
+    expect(deps.store.recordPromptDiagnostic).toHaveBeenCalledTimes(2)
+    expect(deps.store.ensureRunStep).toHaveBeenCalledTimes(2)
+    expect(deps.store.ensureRunStep).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: 'c',
+        runId: 'r',
+        stepNumber: 2,
+        provider: 'anthropic'
+      })
+    )
+  })
+
+  it('in off mode records nothing and skips the finish update', () => {
+    process.env.TANZO_PROMPT_DIAGNOSTICS = 'off'
+    resetPromptDiagnosticModeCache()
+    const deps = createDeps()
+
+    recordPreparedStepDiagnostic(deps as never, {
+      chatId: 'c',
+      runId: 'r',
+      stepNumber: 1,
+      def,
+      tools: {} as never,
+      prepared: {}
+    })
+    recordFinishedStepDiagnostic(deps as never, {
+      chatId: 'c',
+      runId: 'r',
+      stepNumber: 1,
+      usage: { inputTokens: 10 }
+    })
+
+    expect(deps.store.recordPromptDiagnostic).not.toHaveBeenCalled()
+    expect(deps.store.ensureRunStep).not.toHaveBeenCalled()
+    expect(deps.store.finishPromptDiagnostic).not.toHaveBeenCalled()
   })
 })

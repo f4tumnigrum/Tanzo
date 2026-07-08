@@ -7,6 +7,11 @@ export interface SubagentTaskPhase {
   at: number
 }
 
+export interface SubagentTaskNote {
+  text: string
+  at: number
+}
+
 export interface SubagentTaskApproval {
   approvalId: string
   toolName: string
@@ -28,6 +33,8 @@ export interface SubagentTaskResult {
   failureKind?: 'app-restart' | 'logic-error' | 'await-cancelled'
 
   failedDependencyId?: string
+
+  notes?: SubagentTaskNote[]
 }
 
 export interface SubagentTask {
@@ -43,10 +50,19 @@ export interface SubagentTask {
   block?: SubagentTaskBlock
   phase?: string
   phases: SubagentTaskPhase[]
+  notes: SubagentTaskNote[]
   result?: SubagentTaskResult
   createdAt: number
   startedAt?: number
   completedAt?: number
+}
+
+export interface SubagentTaskPendingView {
+  task: string
+  status: SubagentTaskStatus
+  phase?: string
+  latestNote?: string
+  updatedAt: number
 }
 
 export interface SubagentTaskApprovalView {

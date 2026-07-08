@@ -21,6 +21,8 @@ export interface ActivityKpis {
   cacheWriteTokens: number
 
   cacheHitRatio: number
+  ttftP50Ms: number | null
+  ttftP95Ms: number | null
 }
 
 export interface ActivityModelBreakdownRow {
@@ -74,11 +76,21 @@ export interface ActivityFinishReasonBucket {
   count: number
 }
 
+export interface ActivityProviderReliabilityRow {
+  provider: string
+  callCount: number
+  retriedCallCount: number
+  errorKinds: ActivityErrorBucket[]
+}
+
 export interface ActivityReliability {
   toolErrorKinds: ActivityErrorBucket[]
   finishReasons: ActivityFinishReasonBucket[]
   failedToolCalls: number
   failedRuns: number
+  abortedRuns: number
+  runErrorKinds: ActivityErrorBucket[]
+  providerReliability: ActivityProviderReliabilityRow[]
 }
 
 export interface ActivityRunSummary {

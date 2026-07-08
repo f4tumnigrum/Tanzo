@@ -74,6 +74,46 @@ function seed(db: SqlDatabase): void {
     duration_ms: 5,
     created_at: 2001
   })
+
+  // telemetry_v2 fields: ttft on finished runs, an aborted run, an error kind on the failed run.
+  db.exec(`
+    UPDATE runs SET ttft_ms = 120, retry_count = 1 WHERE id = 'c1:r1';
+    UPDATE runs SET ttft_ms = 400, retry_count = 3, error_kind = 'api' WHERE id = 'c1:r2';
+    UPDATE runs SET ttft_ms = 200, aborted = 1 WHERE id = 'c2:r3';
+  `)
+
+  const insertModelCall = db.prepare(`
+    INSERT INTO model_calls (id, run_id, conversation_id, scope, provider, model_id, step_number,
+      attempt, success, duration_ms, error_kind, status_code, input_tokens, output_tokens,
+      cache_read_tokens, created_at)
+    VALUES (@id, @run_id, @conversation_id, @scope, @provider, @model_id, @step_number, @attempt,
+      @success, @duration_ms, @error_kind, @status_code, @input_tokens, @output_tokens,
+      @cache_read_tokens, @created_at)
+  `)
+  const modelCall = (over: Record<string, unknown>): void =>
+    insertModelCall.run({
+      id: 'm',
+      run_id: 'c1:r1',
+      conversation_id: 'c1',
+      scope: 'chat',
+      provider: 'openai',
+      model_id: 'gpt-4',
+      step_number: 1,
+      attempt: 1,
+      success: 1,
+      duration_ms: 100,
+      error_kind: null,
+      status_code: null,
+      input_tokens: 10,
+      output_tokens: 5,
+      cache_read_tokens: 0,
+      created_at: 1500,
+      ...over
+    })
+  modelCall({ id: 'm1' })
+  modelCall({ id: 'm2', attempt: 2 })
+  modelCall({ id: 'm3', success: 0, error_kind: 'api', status_code: 429 })
+  modelCall({ id: 'm4', provider: 'anthropic', model_id: 'claude', run_id: 'c2:r3' })
 }
 
 const ALL = { from: 0, to: 10_000 }
@@ -120,6 +160,30 @@ describe('activity-repo', () => {
     expect(read?.p95DurationMs).toBe(50)
     const grep = tools.find((t) => t.toolName === 'grep')
     expect(grep?.successRate).toBe(0)
+  })
+
+  it('reports ttft percentiles in KPIs', () => {
+    const { kpis } = setup().getSummary(ALL)
+    // ttft values across runs: 120, 200, 400 -> p50 = 200, p95 = 400
+    expect(kpis.ttftP50Ms).toBe(200)
+    expect(kpis.ttftP95Ms).toBe(400)
+  })
+
+  it('reports abort count, run error kinds, and provider reliability', () => {
+    const rel = setup().getReliability(ALL)
+    expect(rel.abortedRuns).toBe(1)
+    expect(rel.runErrorKinds).toEqual([{ kind: 'api', count: 1 }])
+
+    const openai = rel.providerReliability.find((row) => row.provider === 'openai')
+    expect(openai).toBeDefined()
+    // openai has 3 model calls (m1, m2, m3); m2 is a retry (attempt > 1)
+    expect(openai?.callCount).toBe(3)
+    expect(openai?.retriedCallCount).toBe(1)
+    expect(openai?.errorKinds).toEqual([{ kind: 'api', count: 1 }])
+
+    const anthropic = rel.providerReliability.find((row) => row.provider === 'anthropic')
+    expect(anthropic?.callCount).toBe(1)
+    expect(anthropic?.retriedCallCount).toBe(0)
   })
 
   it('lists runs newest-first with pagination and total', () => {

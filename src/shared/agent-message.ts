@@ -3,6 +3,7 @@ import type { ChangePreviewData } from './change-set'
 import type {
   SubagentTask,
   SubagentTaskApprovalView,
+  SubagentTaskPendingView,
   SubagentTaskResult,
   SubagentTaskStatus
 } from './subagent-task'
@@ -14,6 +15,7 @@ export type SubagentTraceEntry = { type: 'text'; text: string } | { type: 'tool'
 type SubagentTaskWire = SubagentTask
 type SubagentTaskResultWire = SubagentTaskResult
 type SubagentTaskStatusWire = SubagentTaskStatus
+type SubagentTaskPendingWire = SubagentTaskPendingView
 
 export interface AskQuestionOption {
   value: string
@@ -165,7 +167,7 @@ export type TanzoTools = {
     output:
       | {
           results: Array<{ task: string; result: SubagentTaskResultWire }>
-          pending?: string[]
+          pending?: SubagentTaskPendingWire[]
           unknown?: string[]
           timedOut?: boolean
         }
@@ -184,7 +186,7 @@ export type TanzoTools = {
     output: { cancelled: true } | ToolError
   }
   report: {
-    input: { phase?: string; result?: string }
+    input: { phase?: string; note?: string; result?: string }
     output: { ok: true } | ToolError
   }
   skill: {

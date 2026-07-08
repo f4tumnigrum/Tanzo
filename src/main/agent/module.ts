@@ -417,6 +417,7 @@ export function createAgentModule(options: AgentModuleOptions): AgentModule {
         requireService(serviceRef).redefineTask(rootChatId, taskId, objective),
       cancelTask: (rootChatId, taskId) => requireService(serviceRef).cancelTask(rootChatId, taskId),
       reportTaskPhase: (chatId, phase) => requireService(serviceRef).reportTaskPhase(chatId, phase),
+      addTaskNote: (chatId, note) => requireService(serviceRef).addTaskNote(chatId, note),
       submitTaskResult: (chatId, result) =>
         requireService(serviceRef).submitTaskResult(chatId, result),
       goal: {

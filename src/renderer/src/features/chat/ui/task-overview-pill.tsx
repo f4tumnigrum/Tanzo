@@ -1,59 +1,16 @@
 import { useState } from 'react'
-import {
-  Ban,
-  CircleAlert,
-  CircleCheckBig,
-  CircleDashed,
-  GitBranch,
-  ListTree,
-  MessageSquareShare,
-  Pause,
-  PowerOff,
-  RotateCcw
-} from 'lucide-react'
+import { Ban, GitBranch, ListTree, MessageSquareShare, Pause, RotateCcw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import type { SubagentTask, SubagentTaskResult } from '@shared/subagent-task'
+import type { SubagentTask } from '@shared/subagent-task'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
+import { taskStatusGlyph } from './tool/renderers/shared'
 import { useChatSession, useSidecarState } from '../model/conversation/use-chat-session'
 import type { ChatSession } from '../model/conversation/session-manager'
 import { useChatUiStore } from '../model/store'
 
 const ACTIVE_STATUSES = new Set<SubagentTask['status']>(['pending', 'running', 'blocked'])
-
-const STATUS_ICON_TONE: Record<SubagentTask['status'], string> = {
-  pending: 'text-muted-foreground/70',
-  running: 'text-primary',
-  blocked: 'text-amber-500',
-  done: 'text-emerald-500/85',
-  failed: 'text-red-500',
-  cancelled: 'text-muted-foreground/70'
-}
-
-const INTERRUPTED_ICON_TONE = 'text-muted-foreground/55'
-
-function statusIcon(
-  status: SubagentTask['status'],
-  failureKind?: SubagentTaskResult['failureKind']
-): { Icon: React.ElementType; spin?: boolean; overrideTone?: string } {
-  switch (status) {
-    case 'done':
-      return { Icon: CircleCheckBig }
-    case 'failed':
-      if (failureKind === 'app-restart')
-        return { Icon: PowerOff, overrideTone: INTERRUPTED_ICON_TONE }
-      return { Icon: CircleAlert }
-    case 'cancelled':
-      return { Icon: Ban }
-    case 'blocked':
-      return { Icon: Pause }
-    case 'running':
-      return { Icon: CircleDashed, spin: true }
-    default:
-      return { Icon: CircleDashed }
-  }
-}
 
 export function TaskOverviewPill({ chatId }: { chatId: string }): React.JSX.Element | null {
   const { t } = useTranslation()
@@ -177,7 +134,7 @@ function TaskRow({
   const [busy, setBusy] = useState(false)
   const [steering, setSteering] = useState(false)
   const [instruction, setInstruction] = useState('')
-  const { Icon, spin, overrideTone } = statusIcon(task.status, task.result?.failureKind)
+  const { Icon, tone, spin } = taskStatusGlyph(task.status, task.result?.failureKind)
   const detail = blockDetail(task, t)
   const isInterrupted = task.result?.failureKind === 'app-restart'
   const settled = task.status === 'done' || task.status === 'cancelled'
@@ -220,11 +177,7 @@ function TaskRow({
           className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
         >
           <Icon
-            className={cn(
-              'size-3 shrink-0',
-              overrideTone ?? STATUS_ICON_TONE[task.status],
-              spin && 'animate-spin'
-            )}
+            className={cn('size-3 shrink-0', tone, spin && 'animate-spin')}
             aria-hidden="true"
           />
           <span
@@ -302,6 +255,14 @@ function TaskRow({
           ) : null}
         </span>
       </div>
+      {isActive && task.notes.length > 0 ? (
+        <p
+          className="mt-0.5 min-w-0 truncate pl-[1.125rem] text-[0.625rem] text-muted-foreground/70"
+          title={task.notes[task.notes.length - 1].text}
+        >
+          {task.notes[task.notes.length - 1].text}
+        </p>
+      ) : null}
       {steering ? (
         <div className="mt-1 flex items-center gap-1 pl-[1.125rem]">
           <input

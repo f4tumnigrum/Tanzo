@@ -28,10 +28,11 @@ The `SqlDatabase` wrapper (`connection.ts:39-71`) exposes `prepare` / `run` / `g
 `ModuleMigrations` is per-module and version-tracked; every migration's `up(db)` runs inside a transaction with
 an applied-row insert, and versions must be strictly increasing.
 
-There is a single module, `tanzoMigrations` (moduleName `'tanzo'`, `database/schema.ts:418`), wired in at
-`src/main/index.ts:217` (`migrations: [tanzoMigrations]`) — the only module registered. Its files are v1
-`initial_schema`, v19 `plugin_states`, v20 `plugin_marketplaces` (the v2–v18 gap reflects a flattened history:
-the initial schema already contains everything through v18).
+There is a single module, `tanzoMigrations` (moduleName `'tanzo'`, `database/schema.ts`), wired in at
+`src/main/index.ts` (`migrations: [tanzoMigrations]`) — the only module registered. Its files start at v1
+`initial_schema` (the v2–v18 gap reflects a flattened history: the initial schema already contains everything
+through v18) and continue through incremental migrations up to v28 `subagent_task_notes` (adds
+`subagent_tasks.notes_json` for the sub-agent `report({note})` channel).
 
 ## 3. Tables and ownership
 

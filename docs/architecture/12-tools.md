@@ -151,20 +151,26 @@ head 50, max 500.
   id) are rejected before any writes, so a bad spawn leaves no orphaned executor conversation. If a later spec
   in a batch fails, the error names the already-started ids. `kind: 'exec'`.
 - `await` blocks on `deps.awaitTask` with `settle: 'all' | 'first'` and an optional `timeoutMs` (tasks keep
-  running past a timeout). Unknown ids are returned in the `unknown` field rather than silently dropped;
-  results carry `failureKind` (`app-restart` | `logic-error` | `await-cancelled`) and `resultSource`
-  (`explicit` | `inferred`) so the parent can judge confidence. `kind: 'read'`.
+  running past a timeout). On timeout, `pending` is a structured snapshot per unfinished task —
+  `{ task, status, phase, latestNote, updatedAt }` — so the parent can sample progress and mid-task findings
+  and decide to keep waiting, `steer`, or `cancel`. Unknown ids are returned in the `unknown` field rather
+  than silently dropped; results carry `failureKind` (`app-restart` | `logic-error` | `await-cancelled`),
+  `resultSource` (`explicit` | `inferred`), and any collected `notes` so the parent can judge confidence.
+  `kind: 'read'`.
 - `tasks` (read), `steer` (`instruction` appends via `instructTask`; `objective` restarts via `redefineTask` —
   the input schema is a union so exactly one is required), `cancel`.
 
 Steering is rejected with an actionable error when the task is already settled (its result is final; spawn a
 new task instead) or dependency-blocked (the gate may not be bypassed).
 
-The sub-agent side reports back via the `report` tool (`tools/subagent-control.ts`): `phase → reportTaskPhase`,
-`result → submitTaskResult`; this tool is added only for sub-agents. A sub-agent that finishes without calling
-`report(result)` gets its result inferred from the last assistant text (`resultSource: 'inferred'`); if that
-text is empty too, the task **fails** (`failureKind: 'logic-error'`) instead of completing with an empty
-summary. Progress reaches the UI over `chat:task-event` (see [04 IPC & Contracts](./04-ipc-and-contracts.md)).
+The sub-agent side reports back via the `report` tool (`tools/subagent-control.ts`): `phase → reportTaskPhase`
+(live UI progress, sampled by the parent via `await`'s structured `pending`), `note → addTaskNote` (mid-task
+findings for the parent, carried into `pending.latestNote` and `result.notes`), and `result → submitTaskResult`
+(**terminal**: completes the task immediately with `resultSource: 'explicit'` and aborts the sub-agent's run);
+this tool is added only for sub-agents. A sub-agent that finishes without calling `report(result)` gets its
+result inferred from the last assistant text (`resultSource: 'inferred'`); if that text is empty too, the task
+**fails** (`failureKind: 'logic-error'`) instead of completing with an empty summary. Progress reaches the UI
+over `chat:task-event` (see [04 IPC & Contracts](./04-ipc-and-contracts.md)).
 
 Foreground vs background: spawning is always background/async; "foreground" is simply the parent calling `await`
 to block on results. The actual scheduling is delegated to `AgentService` (`deps.spawnTask` / `awaitTask`), and

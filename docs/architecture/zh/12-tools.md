@@ -96,12 +96,12 @@ MCP 工具 kind 由注解推导（`tools/mcp.ts`）：`readOnlyHint === true && 
 `subagentTools(deps, parentChatId, agentTypes)` 返回 `{ spawn, await, tasks, steer, cancel }`：
 
 - `spawn` 对每个 `spec.agent` 校验可用类型，逐个 `deps.spawnTask(...)`，并**立即返回**可读 id（如 `explore-1`）与一个 `await(...)` 提示。一次调用多个 spec 即成**并行/并发**后台任务。静态依赖错误（自依赖、依赖 id 不存在）在任何写入前拒绝，坏 spawn 不会留下孤儿 executor 会话；批量中靠后的 spec 失败时，错误会列出已启动的 id。`kind: 'exec'`。
-- `await` 以 `settle: 'all' | 'first'` 与可选 `timeoutMs` 阻塞在 `deps.awaitTask`（超时后任务继续跑）。未知 id 在 `unknown` 字段显式返回而非静默丢弃；结果携带 `failureKind`（`app-restart` | `logic-error` | `await-cancelled`）与 `resultSource`（`explicit` | `inferred`）供父代理判断置信度。`kind: 'read'`。
+- `await` 以 `settle: 'all' | 'first'` 与可选 `timeoutMs` 阻塞在 `deps.awaitTask`（超时后任务继续跑）。超时返回时 `pending` 为每个未完成任务的结构化快照——`{ task, status, phase, latestNote, updatedAt }`——父代理据此采样进度与中途发现，决定继续等待、`steer` 或 `cancel`。未知 id 在 `unknown` 字段显式返回而非静默丢弃；结果携带 `failureKind`（`app-restart` | `logic-error` | `await-cancelled`）、`resultSource`（`explicit` | `inferred`）与累积的 `notes` 供父代理判断置信度。`kind: 'read'`。
 - `tasks`（read）、`steer`（`instruction` 经 `instructTask` 追加；`objective` 经 `redefineTask` 重启——入参 schema 为 union，二者必选其一）、`cancel`。
 
 steer 已结算任务（结果已定稿；应 spawn 新任务）或依赖阻塞任务（不可绕过门控）时会被拒绝并返回可操作的错误。
 
-子代理侧经 `report` 工具（`tools/subagent-control.ts`）回报：`phase → reportTaskPhase`、`result → submitTaskResult`；此工具仅为子代理加入。子代理未调用 `report(result)` 即结束时，结果从最后一条 assistant 文本推断（`resultSource: 'inferred'`）；若该文本也为空，任务**失败**（`failureKind: 'logic-error'`）而非以空 summary 完成。进度经 `chat:task-event` 到 UI（见 [04 跨进程契约](./04-ipc-and-contracts.md)）。
+子代理侧经 `report` 工具（`tools/subagent-control.ts`）回报：`phase → reportTaskPhase`（UI 实时进度，父代理经 `await` 的结构化 `pending` 采样）、`note → addTaskNote`（给父代理的中途发现，随 `pending.latestNote` 与 `result.notes` 回流）、`result → submitTaskResult`（**终结性**：立即以 `resultSource: 'explicit'` 完成任务并中止子代理运行）；此工具仅为子代理加入。子代理未调用 `report(result)` 即结束时，结果从最后一条 assistant 文本推断（`resultSource: 'inferred'`）；若该文本也为空，任务**失败**（`failureKind: 'logic-error'`）而非以空 summary 完成。进度经 `chat:task-event` 到 UI（见 [04 跨进程契约](./04-ipc-and-contracts.md)）。
 
 前台 vs 后台：spawn 恒为后台/异步；"前台"只是父调 `await` 阻塞取结果。实际调度委托给 `AgentService`（`deps.spawnTask` / `awaitTask`），任务 id 以 `deps.rootOf(parentChatId)` 为根。
 

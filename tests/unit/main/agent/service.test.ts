@@ -1766,7 +1766,10 @@ describe('agent/service', () => {
       'chat-1',
       expect.any(String),
       'failed',
-      expect.stringContaining('stream-error')
+      // errorJson now carries the normalized telemetry error detail (with a kind),
+      // not the legacy hand-written { kind: 'stream-error' } envelope.
+      expect.stringContaining('"kind":"unknown"'),
+      expect.objectContaining({ aborted: false, errorKind: 'unknown' })
     )
   })
 
@@ -1780,7 +1783,8 @@ describe('agent/service', () => {
       'chat-1',
       expect.any(String),
       'finished',
-      undefined
+      undefined,
+      expect.objectContaining({ aborted: false })
     )
   })
 

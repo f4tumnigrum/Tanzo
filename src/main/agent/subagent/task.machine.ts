@@ -1,4 +1,9 @@
-import type { SubagentTask, SubagentTaskApproval, SubagentTaskResult } from '@shared/subagent-task'
+import type {
+  SubagentTask,
+  SubagentTaskApproval,
+  SubagentTaskNote,
+  SubagentTaskResult
+} from '@shared/subagent-task'
 import { next, stay, type Transition } from '../runtime/machine/types'
 
 export const TASK_TERMINAL_STATUSES = new Set(['done', 'failed', 'cancelled'] as const)
@@ -17,7 +22,13 @@ export type TaskEvent =
       failedDependencyId?: string
       now: number
     }
-  | { kind: 'complete'; summary: string; resultSource: 'explicit' | 'inferred'; now: number }
+  | {
+      kind: 'complete'
+      summary: string
+      resultSource: 'explicit' | 'inferred'
+      notes?: SubagentTaskNote[]
+      now: number
+    }
   | { kind: 'surface-approvals'; approvals: SubagentTaskApproval[] }
   | { kind: 'clear-approval-block' }
   | { kind: 'cancel'; now: number }
@@ -25,6 +36,7 @@ export type TaskEvent =
   | { kind: 'redefine'; objective: string; now: number }
   | { kind: 'retry'; now: number }
   | { kind: 'set-phase'; phase: string; now: number }
+  | { kind: 'add-note'; note: string; now: number }
   | { kind: 'set-result'; result: SubagentTaskResult }
   /** Reset a failed/cancelled task back to pending-with-dependency-block so that
    *  when its dependencies complete it can start automatically (used by cascadeRetry). */
@@ -74,7 +86,11 @@ export function taskTransition(
         ...withoutBlock(task),
         status: 'done',
         completedAt: event.now,
-        result: { summary: event.summary, resultSource: event.resultSource }
+        result: {
+          summary: event.summary,
+          resultSource: event.resultSource,
+          ...(event.notes && event.notes.length > 0 ? { notes: event.notes } : {})
+        }
       }
       delete done.phase
       return next(done, PERSIST_AND_SETTLE)
@@ -117,7 +133,8 @@ export function taskTransition(
         objective: event.objective,
         status: 'running',
         startedAt: event.now,
-        phases: []
+        phases: [],
+        notes: []
       }
       delete restarted.phase
       delete restarted.result
@@ -130,7 +147,8 @@ export function taskTransition(
         ...withoutBlock(task),
         status: 'running',
         startedAt: event.now,
-        phases: []
+        phases: [],
+        notes: []
       }
       delete restarted.phase
       delete restarted.result
@@ -148,6 +166,10 @@ export function taskTransition(
         PERSIST
       )
 
+    case 'add-note':
+      if (isTaskTerminal(task.status)) return stay(task)
+      return next({ ...task, notes: [...task.notes, { text: event.note, at: event.now }] }, PERSIST)
+
     case 'set-result':
       if (isTaskTerminal(task.status)) return stay(task)
       return next({ ...task, result: event.result }, PERSIST)
@@ -159,7 +181,8 @@ export function taskTransition(
         ...withoutBlock(task),
         status: 'pending',
         block: { kind: 'dependency', taskIds: event.taskIds },
-        phases: []
+        phases: [],
+        notes: []
       }
       delete reset.result
       delete reset.phase

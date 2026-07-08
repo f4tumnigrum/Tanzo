@@ -137,18 +137,26 @@ export function createTurnLoop(
     if (!hasConversation(chatId)) return
     try {
       const errorJson = state.streamFailed
-        ? JSON.stringify({
-            kind: 'stream-error',
-            message: state.streamError ?? 'The model stream failed.'
-          })
+        ? JSON.stringify(
+            state.streamErrorDetail ?? {
+              kind: 'stream-error',
+              message: state.streamError ?? 'The model stream failed.'
+            }
+          )
         : state.aborted
-          ? JSON.stringify({ kind: 'aborted' })
+          ? JSON.stringify({ kind: 'abort' })
           : undefined
       deps.store.markRunOutcome(
         chatId,
         runId,
         state.streamFailed ? 'failed' : 'finished',
-        errorJson
+        errorJson,
+        {
+          aborted: state.aborted,
+          ...(state.streamErrorDetail?.kind ? { errorKind: state.streamErrorDetail.kind } : {}),
+          ...(state.ttftMs !== undefined ? { ttftMs: state.ttftMs } : {}),
+          ...(state.retryCount !== undefined ? { retryCount: state.retryCount } : {})
+        }
       )
     } catch (error) {
       deps.logger?.warn('failed to mark run outcome', { chatId, error })

@@ -13,9 +13,9 @@ describe('database/migrations on real sqlite', () => {
           .all(['tanzo']) as Array<{ version: number }>
       ).map((row) => row.version)
 
-    expect(versions()).toEqual([1, 19, 20, 21, 22, 23, 24, 25, 26, 27])
+    expect(versions()).toEqual([1, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29])
     expect(() => runMigrations(db, [tanzoMigrations])).not.toThrow()
-    expect(versions()).toEqual([1, 19, 20, 21, 22, 23, 24, 25, 26, 27])
+    expect(versions()).toEqual([1, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29])
   })
 
   it('adds reasoning_effort to conversations created by the initial schema (v24)', () => {
@@ -103,6 +103,73 @@ describe('database/migrations on real sqlite', () => {
         .prepare('SELECT version, name FROM _tanzo_migrations WHERE module = ? AND version = ?')
         .get(['tanzo', 20])
     ).toEqual({ version: 20, name: 'plugin_marketplaces' })
+    db.close()
+  })
+
+  it('adds telemetry_v2 columns and model_calls to the initial schema (v29)', () => {
+    const db = createRealDb()
+    const runColumns = (db.prepare('PRAGMA table_info(runs)').all() as Array<{ name: string }>).map(
+      (column) => column.name
+    )
+    expect(runColumns).toEqual(
+      expect.arrayContaining(['aborted', 'error_kind', 'ttft_ms', 'retry_count'])
+    )
+    expect(
+      db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+        .get(['model_calls'])
+    ).toEqual({ name: 'model_calls' })
+    // Idempotent: re-running against a schema that already has them is a no-op.
+    expect(() => runMigrations(db, [tanzoMigrations])).not.toThrow()
+    db.close()
+  })
+
+  it('applies telemetry_v2 for databases that stopped at v28', () => {
+    const db = createRealDb({ migrate: false })
+    // Minimal pre-v29 shape: a runs table without the new columns and no model_calls.
+    db.exec(`
+      CREATE TABLE _tanzo_migrations (
+        module TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        applied_at INTEGER NOT NULL,
+        PRIMARY KEY (module, version)
+      );
+      CREATE TABLE runs (
+        id TEXT PRIMARY KEY,
+        conversation_id TEXT NOT NULL,
+        external_run_id TEXT NOT NULL,
+        model_ref TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'running',
+        started_at INTEGER NOT NULL,
+        finished_at INTEGER,
+        input_tokens INTEGER,
+        output_tokens INTEGER,
+        total_tokens INTEGER,
+        error_json TEXT
+      );
+    `)
+    const insert = db.prepare(
+      'INSERT INTO _tanzo_migrations (module, version, name, applied_at) VALUES (?, ?, ?, ?)'
+    )
+    for (const version of [1, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28]) {
+      insert.run(['tanzo', version, `legacy_${version}`, 1])
+    }
+
+    runMigrations(db, [tanzoMigrations])
+
+    const runColumns = (db.prepare('PRAGMA table_info(runs)').all() as Array<{ name: string }>).map(
+      (column) => column.name
+    )
+    expect(runColumns).toEqual(
+      expect.arrayContaining(['aborted', 'error_kind', 'ttft_ms', 'retry_count'])
+    )
+    expect(
+      db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+        .get(['model_calls'])
+    ).toEqual({ name: 'model_calls' })
     db.close()
   })
 

@@ -56,6 +56,9 @@ describe('agent/telemetry', () => {
       stepNumber: 0,
       usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 }
     } as never)
+    telemetry.recordChunk()
+    telemetry.recordChunk()
+    telemetry.recordChunk()
     integration?.onEnd?.({
       operationId: 'ai.streamText',
       callId: 'call-1',
@@ -74,11 +77,25 @@ describe('agent/telemetry', () => {
       'tool-start',
       'tool-finish',
       'step-finish',
+      'chunk-summary',
       'operation-finish'
     ])
     expect(events.find((event) => event.event === 'retry-attempt')).toMatchObject({
       retry: { attempt: 2, maxRetries: 2 }
     })
+
+    const chunkSummary = events.find((event) => event.event === 'chunk-summary')
+    expect(chunkSummary?.chunks?.count).toBe(3)
+    expect(chunkSummary?.chunks?.firstChunkMs).toEqual(expect.any(Number))
+
+    const finish = events.find((event) => event.event === 'operation-finish')
+    expect(finish?.chunks?.count).toBe(3)
+
+    // Retry escalated the model call to attempt 2, so retryCount reflects it.
+    expect(telemetry.retryCount()).toBe(2)
+    expect(telemetry.ttftMs()).toEqual(expect.any(Number))
+
+    // Already flushed inside onEnd; a second flush is a no-op.
     expect(telemetry.flushChunkSummary()).toBeUndefined()
 
     vi.useRealTimers()
@@ -86,11 +103,12 @@ describe('agent/telemetry', () => {
 
   it('persists tool-finish events through the db sink without breaking on failures', () => {
     const recordToolExecution = vi.fn()
+    const recordModelCall = vi.fn()
     const telemetry = createAgentTelemetry({
       runId: 'run-1',
       chatId: 'chat-1',
       scope: 'chat',
-      sinks: [createDbTelemetrySink({ store: { recordToolExecution } })],
+      sinks: [createDbTelemetrySink({ store: { recordToolExecution, recordModelCall } })],
       broadcast: false
     })
     const integration = telemetry.options.integrations?.[0]
@@ -135,7 +153,8 @@ describe('agent/telemetry', () => {
           store: {
             recordToolExecution: () => {
               throw new Error('db down')
-            }
+            },
+            recordModelCall: vi.fn()
           }
         })
       ],
@@ -150,6 +169,73 @@ describe('agent/telemetry', () => {
         toolOutput: { type: 'tool-result', output: {} }
       } as never)
     ).not.toThrow()
+  })
+
+  it('persists model-call-finish events with attempt and usage through the db sink', () => {
+    const recordToolExecution = vi.fn()
+    const recordModelCall = vi.fn()
+    const telemetry = createAgentTelemetry({
+      runId: 'run-1',
+      chatId: 'chat-1',
+      scope: 'chat',
+      sinks: [createDbTelemetrySink({ store: { recordToolExecution, recordModelCall } })],
+      broadcast: false
+    })
+    const integration = telemetry.options.integrations?.[0]
+
+    integration?.onStart?.({ operationId: 'ai.streamText', maxRetries: 2 } as never)
+    integration?.onStepStart?.({ callId: 'call-1', stepNumber: 0 } as never)
+    // First attempt fails upstream, SDK retries -> second model-call-start bumps attempt to 2.
+    integration?.onLanguageModelCallStart?.({ callId: 'call-1', provider: 'openai' } as never)
+    integration?.onLanguageModelCallStart?.({ callId: 'call-1', provider: 'openai' } as never)
+    integration?.onLanguageModelCallEnd?.({
+      callId: 'call-1',
+      provider: 'openai',
+      modelId: 'gpt',
+      usage: { inputTokens: 10, outputTokens: 5, cachedInputTokens: 4 }
+    } as never)
+
+    expect(recordModelCall).toHaveBeenCalledTimes(1)
+    expect(recordModelCall.mock.calls[0][0]).toMatchObject({
+      runId: 'chat-1:run-1',
+      conversationId: 'chat-1',
+      scope: 'chat',
+      provider: 'openai',
+      modelId: 'gpt',
+      attempt: 2,
+      success: true,
+      inputTokens: 10,
+      outputTokens: 5,
+      cacheReadTokens: 4
+    })
+  })
+
+  it('persists compaction-scope model calls but skips embed/rerank', () => {
+    const recordModelCall = vi.fn()
+    const telemetry = createAgentTelemetry({
+      runId: 'run-1',
+      chatId: 'chat-1',
+      scope: 'compaction',
+      sinks: [createDbTelemetrySink({ store: { recordToolExecution: vi.fn(), recordModelCall } })],
+      broadcast: false
+    })
+    const integration = telemetry.options.integrations?.[0]
+    integration?.onLanguageModelCallStart?.({ callId: 'c1' } as never)
+    integration?.onLanguageModelCallEnd?.({ callId: 'c1', provider: 'openai' } as never)
+    expect(recordModelCall).toHaveBeenCalledTimes(1)
+    expect(recordModelCall.mock.calls[0][0]).toMatchObject({ scope: 'compaction' })
+
+    const embedTelemetry = createAgentTelemetry({
+      runId: 'run-2',
+      scope: 'embed',
+      sinks: [createDbTelemetrySink({ store: { recordToolExecution: vi.fn(), recordModelCall } })],
+      broadcast: false
+    })
+    const embedIntegration = embedTelemetry.options.integrations?.[0]
+    embedIntegration?.onLanguageModelCallStart?.({ callId: 'e1' } as never)
+    embedIntegration?.onLanguageModelCallEnd?.({ callId: 'e1' } as never)
+    // embed scope has no chatId -> not persisted
+    expect(recordModelCall).toHaveBeenCalledTimes(1)
   })
 
   it('normalizes provider, configuration, validation, and retry errors', () => {

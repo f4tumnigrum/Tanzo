@@ -12,15 +12,31 @@ export interface RunOutcomeRow {
   errorJson: string | null
 }
 
+export interface RunOutcomeAggregates {
+  aborted?: boolean
+  errorKind?: string
+  ttftMs?: number
+  retryCount?: number
+}
+
 export interface PromptDiagnosticRepo {
   getLatest(chatId: string): PromptDiagnosticPrevious | undefined
+  ensureRunStep(input: {
+    conversationId: string
+    runId: string
+    stepNumber: number
+    modelRef: string
+    provider: string
+    createdAt: number
+  }): void
   record(record: PromptCacheDiagnosticRecord): void
   finish(finish: PromptCacheDiagnosticFinish): void
   markRunOutcome(
     conversationId: string,
     externalRunId: string,
     status: 'finished' | 'failed',
-    errorJson?: string
+    errorJson?: string,
+    aggregates?: RunOutcomeAggregates
   ): void
   getLatestRunOutcome(conversationId: string): RunOutcomeRow | undefined
   sweepInterruptedRuns(): number
@@ -136,7 +152,11 @@ export function createPromptDiagnosticRepo(db: SqlDatabase): PromptDiagnosticRep
     UPDATE runs
     SET status = @status,
         finished_at = @finished_at,
-        error_json = @error_json
+        error_json = @error_json,
+        aborted = @aborted,
+        error_kind = @error_kind,
+        ttft_ms = @ttft_ms,
+        retry_count = @retry_count
     WHERE id = @run_id
   `)
   const countRunningRuns = db.prepare(`SELECT COUNT(*) AS c FROM runs WHERE status = 'running'`)
@@ -173,6 +193,28 @@ export function createPromptDiagnosticRepo(db: SqlDatabase): PromptDiagnosticRep
       const row = selectLatestPromptDiagnostic.get([chatId]) as
         { id: string; segments_json: string } | undefined
       return row ? { id: row.id, segmentsJson: row.segments_json } : undefined
+    },
+    ensureRunStep(input) {
+      // Upsert the run + run_step rows (needed for token accounting and finish())
+      // without doing the expensive prompt hashing. Used when prompt diagnostics
+      // are sampled or disabled but usage still needs to be persisted.
+      db.transaction(() => {
+        const runId = runPk(input.conversationId, input.runId)
+        upsertRun.run({
+          id: runId,
+          conversation_id: input.conversationId,
+          external_run_id: input.runId,
+          model_ref: input.modelRef,
+          provider: input.provider,
+          started_at: input.createdAt
+        })
+        upsertRunStep.run({
+          id: stepPk(runId, input.stepNumber),
+          run_id: runId,
+          step_number: input.stepNumber,
+          created_at: input.createdAt
+        })
+      })
     },
     record(record) {
       db.transaction(() => {
@@ -236,13 +278,17 @@ export function createPromptDiagnosticRepo(db: SqlDatabase): PromptDiagnosticRep
         requireUpdated(finishRun.run({ run_id: runId }).changes, `Run ${runId} was not found.`)
       })
     },
-    markRunOutcome(conversationId, externalRunId, status, errorJson) {
+    markRunOutcome(conversationId, externalRunId, status, errorJson, aggregates) {
       requireUpdated(
         markRunOutcomeRow.run({
           run_id: runPk(conversationId, externalRunId),
           status,
           finished_at: Date.now(),
-          error_json: errorJson ?? null
+          error_json: errorJson ?? null,
+          aborted: aggregates?.aborted ? 1 : 0,
+          error_kind: aggregates?.errorKind ?? null,
+          ttft_ms: aggregates?.ttftMs ?? null,
+          retry_count: aggregates?.retryCount ?? null
         }).changes,
         `Run ${conversationId}:${externalRunId} was not found.`
       )

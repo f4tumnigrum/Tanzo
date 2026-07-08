@@ -291,6 +291,7 @@ export function ChatInput({
           <SlashCommandMenu
             commands={slashMatches}
             highlightedIndex={slashHighlight}
+            isStreaming={isStreaming}
             onHighlight={setSlashHighlight}
             onSelect={(command) => void selectSlashCommand(command)}
             className="w-[calc(100%-0.75rem)] max-w-[440px]"

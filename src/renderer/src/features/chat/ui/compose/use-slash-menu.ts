@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState, type RefObject } from 'react'
-import type { SlashCommandDef } from '@shared/slash-command'
+import { isSlashCommandAvailable, type SlashCommandDef } from '@shared/slash-command'
 import { orderSlashCommands } from './slash-command-order'
 
 export function getSlashQuery(value: string, canOpenSlash: boolean): string | null {
@@ -44,7 +44,7 @@ export function useSlashMenu({
 }: UseSlashMenuArgs): UseSlashMenuResult {
   const [slashHighlight, setSlashHighlight] = useState(0)
 
-  const canOpenSlash = slashCommands.length > 0 && !isStreaming
+  const canOpenSlash = slashCommands.length > 0
   const slashQuery = useMemo(() => getSlashQuery(value, canOpenSlash), [value, canOpenSlash])
   const slashMatches = useMemo(() => {
     if (slashQuery === null) return []
@@ -70,6 +70,7 @@ export function useSlashMenu({
 
   const selectSlashCommand = useCallback(
     async (command: SlashCommandDef) => {
+      if (!isSlashCommandAvailable(command, isStreaming)) return
       if (executesOnSelect(command)) {
         setValue('')
         await onSubmit?.(`/${command.name}`)
@@ -77,7 +78,7 @@ export function useSlashMenu({
       }
       insertSlash(command)
     },
-    [insertSlash, onSubmit, setValue]
+    [insertSlash, isStreaming, onSubmit, setValue]
   )
 
   const resetHighlightOnQueryChange = useCallback(
@@ -105,7 +106,8 @@ export function useSlashMenu({
       if ((event.key === 'Enter' || event.key === 'Tab') && !composing) {
         event.preventDefault()
         const command = slashMatches[slashHighlight] ?? slashMatches[0]
-        if (command) void selectSlashCommand(command)
+        if (command && isSlashCommandAvailable(command, isStreaming))
+          void selectSlashCommand(command)
         return true
       }
       if (event.key === 'Escape') {
@@ -115,7 +117,7 @@ export function useSlashMenu({
       }
       return false
     },
-    [slashMenuOpen, slashMatches, slashHighlight, selectSlashCommand, setValue]
+    [slashMenuOpen, slashMatches, slashHighlight, isStreaming, selectSlashCommand, setValue]
   )
 
   return {

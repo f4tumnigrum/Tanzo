@@ -14,6 +14,7 @@ import {
 import { COMPACT_PROMPT } from '../context/compact/prompt'
 import { runSummarizeFork } from '../context/compact/summarize'
 import { createAgentTelemetry } from '../telemetry'
+import { createDbTelemetrySink } from '../telemetry/sinks'
 import type { AgentRuntimeDeps, Logger } from './types'
 
 export type CompactionRunLifecycle = <T>(
@@ -226,6 +227,12 @@ export function createCompactionCoordinator(
         scope: 'compaction',
         send: deps.send,
         broadcast: true,
+        sinks: [
+          createDbTelemetrySink({
+            store: deps.store,
+            ...(deps.logger ? { logger: deps.logger } : {})
+          })
+        ],
         ...(deps.logger ? { logger: deps.logger } : {})
       })
       publishCompactionStatus(chatId, runId, { stage: 'start', auto, summaryId }, compactionRunId)

@@ -296,6 +296,13 @@ export const en = {
             compact: 'Compact the conversation context',
             goal: 'Set, change, or clear an autonomous goal',
             agent: 'Switch the current conversation agent'
+          },
+          subcommands: {
+            goal: {
+              clear: 'Clear the active goal',
+              pause: 'Pause the active goal',
+              resume: 'Resume the paused goal'
+            }
           }
         },
         mentions: {
@@ -649,6 +656,7 @@ export const en = {
             redefined: 'Objective replaced.',
             cancelled: 'Subagent stopped.',
             phaseReported: 'Phase updated.',
+            noteReported: 'Note recorded.',
             resultSubmitted: 'Result submitted.'
           },
           noTasks: 'No subagents yet.',
@@ -663,6 +671,7 @@ export const en = {
           waitingFor: 'Waiting for',
           blockedApproval: 'Waiting for approval.',
           awaitPending: 'Still running: {{tasks}}.',
+          stillRunning: 'Still running',
           inferred: 'inferred',
           resultInferred:
             'Result inferred from last assistant text — sub-agent did not call report().',
@@ -686,7 +695,8 @@ export const en = {
         steerSend: 'Send',
         openTranscript: 'Open transcript',
         readOnly: 'Read-only',
-        emptyTranscript: 'No activity yet.'
+        emptyTranscript: 'No activity yet.',
+        activity: 'Activity'
       },
       goal: {
         pause: 'Pause goal',
@@ -726,6 +736,7 @@ export const en = {
         agentCommandMissing: 'Usage: /agent <name|id>.',
         agentCommandUnknown: 'No agent found for "{{agent}}".',
         agentCommandDuringRun: 'Wait for the active run to finish before switching agent.',
+        commandUnavailableDuringRun: '/{{command}} is unavailable while a run is in progress.',
         setReasoningEffort: 'Failed to update reasoning effort.',
         compactRequiresConversation: 'Open a conversation before compacting context.',
         compactDuringRun: 'Wait for the active run to finish before compacting context.',

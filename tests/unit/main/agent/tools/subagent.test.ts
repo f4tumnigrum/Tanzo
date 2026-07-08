@@ -35,6 +35,7 @@ function task(
     dependsOn: [],
     allowedTools: ['fileRead'],
     phases: [],
+    notes: [],
     createdAt: 1,
     ...overrides
   }
@@ -116,6 +117,7 @@ function deps(overrides: Partial<ToolDeps> = {}): ToolDeps {
     redefineTask: vi.fn(async () => ({ ok: true }) as const),
     cancelTask: vi.fn(),
     reportTaskPhase: vi.fn(),
+    addTaskNote: vi.fn(),
     submitTaskResult: vi.fn(),
     goal: {} as never,
     ...overrides
@@ -264,9 +266,14 @@ describe('main/agent/tools/subagent (tasks)', () => {
     const result = (await exec(tool, {
       tasks: ['explore-1', 'explore-2'],
       timeoutMs: 1000
-    })) as { results: Array<{ task: string }>; pending?: string[]; timedOut?: boolean }
+    })) as {
+      results: Array<{ task: string }>
+      pending?: Array<{ task: string; status: string; phase?: string; latestNote?: string }>
+      timedOut?: boolean
+    }
     expect(result.results.map((r) => r.task)).toEqual(['explore-1'])
-    expect(result.pending).toEqual(['explore-2'])
+    expect(result.pending).toHaveLength(1)
+    expect(result.pending?.[0]).toMatchObject({ task: 'explore-2', status: 'running' })
     expect(result.timedOut).toBe(true)
   })
 
@@ -376,5 +383,43 @@ describe('main/agent/tools/subagent (tasks)', () => {
       exec(reportTool(d, 'chat-explore-1'), { result: 'final findings' })
     ).resolves.toEqual({ ok: true })
     expect(d.submitTaskResult).toHaveBeenCalledWith('chat-explore-1', { summary: 'final findings' })
+  })
+
+  it('report tool forwards note to the service', async () => {
+    const d = deps()
+    await expect(
+      exec(reportTool(d, 'chat-explore-1'), { note: 'auth is split across 3 files' })
+    ).resolves.toEqual({ ok: true })
+    expect(d.addTaskNote).toHaveBeenCalledWith('chat-explore-1', 'auth is split across 3 files')
+    expect(d.reportTaskPhase).not.toHaveBeenCalled()
+    expect(d.submitTaskResult).not.toHaveBeenCalled()
+  })
+
+  it('await pending includes phase and latest note for unfinished tasks', async () => {
+    const d = deps({
+      getTask: vi.fn((_root: string, id: string) =>
+        task(id, 'running', {
+          phase: 'reading auth module',
+          phases: [{ name: 'reading auth module', at: 5 }],
+          notes: [{ text: 'found a surprise', at: 7 }]
+        })
+      ),
+      awaitTask: vi.fn(async (_root: string, id: string) =>
+        id === 'explore-1' ? { summary: 'fast' } : new Promise(() => {})
+      ) as never
+    })
+    const tool = awaitTool(d, 'parent')
+    const result = (await exec(tool, {
+      tasks: ['explore-1', 'explore-2'],
+      timeoutMs: 1000
+    })) as {
+      pending?: Array<{ task: string; status: string; phase?: string; latestNote?: string }>
+    }
+    expect(result.pending?.[0]).toMatchObject({
+      task: 'explore-2',
+      status: 'running',
+      phase: 'reading auth module',
+      latestNote: 'found a surprise'
+    })
   })
 })

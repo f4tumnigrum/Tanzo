@@ -22,6 +22,7 @@ import { createPromptDiagnosticRepo } from './repositories/prompt-diagnostic-rep
 import { createQueuedMessageRepo } from './repositories/queued-message-repo'
 import { createSubagentTaskRepo } from './repositories/subagent-task-repo'
 import { createToolExecutionRepo } from './repositories/tool-execution-repo'
+import { createModelCallRepo } from './repositories/model-call-repo'
 import { createActivityRepo } from './repositories/activity-repo'
 import type { AgentIdentity } from './agents/types'
 import type { Logger } from './logging'
@@ -41,6 +42,7 @@ export function createAgentStore(
   const queuedMessages = createQueuedMessageRepo(db)
   const subagentTasks = createSubagentTaskRepo(db)
   const toolExecutions = createToolExecutionRepo(db)
+  const modelCalls = createModelCallRepo(db)
   const activity = createActivityRepo(db)
 
   function normalizeCwd(cwd: string): string {
@@ -354,14 +356,17 @@ export function createAgentStore(
     getLatestPromptDiagnostic(chatId: string): PromptDiagnosticPrevious | undefined {
       return promptDiagnostics.getLatest(chatId)
     },
+    ensureRunStep(input): void {
+      promptDiagnostics.ensureRunStep(input)
+    },
     recordPromptDiagnostic(record: PromptCacheDiagnosticRecord): void {
       promptDiagnostics.record(record)
     },
     finishPromptDiagnostic(finish: PromptCacheDiagnosticFinish): void {
       promptDiagnostics.finish(finish)
     },
-    markRunOutcome(chatId, runId, status, errorJson) {
-      promptDiagnostics.markRunOutcome(chatId, runId, status, errorJson)
+    markRunOutcome(chatId, runId, status, errorJson, aggregates) {
+      promptDiagnostics.markRunOutcome(chatId, runId, status, errorJson, aggregates)
     },
     getLatestRunOutcome(chatId) {
       const row = promptDiagnostics.getLatestRunOutcome(chatId)
@@ -399,6 +404,7 @@ export function createAgentStore(
       db.transaction(() => {
         promptDiagnostics.pruneRunsBefore(cutoff)
         toolExecutions.pruneBefore(cutoff)
+        modelCalls.pruneBefore(cutoff)
       })
     },
     listAllQueuedMessages: queuedMessages.listAll,
@@ -409,6 +415,9 @@ export function createAgentStore(
     tasks: subagentTasks,
     recordToolExecution(record): void {
       toolExecutions.record(record)
+    },
+    recordModelCall(record): void {
+      modelCalls.record(record)
     },
     getActivitySummary(range) {
       return activity.getSummary(range)

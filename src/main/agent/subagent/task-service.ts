@@ -54,6 +54,7 @@ export interface TaskService {
   retry(rootChatId: string, taskId: string): void
   resumeByChat(chatId: string): Promise<void>
   reportPhase(chatId: string, phase: string): void
+  addNote(chatId: string, note: string): void
   submitResult(chatId: string, result: SubagentTaskResult): void
   listApprovals(rootChatId: string): SubagentTaskApprovalView[]
   respondApproval(rootChatId: string, response: SubagentTaskApprovalResponse): Promise<void>
@@ -231,6 +232,7 @@ export function createTaskService(
         dependsOn,
         allowedTools: def.allowedTools,
         phases: [],
+        notes: [],
         createdAt: now,
         ...(dependsOn.length > 0 ? {} : { startedAt: now })
       }
@@ -491,7 +493,13 @@ export function createTaskService(
       })
       return
     }
-    dispatch(rootChatId, taskId, { kind: 'complete', summary, resultSource, now: Date.now() })
+    dispatch(rootChatId, taskId, {
+      kind: 'complete',
+      summary,
+      resultSource,
+      ...(task.notes.length > 0 ? { notes: task.notes } : {}),
+      now: Date.now()
+    })
   }
 
   function surfaceApprovals(
@@ -829,10 +837,25 @@ export function createTaskService(
       const task = deps.store.tasks.getByChat(chatId)
       if (task) setPhase(task.rootChatId, task.id, phase)
     },
+    addNote: (chatId, note) => {
+      const task = deps.store.tasks.getByChat(chatId)
+      if (task) dispatch(task.rootChatId, task.id, { kind: 'add-note', note, now: Date.now() })
+    },
     submitResult: (chatId, result) => {
       const task = deps.store.tasks.getByChat(chatId)
-      if (!task) return
-      dispatch(task.rootChatId, task.id, { kind: 'set-result', result })
+      if (!task || isTerminal(task.status)) return
+      // Submitting a result is terminal: complete the task now with the explicit
+      // summary (carrying any collected notes) and stop the sub-agent's run.
+      controllers.get(task.chatId)?.abort()
+      callbacks.abortRun(task.chatId)
+      callbacks.clearTransientChatState(task.chatId)
+      dispatch(task.rootChatId, task.id, {
+        kind: 'complete',
+        summary: result.summary,
+        resultSource: 'explicit',
+        ...(task.notes.length > 0 ? { notes: task.notes } : {}),
+        now: Date.now()
+      })
     },
     listApprovals,
     respondApproval,
