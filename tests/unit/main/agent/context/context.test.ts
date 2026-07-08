@@ -478,7 +478,7 @@ describe('main/agent/context compaction policy', () => {
     const policy = computeCompactionPolicy(CAP)
 
     expect(policy).toEqual({
-      compactionTriggerTokens: 153_446, // (200_000 - 8_192) * 0.8
+      compactionTriggerTokens: 172_627, // (200_000 - 8_192) * 0.9
       retainBudgetTokens: 30_000,
       hardCeilingTokens: 191_808
     })

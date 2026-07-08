@@ -8,7 +8,7 @@ export interface CompactionPolicy {
   hardCeilingTokens: number
 }
 
-const TRIGGER_FRACTION = 0.8
+const TRIGGER_FRACTION = 0.9
 const RETAIN_FRACTION = 0.15
 const RETAIN_MAX_TOKENS = 30_000
 
