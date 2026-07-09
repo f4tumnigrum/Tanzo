@@ -77,13 +77,21 @@ function createDb(): SqlDatabase & {
           } else if (sql.includes('INSERT INTO provider_defaults')) {
             const row = input as Row
             defaults.set(defaultsId(String(row.provider_id), String(row.family)), { ...row })
+          } else if (sql.startsWith('DELETE FROM provider_default_models WHERE family = ?')) {
+            const [family] = input as unknown[]
+            for (const [id, row] of [...defaultModels.entries()]) {
+              if (row.family === family) defaultModels.delete(id)
+            }
           } else if (
             sql.startsWith(
-              'DELETE FROM provider_default_models WHERE provider_id = ? AND family = ?'
+              'DELETE FROM provider_default_models WHERE provider_id = ? AND family = ? AND model_id = ?'
             )
           ) {
-            const [providerId, family] = input as unknown[]
-            defaultModels.delete(defaultId(String(providerId), String(family)))
+            const [providerId, family, id] = input as unknown[]
+            const stored = defaultModels.get(defaultId(String(providerId), String(family)))
+            if (stored?.model_id === id) {
+              defaultModels.delete(defaultId(String(providerId), String(family)))
+            }
           } else if (sql.startsWith('DELETE FROM provider_models WHERE provider_id = ?')) {
             const [providerId] = input as unknown[]
             for (const row of [...models.values()]) {
@@ -278,10 +286,34 @@ describe('main/provider/store', () => {
     store.setDefaultModel('anthropic', 'language', 'claude-4')
 
     expect(store.listModels('openai', 'language')).toEqual(
-      expect.arrayContaining([expect.objectContaining({ modelId: 'gpt-5', isDefault: true })])
+      expect.arrayContaining([expect.objectContaining({ modelId: 'gpt-5', isDefault: false })])
     )
     expect(store.listModels('anthropic', 'language')).toEqual(
       expect.arrayContaining([expect.objectContaining({ modelId: 'claude-4', isDefault: true })])
+    )
+
+    store.saveModel({
+      providerId: 'anthropic',
+      family: 'language',
+      modelId: 'claude-4',
+      enabled: false,
+      isDefault: false,
+      isCustom: false,
+      source: 'api',
+      model: { id: 'claude-4', name: 'Claude 4' }
+    })
+    store.saveModel({
+      providerId: 'anthropic',
+      family: 'language',
+      modelId: 'claude-4',
+      enabled: true,
+      isDefault: false,
+      isCustom: false,
+      source: 'api',
+      model: { id: 'claude-4', name: 'Claude 4' }
+    })
+    expect(store.listModels('anthropic', 'language')).toEqual(
+      expect.arrayContaining([expect.objectContaining({ modelId: 'claude-4', isDefault: false })])
     )
 
     store.saveDefaults({
@@ -309,5 +341,22 @@ describe('main/provider/store', () => {
     store.reset('openai')
     expect(store.listModels('openai')).toEqual([])
     expect(store.getDefaults('openai', 'language')).toBeUndefined()
+  })
+
+  it('normalizes partial defaults persisted by older migrations', () => {
+    const db = createDb()
+    const store = createProviderStore(db)
+    db.defaults.set('openai:language', {
+      provider_id: 'openai',
+      family: 'language',
+      defaults_json: '{"callDefaults":{"temperature":0.2}}',
+      updated_at: 1
+    })
+
+    expect(store.getDefaults('openai', 'language')?.defaults).toEqual({
+      callDefaults: { temperature: 0.2 },
+      providerOptions: {},
+      rawProviderOptions: {}
+    })
   })
 })

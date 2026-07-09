@@ -12,8 +12,7 @@ export const openaiCompatibleOptionSchemas: ProviderOptionSchema[] = [
     label: 'OpenAI-compatible options',
     fields: [
       { path: 'user', label: 'User', control: 'string' },
-      { path: 'textVerbosity', label: 'Text verbosity', control: 'string' },
-      { path: 'strictJsonSchema', label: 'Strict JSON schema', control: 'boolean' }
+      { path: 'textVerbosity', label: 'Text verbosity', control: 'string' }
     ]
   }
 ]

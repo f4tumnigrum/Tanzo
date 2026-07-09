@@ -13,9 +13,9 @@ describe('database/migrations on real sqlite', () => {
           .all(['tanzo']) as Array<{ version: number }>
       ).map((row) => row.version)
 
-    expect(versions()).toEqual([1, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30])
+    expect(versions()).toEqual([1, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31])
     expect(() => runMigrations(db, [tanzoMigrations])).not.toThrow()
-    expect(versions()).toEqual([1, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30])
+    expect(versions()).toEqual([1, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31])
   })
 
   it('adds reasoning_effort to conversations created by the initial schema (v24)', () => {
@@ -388,8 +388,10 @@ describe('database/migrations on real sqlite', () => {
 
   it('preserves provider data through the v27 provider rebuild', () => {
     const db = createRealDb({ migrate: false })
-    // Apply every migration up to and including v26 (all but the final v27).
-    runMigrations(db, [{ moduleName: 'tanzo', files: tanzoMigrations.files.slice(0, -1) }])
+    // Apply every migration up to and including v26.
+    runMigrations(db, [
+      { moduleName: 'tanzo', files: tanzoMigrations.files.filter((file) => file.version < 27) }
+    ])
     db.exec(`
       INSERT INTO provider_connections (
         provider_id, public_fields_json, secret_fields_encrypted_json, active_key_id, updated_at
@@ -436,6 +438,37 @@ describe('database/migrations on real sqlite', () => {
         )
         .run()
     ).not.toThrow()
+    db.close()
+  })
+
+  it('keeps only the newest global provider default after v31', () => {
+    const db = createRealDb({ migrate: false })
+    runMigrations(db, [
+      { moduleName: 'tanzo', files: tanzoMigrations.files.filter((file) => file.version < 31) }
+    ])
+    db.exec(`
+      INSERT INTO provider_models (
+        provider_id, family, model_id, name, model_json, updated_at
+      ) VALUES
+        ('openai', 'language', 'gpt-5', 'GPT 5', '{"id":"gpt-5","name":"GPT 5"}', 1),
+        ('anthropic', 'language', 'claude', 'Claude', '{"id":"claude","name":"Claude"}', 2);
+      INSERT INTO provider_default_models (provider_id, family, model_id, updated_at) VALUES
+        ('openai', 'language', 'gpt-5', 1),
+        ('anthropic', 'language', 'claude', 2);
+    `)
+
+    runMigrations(db, [tanzoMigrations])
+
+    expect(db.prepare('SELECT provider_id, model_id FROM provider_default_models').all()).toEqual([
+      { provider_id: 'anthropic', model_id: 'claude' }
+    ])
+    expect(() =>
+      db
+        .prepare(
+          'INSERT INTO provider_default_models (provider_id, family, model_id, updated_at) VALUES (?, ?, ?, ?)'
+        )
+        .run(['openai', 'language', 'gpt-5', 3])
+    ).toThrow()
     db.close()
   })
 

@@ -3,7 +3,6 @@ import { z } from 'zod'
 import { PROVIDER_CHANNELS, PROVIDER_IDS } from '@shared/provider'
 import type {
   AddProviderKeyInput,
-  ConnectionTestResult,
   ModelFamily,
   ProviderId,
   SaveProviderConnectionInput,
@@ -18,19 +17,25 @@ const providerIdSchema = z.enum(PROVIDER_IDS)
 const familySchema = z.enum(['language', 'embedding', 'image', 'transcription', 'speech'])
 const nonEmptyStringSchema = z.string().trim().min(1)
 const credentialsSchema = z.record(z.string(), z.string())
-const connectionResultSchema = z.object({
-  success: z.boolean(),
-  message: nonEmptyStringSchema,
-  modelCount: z.number().optional(),
-  latency: z.number().optional()
-})
+const positiveIntegerSchema = z.number().int().positive()
+const jsonValueSchema: z.ZodType<unknown> = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.null(),
+    z.array(jsonValueSchema),
+    z.record(z.string(), jsonValueSchema)
+  ])
+)
+const jsonObjectSchema = z.record(z.string(), jsonValueSchema)
 
 const providerFamilyModelSchema = z.object({
   id: nonEmptyStringSchema,
   name: nonEmptyStringSchema,
   description: nonEmptyStringSchema.optional(),
-  contextWindow: z.number().optional(),
-  maxOutput: z.number().optional(),
+  contextWindow: positiveIntegerSchema.optional(),
+  maxOutput: positiveIntegerSchema.optional(),
   capabilities: z
     .object({
       reasoning: z.boolean().optional(),
@@ -43,8 +48,10 @@ const providerFamilyModelSchema = z.object({
       transcription: z.boolean().optional()
     })
     .optional(),
-  dimensions: z.number().optional(),
-  maxImagesPerCall: z.number().optional(),
+  dimensions: positiveIntegerSchema.optional(),
+  maxContextLength: positiveIntegerSchema.optional(),
+  maxBatchSize: positiveIntegerSchema.optional(),
+  maxImagesPerCall: positiveIntegerSchema.optional(),
   supportedSizes: z.array(nonEmptyStringSchema).optional(),
   supportedAspectRatios: z.array(nonEmptyStringSchema).optional(),
   supportsTimestamps: z.boolean().optional(),
@@ -74,9 +81,9 @@ const updateKeySchema = z.object({
 })
 
 const defaultsStateSchema = z.object({
-  callDefaults: z.record(z.string(), z.unknown()).optional(),
-  providerOptions: z.record(z.string(), z.unknown()).optional(),
-  rawProviderOptions: z.record(z.string(), z.unknown()).optional()
+  callDefaults: jsonObjectSchema.optional(),
+  providerOptions: jsonObjectSchema.optional(),
+  rawProviderOptions: jsonObjectSchema.optional()
 })
 
 const saveModelStateSchema = z.object({
@@ -86,7 +93,7 @@ const saveModelStateSchema = z.object({
   enabled: z.boolean().optional(),
   isDefault: z.boolean().optional(),
   isCustom: z.boolean().optional(),
-  contextWindowOverride: z.number().nullable().optional(),
+  contextWindowOverride: positiveIntegerSchema.nullable().optional(),
   model: providerFamilyModelSchema.optional(),
   delete: z.boolean().optional()
 })
@@ -114,14 +121,6 @@ export function registerProviderIpc(ipcMain: IpcMain, service: ProviderService):
       PROVIDER_CHANNELS.testConnection,
       (providerId: unknown) =>
         service.testConnection(providerIdSchema.parse(providerId) as ProviderId)
-    ],
-    [
-      PROVIDER_CHANNELS.recordValidation,
-      (providerId: unknown, result: unknown) =>
-        service.recordValidation(
-          providerIdSchema.parse(providerId) as ProviderId,
-          connectionResultSchema.parse(result) as ConnectionTestResult
-        )
     ],
     [
       PROVIDER_CHANNELS.disconnect,

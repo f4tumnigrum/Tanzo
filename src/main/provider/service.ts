@@ -34,7 +34,8 @@ import {
   listOptionSchemas,
   mergeProviderOptions,
   normalizeDefaults,
-  normalizeStoredDefaults
+  normalizeStoredDefaults,
+  validateProviderOptions
 } from './options'
 import { coerceCallSettings, parseCallSettings, type CallSettings } from './call-settings'
 import type { SecretCodec } from './secret'
@@ -46,7 +47,6 @@ export interface ProviderService {
   getWorkspace(providerId: ProviderId): ProviderWorkspace
   saveConnection(input: SaveProviderConnectionInput): ProviderWorkspace
   testConnection(providerId: ProviderId): Promise<ConnectionTestResult>
-  recordValidation(providerId: ProviderId, result: ConnectionTestResult): ProviderWorkspace
   disconnect(providerId: ProviderId): void
   reset(providerId: ProviderId): void
   listKeys(providerId: ProviderId): ProviderKeySummary[]
@@ -276,6 +276,8 @@ const MODEL_DETAIL_KEYS: readonly (keyof ModelDetailFields)[] = [
   'maxOutput',
   'capabilities',
   'dimensions',
+  'maxContextLength',
+  'maxBatchSize',
   'maxImagesPerCall',
   'supportedSizes',
   'supportedAspectRatios',
@@ -347,9 +349,9 @@ function configurationStatus(
   modalities: Partial<Record<ModelFamily, ProviderFamilyState>>
 ): ProviderSetupState['configurationStatus'] {
   if (connection.status === 'disconnected') return 'not_connected'
-  const states = Object.values(modalities)
-  if (states.some((state) => (state?.enabledModelCount ?? 0) > 0)) return 'ready'
-  if (states.some((state) => (state?.modelCount ?? 0) > 0)) return 'models_not_enabled'
+  const language = modalities.language
+  if ((language?.enabledModelCount ?? 0) > 0) return 'ready'
+  if ((language?.modelCount ?? 0) > 0) return 'models_not_enabled'
   return 'connected_no_models'
 }
 
@@ -615,6 +617,16 @@ export function createProviderService(store: ProviderStore, codec: SecretCodec):
     }
   }
 
+  function requireSupportedFamily(providerId: ProviderId, family: ModelFamily): void {
+    const descriptor = getProvider(providerId).families[family]
+    if (descriptor?.supported) return
+    throw new TanzoValidationError(
+      'PROVIDER_FAMILY_UNSUPPORTED',
+      `Provider ${providerId} does not support ${family} models.`,
+      { details: { providerId, family } }
+    )
+  }
+
   function ensureUsableLanguageModel(providerId: ProviderId, modelId: string): void {
     getProvider(providerId)
     const model = store.listModels(providerId, 'language').find((row) => row.modelId === modelId)
@@ -673,6 +685,7 @@ export function createProviderService(store: ProviderStore, codec: SecretCodec):
         connectedAt: previous?.connectedAt ?? now,
         updatedAt: now
       })
+      runtime.invalidate(input.providerId)
       return buildWorkspace(input.providerId)
     },
     async testConnection(providerId) {
@@ -697,12 +710,6 @@ export function createProviderService(store: ProviderStore, codec: SecretCodec):
         }
       }
       return result
-    },
-    recordValidation(providerId, result) {
-      const stored = store.loadConnection(providerId)
-      if (!stored) return buildWorkspace(providerId)
-      store.saveConnection(withValidationResult(stored, result, new Date().toISOString()))
-      return buildWorkspace(providerId)
     },
     disconnect(providerId) {
       store.deleteConnection(providerId)
@@ -743,6 +750,7 @@ export function createProviderService(store: ProviderStore, codec: SecretCodec):
           activeKeyId: keyId,
           updatedAt: now
         })
+        runtime.invalidate(input.providerId)
       }
       return listKeySummaries(input.providerId)
     },
@@ -882,6 +890,7 @@ export function createProviderService(store: ProviderStore, codec: SecretCodec):
       }
     },
     async saveModelState(input) {
+      requireSupportedFamily(input.providerId, input.family)
       if (input.delete) {
         store.deleteModel(input.providerId, input.family, input.modelId)
         return buildWorkspace(input.providerId)
@@ -896,19 +905,23 @@ export function createProviderService(store: ProviderStore, codec: SecretCodec):
     },
     saveDefaults(input) {
       const now = new Date().toISOString()
-      for (const family of getSupportedFamilies(input.providerId)) {
-        const defaults = input.byFamily[family]
-        if (!defaults) continue
+      const updates = Object.entries(input.byFamily).flatMap(([familyValue, defaults]) => {
+        if (!defaults) return []
+        const family = familyValue as ModelFamily
+        requireSupportedFamily(input.providerId, family)
         const normalized = normalizeDefaults(defaults)
-
         parseCallSettings(normalized.callDefaults)
-        store.saveDefaults({
-          providerId: input.providerId,
-          family,
-          defaults: normalized,
-          updatedAt: now
-        })
-      }
+        validateProviderOptions(input.providerId, family, normalized.providerOptions)
+        return [
+          {
+            providerId: input.providerId,
+            family,
+            defaults: normalized,
+            updatedAt: now
+          }
+        ]
+      })
+      store.saveDefaultsBatch(updates)
       return buildWorkspace(input.providerId)
     },
     resolveLanguageModel(modelRef) {

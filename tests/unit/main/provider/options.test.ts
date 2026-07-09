@@ -7,7 +7,8 @@ import {
   mergeProviderOptionsInto,
   normalizeDefaults,
   normalizeStoredDefaults,
-  reasoningEffortOverlay
+  reasoningEffortOverlay,
+  validateProviderOptions
 } from '@main/provider/options'
 
 describe('main/provider/options', () => {
@@ -104,15 +105,13 @@ describe('main/provider/options', () => {
     expect(reasoningEffortOverlay('openai', 'high')).toEqual({
       openai: { reasoningEffort: 'high' }
     })
-    expect(reasoningEffortOverlay('anthropic', 'max')).toEqual({
-      anthropic: { effort: 'max' }
+    expect(reasoningEffortOverlay('anthropic', 'xhigh')).toEqual({
+      anthropic: { effort: 'xhigh' }
     })
     expect(reasoningEffortOverlay('deepseek', 'low')).toEqual({
       deepseek: { reasoningEffort: 'low' }
     })
-    expect(reasoningEffortOverlay('zhipu', 'high')).toEqual({
-      zhipu: { reasoningEffort: 'high' }
-    })
+    expect(reasoningEffortOverlay('zhipu', 'high')).toBeUndefined()
     expect(reasoningEffortOverlay('minimax', 'medium')).toEqual({
       minimax: { reasoningEffort: 'medium' }
     })
@@ -129,6 +128,14 @@ describe('main/provider/options', () => {
     expect(reasoningEffortOverlay('openai', 'max')).toBeUndefined()
     expect(reasoningEffortOverlay('google', 'xhigh')).toBeUndefined()
     expect(reasoningEffortOverlay('openai-compatible', 'ultra-think')).toBeUndefined()
+  })
+
+  it('validates structured provider option values', () => {
+    expect(() => validateProviderOptions('openai', 'language', { logprobs: 1 })).not.toThrow()
+    expect(() => validateProviderOptions('openai', 'language', { logprobs: 0 })).toThrow(/logprobs/)
+    expect(() => validateProviderOptions('openai', 'language', { logprobs: 21 })).toThrow(
+      /logprobs/
+    )
   })
 
   it('deep-merges provider option overrides without mutating inputs', () => {

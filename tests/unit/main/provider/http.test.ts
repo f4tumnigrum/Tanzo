@@ -5,7 +5,8 @@ import {
   fetchJson,
   formatModelName,
   googleModelListSchema,
-  idOnlyModelListSchema
+  idOnlyModelListSchema,
+  readResponseText
 } from '@main/provider/http'
 
 describe('main/provider/http', () => {
@@ -58,15 +59,22 @@ describe('main/provider/http', () => {
     )
   })
 
+  it('rejects responses larger than the configured limit', async () => {
+    const response = new Response('12345', { headers: { 'content-length': '5' } })
+    await expect(readResponseText(response, 4)).rejects.toThrow('exceeds 4 bytes')
+  })
+
   it('validates common provider model list payloads', () => {
     expect(idOnlyModelListSchema.parse({ data: [{ id: 'gpt-5', owned_by: 'openai' }] })).toEqual({
       data: [{ id: 'gpt-5', owned_by: 'openai' }]
     })
     expect(
       googleModelListSchema.parse({
+        nextPageToken: 'next',
         models: [{ name: 'models/gemini', supportedGenerationMethods: ['generateContent'] }]
       })
     ).toEqual({
+      nextPageToken: 'next',
       models: [{ name: 'models/gemini', supportedGenerationMethods: ['generateContent'] }]
     })
   })

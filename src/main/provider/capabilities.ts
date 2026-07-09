@@ -66,7 +66,7 @@ const openaiChatEffort = defineEffort<OpenAIChatLanguageModelOptions>()({
 const anthropicEffort = defineEffort<AnthropicProviderOptions>()({
   providerKey: 'anthropic',
   path: 'effort',
-  values: ['low', 'medium', 'high', 'xhigh', 'max'],
+  values: ['low', 'medium', 'high', 'xhigh'],
   default: 'high'
 })
 
@@ -80,14 +80,7 @@ const googleEffort = defineEffort<GoogleLanguageModelOptions>()({
 const deepseekEffort = defineEffort<DeepSeekLanguageModelOptions>()({
   providerKey: 'deepseek',
   path: 'reasoningEffort',
-  values: ['low', 'medium', 'high', 'xhigh', 'max'],
-  default: 'high'
-})
-
-const zhipuEffort = defineEffort<OpenAICompatibleProviderOptions>()({
-  providerKey: 'zhipu',
-  path: 'reasoningEffort',
-  values: ['minimal', 'low', 'medium', 'high'],
+  values: ['low', 'medium', 'high', 'xhigh'],
   default: 'high'
 })
 
@@ -118,7 +111,7 @@ const EFFORTS: Record<ProviderId, ReasoningEffortCapability | null> = {
   anthropic: anthropicEffort,
   google: googleEffort,
   deepseek: deepseekEffort,
-  zhipu: zhipuEffort,
+  zhipu: null,
   minimax: minimaxEffort,
   grok: grokEffort,
   'openai-compatible': openaiCompatibleEffort

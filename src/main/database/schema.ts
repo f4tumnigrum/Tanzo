@@ -752,6 +752,22 @@ DROP TABLE provider_defaults;
 ALTER TABLE provider_defaults_new RENAME TO provider_defaults;
 `
 
+const PROVIDER_DEFAULTS_V31 = `
+DELETE FROM provider_default_models
+WHERE rowid NOT IN (
+  SELECT (
+    SELECT candidate.rowid
+    FROM provider_default_models AS candidate
+    WHERE candidate.family = families.family
+    ORDER BY candidate.updated_at DESC, candidate.provider_id, candidate.model_id
+    LIMIT 1
+  )
+  FROM (SELECT DISTINCT family FROM provider_default_models) AS families
+);
+CREATE UNIQUE INDEX idx_provider_default_models__family
+  ON provider_default_models (family);
+`
+
 export const tanzoMigrations: ModuleMigrations = {
   moduleName: 'tanzo',
   files: [
@@ -886,6 +902,11 @@ export const tanzoMigrations: ModuleMigrations = {
       version: 30,
       name: 'provider_grok',
       up: (db) => db.exec(PROVIDER_TABLES_V30)
+    },
+    {
+      version: 31,
+      name: 'global_provider_default_models',
+      up: (db) => db.exec(PROVIDER_DEFAULTS_V31)
     }
   ]
 }

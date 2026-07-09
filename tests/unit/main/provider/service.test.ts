@@ -122,6 +122,11 @@ function createMemoryStore(): ProviderStore & {
     setDefaultModel,
     saveDefaults: (input) =>
       defaults.set(defaultsKey(input.providerId, input.family), { ...input }),
+    saveDefaultsBatch: (inputs) => {
+      for (const input of inputs) {
+        defaults.set(defaultsKey(input.providerId, input.family), { ...input })
+      }
+    },
     getDefaults: (providerId, family) => defaults.get(defaultsKey(providerId, family)),
     reset: (providerId) => {
       connections.delete(providerId)
@@ -201,12 +206,7 @@ describe('main/provider/service', () => {
     })
     expect(adapterMocks.openaiAdapter.testConnection).toHaveBeenCalledWith({ apiKey: 'sk-live' })
 
-    const workspace = service.recordValidation('openai', {
-      success: false,
-      message: 'expired'
-    })
-    expect(workspace.connection.status).toBe('expired')
-    expect(workspace.connection.lastValidationSucceeded).toBe(false)
+    expect(service.getWorkspace('openai').connection.status).toBe('connected')
   })
 
   it('manages provider keys and active key selection', () => {
@@ -324,6 +324,65 @@ describe('main/provider/service', () => {
       updatedAt: new Date().toISOString()
     })
     expect(service.getCallSettings('openai', 'language')).toEqual({ temperature: 0.3 })
+
+    expect(() =>
+      service.saveDefaults({
+        providerId: 'anthropic',
+        byFamily: { embedding: { callDefaults: {} } }
+      })
+    ).toThrowError(/does not support embedding/)
+
+    expect(() =>
+      service.saveDefaults({
+        providerId: 'openai',
+        byFamily: {
+          language: { callDefaults: { temperature: 0.7 } },
+          embedding: { callDefaults: { temperature: 'warm' } }
+        }
+      })
+    ).toThrowError(/temperature/)
+    expect(service.getCallSettings('openai', 'language')).toEqual({ temperature: 0.3 })
+  })
+
+  it('reports ready only when an executable language model is enabled', async () => {
+    const store = createMemoryStore()
+    const service = createProviderService(store, codec)
+    service.saveConnection({ providerId: 'openai', credentials: { apiKey: 'sk-live' } })
+
+    await service.saveModelState({
+      providerId: 'openai',
+      family: 'embedding',
+      modelId: 'text-embedding-3-small',
+      enabled: true,
+      isCustom: true,
+      model: { id: 'text-embedding-3-small', name: 'Embedding' }
+    })
+    expect(service.getWorkspace('openai').setup.configurationStatus).toBe('connected_no_models')
+
+    await service.saveModelState({
+      providerId: 'openai',
+      family: 'language',
+      modelId: 'gpt-test',
+      enabled: true,
+      isCustom: true,
+      model: { id: 'gpt-test', name: 'GPT Test' }
+    })
+    expect(service.getWorkspace('openai').setup.configurationStatus).toBe('ready')
+  })
+
+  it('rejects model state for unsupported provider families', async () => {
+    const service = createProviderService(createMemoryStore(), codec)
+
+    await expect(
+      service.saveModelState({
+        providerId: 'anthropic',
+        family: 'embedding',
+        modelId: 'unsupported',
+        enabled: true,
+        isCustom: true,
+        model: { id: 'unsupported', name: 'Unsupported' }
+      })
+    ).rejects.toThrow(/does not support embedding/)
   })
 
   it('handles disconnected and reset flows', async () => {

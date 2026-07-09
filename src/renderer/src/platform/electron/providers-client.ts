@@ -49,12 +49,6 @@ export const providersClient = {
   testConnection(providerId: ProviderId): Promise<ConnectionTestResult> {
     return requireProviderApi().testConnection(providerId)
   },
-  recordValidation(
-    providerId: ProviderId,
-    result: ConnectionTestResult
-  ): Promise<ProviderWorkspace> {
-    return requireProviderApi().recordValidation(providerId, result)
-  },
   async disconnect(providerId: ProviderId): Promise<void> {
     await requireProviderApi().disconnect(providerId)
   },

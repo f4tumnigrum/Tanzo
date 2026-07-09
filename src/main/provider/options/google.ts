@@ -11,12 +11,6 @@ export const googleOptionSchemas: ProviderOptionSchema[] = [
     providerKey: 'google',
     label: 'Google language options',
     fields: [
-      {
-        path: 'thinkingConfig.thinkingBudget',
-        label: 'Thinking budget',
-        control: 'number',
-        step: 1
-      },
       { path: 'thinkingConfig.includeThoughts', label: 'Include thoughts', control: 'boolean' },
       { path: 'structuredOutputs', label: 'Structured outputs', control: 'boolean' },
       {
@@ -43,8 +37,7 @@ export const googleOptionSchemas: ProviderOptionSchema[] = [
         ].map((value) => ({ value, label: value }))
       },
       { path: 'audioTimestamp', label: 'Audio timestamp', control: 'boolean' },
-      { path: 'safetySettings', label: 'Safety settings', control: 'json' },
-      { path: 'labels', label: 'Labels', control: 'json' }
+      { path: 'safetySettings', label: 'Safety settings', control: 'json' }
     ]
   }
 ]

@@ -19,16 +19,13 @@ const MODEL_SOURCES = ['api', 'curated', 'custom'] as const
 
 const stringRecordSchema = z.record(z.string(), z.string())
 const unknownRecordSchema = z.record(z.string(), z.unknown())
-const emptyDefaults: ProviderDefaultsState = {
-  callDefaults: {},
-  providerOptions: {},
-  rawProviderOptions: {}
-}
-const defaultsSchema = z.object({
-  callDefaults: unknownRecordSchema,
-  providerOptions: unknownRecordSchema,
-  rawProviderOptions: unknownRecordSchema
-})
+const defaultsSchema = z
+  .object({
+    callDefaults: unknownRecordSchema.optional(),
+    providerOptions: unknownRecordSchema.optional(),
+    rawProviderOptions: unknownRecordSchema.optional()
+  })
+  .partial()
 const modelPayloadSchema = z
   .object({
     id: z.string(),
@@ -49,6 +46,8 @@ const modelPayloadSchema = z
       })
       .optional(),
     dimensions: z.number().optional(),
+    maxContextLength: z.number().optional(),
+    maxBatchSize: z.number().optional(),
     maxImagesPerCall: z.number().optional(),
     supportedSizes: z.array(z.string()).optional(),
     supportedAspectRatios: z.array(z.string()).optional(),
@@ -104,6 +103,8 @@ export interface StoredModel {
     maxOutput?: number
     capabilities?: ModelCapabilityFlags
     dimensions?: number
+    maxContextLength?: number
+    maxBatchSize?: number
     maxImagesPerCall?: number
     supportedSizes?: string[]
     supportedAspectRatios?: string[]
@@ -139,6 +140,7 @@ export interface ProviderStore {
   listModels(providerId: ProviderId, family?: ModelFamily): StoredModel[]
   setDefaultModel(providerId: ProviderId, family: ModelFamily, modelId: string): void
   saveDefaults(input: StoredDefaults): void
+  saveDefaultsBatch(inputs: StoredDefaults[]): void
   getDefaults(providerId: ProviderId, family: ModelFamily): StoredDefaults | undefined
   reset(providerId: ProviderId): void
 }
@@ -446,8 +448,11 @@ export function createProviderStore(db: SqlDatabase): ProviderStore {
      WHERE provider_models.provider_id = ? AND provider_models.family = ?
      ORDER BY provider_models.model_id`
   )
-  const deleteDefaultModel = db.prepare(
-    'DELETE FROM provider_default_models WHERE provider_id = ? AND family = ?'
+  const deleteFamilyDefaultModel = db.prepare(
+    'DELETE FROM provider_default_models WHERE family = ?'
+  )
+  const deleteMatchingDefaultModel = db.prepare(
+    'DELETE FROM provider_default_models WHERE provider_id = ? AND family = ? AND model_id = ?'
   )
   const setDefault = db.prepare(
     `INSERT INTO provider_default_models (provider_id, family, model_id, updated_at)
@@ -477,8 +482,18 @@ export function createProviderStore(db: SqlDatabase): ProviderStore {
     family: ModelFamily,
     modelId: string
   ): void {
-    deleteDefaultModel.run([providerId, family])
+    deleteFamilyDefaultModel.run([family])
     setDefault.run([providerId, family, modelId, Date.now()])
+  }
+
+  function persistDefaults(input: StoredDefaults): void {
+    const now = Date.now()
+    upsertDefaults.run({
+      provider_id: input.providerId,
+      family: input.family,
+      defaults_json: JSON.stringify(input.defaults),
+      updated_at: toTimestamp(input.updatedAt, now)
+    })
   }
 
   return {
@@ -571,10 +586,11 @@ export function createProviderStore(db: SqlDatabase): ProviderStore {
         })
         if (model.isDefault && model.enabled) {
           setProviderDefaultModel(model.providerId, model.family, model.modelId)
+        } else {
+          deleteMatchingDefaultModel.run([model.providerId, model.family, model.modelId])
         }
       }
-      if (model.isDefault && model.enabled) db.transaction(write)
-      else write()
+      db.transaction(write)
     },
     deleteModel(providerId, family, modelId) {
       deleteModel.run([providerId, family, modelId])
@@ -592,12 +608,11 @@ export function createProviderStore(db: SqlDatabase): ProviderStore {
       db.transaction(() => setProviderDefaultModel(providerId, family, modelId))
     },
     saveDefaults(input) {
-      const now = Date.now()
-      upsertDefaults.run({
-        provider_id: input.providerId,
-        family: input.family,
-        defaults_json: JSON.stringify(input.defaults),
-        updated_at: toTimestamp(input.updatedAt, now)
+      persistDefaults(input)
+    },
+    saveDefaultsBatch(inputs) {
+      db.transaction(() => {
+        for (const input of inputs) persistDefaults(input)
       })
     },
     getDefaults(providerId, family) {
@@ -606,11 +621,17 @@ export function createProviderStore(db: SqlDatabase): ProviderStore {
       const provider = asProviderId(row.provider_id)
       const modelFamily = asFamily(row.family)
       if (!provider || !modelFamily) return undefined
+      const parsed = parseJson(row.defaults_json, defaultsSchema, 'provider defaults')
       return {
         providerId: provider,
         family: modelFamily,
-        defaults:
-          parseJson(row.defaults_json, defaultsSchema, 'provider defaults') ?? emptyDefaults,
+        defaults: parsed
+          ? {
+              callDefaults: parsed.callDefaults ?? {},
+              providerOptions: parsed.providerOptions ?? {},
+              rawProviderOptions: parsed.rawProviderOptions ?? {}
+            }
+          : { callDefaults: {}, providerOptions: {}, rawProviderOptions: {} },
         ...(fromTimestamp(row.updated_at) ? { updatedAt: fromTimestamp(row.updated_at) } : {})
       }
     },

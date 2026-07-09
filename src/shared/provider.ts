@@ -6,7 +6,6 @@ export const PROVIDER_CHANNELS = {
   getWorkspace: 'provider:get-workspace',
   saveConnection: 'provider:save-connection',
   testConnection: 'provider:test-connection',
-  recordValidation: 'provider:record-validation',
   disconnect: 'provider:disconnect',
   reset: 'provider:reset',
   listKeys: 'provider:list-keys',
@@ -163,6 +162,8 @@ export interface StoredProviderModel {
   maxOutput?: number
   capabilities?: ModelCapabilityFlags
   dimensions?: number
+  maxContextLength?: number
+  maxBatchSize?: number
   maxImagesPerCall?: number
   supportedSizes?: string[]
   supportedAspectRatios?: string[]
@@ -325,7 +326,6 @@ export interface ProviderApi {
   getWorkspace(providerId: ProviderId): Promise<ProviderWorkspace>
   saveConnection(input: SaveProviderConnectionInput): Promise<ProviderWorkspace>
   testConnection(providerId: ProviderId): Promise<ConnectionTestResult>
-  recordValidation(providerId: ProviderId, result: ConnectionTestResult): Promise<ProviderWorkspace>
   disconnect(providerId: ProviderId): Promise<void>
   reset(providerId: ProviderId): Promise<void>
   listKeys(providerId: ProviderId): Promise<ProviderKeySummary[]>

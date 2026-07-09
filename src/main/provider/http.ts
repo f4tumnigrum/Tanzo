@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+const MAX_RESPONSE_BYTES = 10 * 1024 * 1024
+
 export function ensureUrlProtocol(value: string | undefined, fallback: string): string {
   const raw = value?.trim() || fallback.trim()
   if (!raw) return ''
@@ -27,6 +29,39 @@ export function buildHeaders(
   }
 }
 
+export async function readResponseText(
+  response: Response,
+  maxBytes = MAX_RESPONSE_BYTES
+): Promise<string> {
+  const declaredLength = Number(response.headers.get('content-length'))
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+    throw new Error(`HTTP response exceeds ${maxBytes} bytes.`)
+  }
+  if (!response.body) return ''
+
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let length = 0
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    length += value.byteLength
+    if (length > maxBytes) {
+      await reader.cancel()
+      throw new Error(`HTTP response exceeds ${maxBytes} bytes.`)
+    }
+    chunks.push(value)
+  }
+
+  const body = new Uint8Array(length)
+  let offset = 0
+  for (const chunk of chunks) {
+    body.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return new TextDecoder().decode(body)
+}
+
 export async function fetchJson<T>(
   url: string,
   parse: (value: unknown) => T,
@@ -39,7 +74,7 @@ export async function fetchJson<T>(
       headers: options.headers,
       signal: controller.signal
     })
-    const text = await response.text()
+    const text = await readResponseText(response)
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${text.slice(0, 500)}`)
     }
@@ -65,6 +100,7 @@ export const anthropicModelListSchema = z.object({
 })
 
 export const googleModelListSchema = z.object({
+  nextPageToken: z.string().optional(),
   models: z
     .array(
       z.object({

@@ -7,7 +7,6 @@ export const providerApi: ProviderApi = {
   getWorkspace: invoke<ProviderApi['getWorkspace']>(PROVIDER_CHANNELS.getWorkspace),
   saveConnection: invoke<ProviderApi['saveConnection']>(PROVIDER_CHANNELS.saveConnection),
   testConnection: invoke<ProviderApi['testConnection']>(PROVIDER_CHANNELS.testConnection),
-  recordValidation: invoke<ProviderApi['recordValidation']>(PROVIDER_CHANNELS.recordValidation),
   disconnect: invoke<ProviderApi['disconnect']>(PROVIDER_CHANNELS.disconnect),
   reset: invoke<ProviderApi['reset']>(PROVIDER_CHANNELS.reset),
   listKeys: invoke<ProviderApi['listKeys']>(PROVIDER_CHANNELS.listKeys),

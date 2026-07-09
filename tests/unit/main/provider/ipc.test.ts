@@ -26,7 +26,6 @@ function providerService() {
     getWorkspace: vi.fn((providerId: string) => ({ providerId })),
     saveConnection: vi.fn((input: unknown) => ({ saved: input })),
     testConnection: vi.fn((providerId: string) => ({ providerId, success: true })),
-    recordValidation: vi.fn((providerId: string, result: unknown) => ({ providerId, result })),
     disconnect: vi.fn((providerId: string) => ({ disconnected: providerId })),
     reset: vi.fn((providerId: string) => ({ reset: providerId })),
     listKeys: vi.fn((providerId: string) => [{ providerId, keyId: 'key-1' }]),
@@ -63,17 +62,6 @@ describe('provider/ipc', () => {
     expect(await handlers.get(PROVIDER_CHANNELS.testConnection)?.(null, 'anthropic')).toEqual({
       providerId: 'anthropic',
       success: true
-    })
-    expect(
-      await handlers.get(PROVIDER_CHANNELS.recordValidation)?.(null, 'google', {
-        success: true,
-        message: 'ok',
-        modelCount: 3,
-        latency: 12
-      })
-    ).toEqual({
-      providerId: 'google',
-      result: { success: true, message: 'ok', modelCount: 3, latency: 12 }
     })
     expect(await handlers.get(PROVIDER_CHANNELS.disconnect)?.(null, 'deepseek')).toEqual({
       disconnected: 'deepseek'
@@ -139,7 +127,16 @@ describe('provider/ipc', () => {
 
     expect(() => handlers.get(PROVIDER_CHANNELS.getWorkspace)?.(null, 'not-a-provider')).toThrow()
     expect(() =>
-      handlers.get(PROVIDER_CHANNELS.recordValidation)?.(null, 'openai', { success: true })
+      handlers.get(PROVIDER_CHANNELS.saveModelState)?.(null, {
+        ...modelState,
+        contextWindowOverride: -1
+      })
+    ).toThrow()
+    expect(() =>
+      handlers.get(PROVIDER_CHANNELS.saveDefaults)?.(null, {
+        providerId: 'openai',
+        byFamily: { language: { callDefaults: { seed: 1n } } }
+      })
     ).toThrow()
 
     unregister()

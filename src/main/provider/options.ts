@@ -1,10 +1,12 @@
 import type { JSONObject } from '@ai-sdk/provider'
 import type { ProviderOptions } from '@ai-sdk/provider-utils'
+import { TanzoValidationError } from '@shared/errors'
 import type {
   ModelFamily,
   ProviderDefaultsInput,
   ProviderDefaultsState,
   ProviderId,
+  ProviderOptionField,
   ProviderOptionSchema
 } from '@shared/provider'
 import { reasoningEffortOverlayValue } from '@shared/reasoning'
@@ -58,11 +60,62 @@ export function listOptionSchemas(
   )
 }
 
+function valueAtPath(source: Record<string, unknown>, path: string): unknown {
+  let value: unknown = source
+  for (const segment of path.split('.')) {
+    if (!isPlainObject(value)) return undefined
+    value = value[segment]
+  }
+  return value
+}
+
+function validOptionField(field: ProviderOptionField, value: unknown): boolean {
+  if (value === undefined) return true
+  if (field.control === 'boolean') return typeof value === 'boolean'
+  if (field.control === 'string') return typeof value === 'string'
+  if (field.control === 'string-list') {
+    return Array.isArray(value) && value.every((entry) => typeof entry === 'string')
+  }
+  if (field.control === 'json') return value !== undefined
+  if (field.control === 'select') {
+    return field.choices?.some((choice) => Object.is(choice.value, value)) ?? false
+  }
+  if (typeof value !== 'number' || !Number.isFinite(value)) return false
+  if (field.min !== undefined && value < field.min) return false
+  if (field.max !== undefined && value > field.max) return false
+  if (field.step === 1 && !Number.isInteger(value)) return false
+  return true
+}
+
+export function validateProviderOptions(
+  providerId: ProviderId,
+  family: ModelFamily,
+  options: Record<string, unknown>
+): void {
+  for (const schema of listOptionSchemas(providerId, family)) {
+    for (const field of schema.fields) {
+      const scoped = options[schema.providerKey]
+      const direct = valueAtPath(options, field.path)
+      const value =
+        direct === undefined && isPlainObject(scoped) ? valueAtPath(scoped, field.path) : direct
+      if (validOptionField(field, value)) continue
+      throw new TanzoValidationError(
+        'PROVIDER_OPTIONS_INVALID',
+        `Invalid provider option: ${field.path}`,
+        { details: { providerId, family, path: field.path } }
+      )
+    }
+  }
+}
+
 export function reasoningEffortOverlay(
   providerId: ProviderId,
   effort: string
 ): ProviderOptions | undefined {
-  const overlay = reasoningEffortOverlayValue(getReasoningCapability(providerId, 'language'), effort)
+  const overlay = reasoningEffortOverlayValue(
+    getReasoningCapability(providerId, 'language'),
+    effort
+  )
   if (!overlay) return undefined
   return { [overlay.providerKey]: overlay.value as ProviderOptions[string] }
 }

@@ -53,7 +53,8 @@ const openaiLanguageFields: ProviderOptionField[] = [
     path: 'logprobs',
     label: 'Log probabilities',
     control: 'number',
-    min: 0,
+    min: 1,
+    max: 20,
     step: 1
   },
   {

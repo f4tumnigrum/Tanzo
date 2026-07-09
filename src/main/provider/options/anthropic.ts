@@ -12,35 +12,12 @@ export const anthropicOptionSchemas: ProviderOptionSchema[] = [
     label: 'Anthropic language options',
     fields: [
       {
-        path: 'thinking.type',
-        label: 'Thinking',
-        control: 'select',
-        choices: [
-          { value: 'enabled', label: 'enabled' },
-          { value: 'disabled', label: 'disabled' },
-          { value: 'adaptive', label: 'adaptive' }
-        ]
-      },
-      {
-        path: 'thinking.budgetTokens',
-        label: 'Thinking budget tokens',
-        control: 'number',
-        min: 1024,
-        step: 1024
-      },
-      {
         path: 'structuredOutputMode',
         label: 'Structured output mode',
         control: 'select',
         choices: ['outputFormat', 'jsonTool', 'auto'].map((value) => ({ value, label: value }))
       },
       { path: 'metadata.userId', label: 'Metadata user ID', control: 'string' },
-      {
-        path: 'speed',
-        label: 'Speed',
-        control: 'select',
-        choices: ['fast', 'standard'].map((value) => ({ value, label: value }))
-      },
       {
         path: 'inferenceGeo',
         label: 'Inference geo',
