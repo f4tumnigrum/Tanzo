@@ -4,7 +4,7 @@ export const grokOptionSchemas: ProviderOptionSchema[] = [
   {
     providerId: 'grok',
     family: 'language',
-    providerKey: 'grok',
+    providerKey: 'xai',
     label: 'Grok language options',
     fields: []
   }

@@ -3,6 +3,7 @@ import type { DeepSeekLanguageModelOptions } from '@ai-sdk/deepseek'
 import type { GoogleLanguageModelOptions } from '@ai-sdk/google'
 import type { OpenAICompatibleProviderOptions } from '@ai-sdk/openai-compatible'
 import type { OpenAIChatLanguageModelOptions, OpenAIResponsesProviderOptions } from '@ai-sdk/openai'
+import type { XaiResponsesProviderOptions } from '@ai-sdk/xai'
 import type {
   ModelFamily,
   ProviderId,
@@ -97,10 +98,10 @@ const minimaxEffort = defineEffort<OpenAICompatibleProviderOptions>()({
   default: 'high'
 })
 
-const grokEffort = defineEffort<OpenAICompatibleProviderOptions>()({
-  providerKey: 'grok',
+const grokEffort = defineEffort<XaiResponsesProviderOptions>()({
+  providerKey: 'xai',
   path: 'reasoningEffort',
-  values: ['low', 'medium', 'high'],
+  values: ['none', 'low', 'medium', 'high'],
   default: 'high'
 })
 

@@ -117,7 +117,7 @@ describe('main/provider/options', () => {
       minimax: { reasoningEffort: 'medium' }
     })
     expect(reasoningEffortOverlay('grok', 'medium')).toEqual({
-      grok: { reasoningEffort: 'medium' }
+      xai: { reasoningEffort: 'medium' }
     })
     expect(reasoningEffortOverlay('grok', 'xhigh')).toBeUndefined()
     expect(reasoningEffortOverlay('google', 'medium')).toEqual({

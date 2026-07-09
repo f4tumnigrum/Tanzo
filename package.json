@@ -45,6 +45,7 @@
     "@ai-sdk/openai-compatible": "3.0.4",
     "@ai-sdk/provider": "4.0.1",
     "@ai-sdk/provider-utils": "5.0.4",
+    "@ai-sdk/xai": "4.0.5",
     "@base-ui/react": "^1.6.0",
     "@chat-adapter/discord": "^4.32.0",
     "@chat-adapter/state-memory": "^4.32.0",

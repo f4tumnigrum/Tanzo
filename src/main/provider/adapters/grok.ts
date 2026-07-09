@@ -1,4 +1,4 @@
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
+import { createXai } from '@ai-sdk/xai'
 import { TanzoValidationError } from '@shared/errors'
 import type { Credentials } from '../adapter-types'
 import { ensureUrlProtocol, fetchJson, idOnlyModelListSchema } from '../http'
@@ -13,8 +13,7 @@ function grokBaseUrl(credentials: Credentials): string {
 
 function grokProvider(credentials: Credentials) {
   const apiKey = credentialText(credentials.apiKey)
-  return createOpenAICompatible({
-    name: 'grok',
+  return createXai({
     baseURL: grokBaseUrl(credentials),
     ...(apiKey ? { apiKey } : {})
   })
@@ -24,7 +23,7 @@ export const grokAdapter: ProviderAdapter = {
   providerId: 'grok',
   validateCredentials: (credentials) => Boolean(credentials.apiKey?.trim()),
   createLanguageModel(modelId, credentials) {
-    return grokProvider(credentials).chatModel(modelId)
+    return grokProvider(credentials).responses(modelId)
   },
   async fetchModels(credentials, family) {
     if (family !== 'language') return []
