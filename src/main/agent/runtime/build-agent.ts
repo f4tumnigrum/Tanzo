@@ -7,9 +7,11 @@ import {
   type ToolSet
 } from 'ai'
 import type { ProviderOptions } from '@ai-sdk/provider-utils'
+import { requireModelRef } from '@shared/provider'
 import type { AgentDefinition } from '../agents/types'
 import type { PermissionMode } from '@shared/policy'
 import type { ProviderService } from '../../provider/service'
+import { conversationRequestHeaders } from '../../provider/request-headers'
 import type { PolicyEngine, ToolPolicyKind } from '../policy/types'
 import { effectiveTokens } from '../goal/accounting'
 import { hasProviderOptions, resolveLanguageModelConfig, type CallSettings } from './model-config'
@@ -65,6 +67,7 @@ export interface AgentCall {
   providerOptions?: ProviderOptions
   telemetry?: TelemetryOptions
   toolChoice?: ToolChoice<ToolSet>
+  headers?: Record<string, string>
 }
 
 export function buildAgentCall(input: AgentCallInput): AgentCall {
@@ -73,6 +76,9 @@ export function buildAgentCall(input: AgentCallInput): AgentCall {
     input.def.modelRef,
     input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : undefined
   )
+
+  const { providerId } = requireModelRef(input.def.modelRef)
+  const headers = conversationRequestHeaders(providerId, input.chatId)
 
   const stopWhen: StopCondition<ToolSet>[] = []
   if (input.def.maxSteps !== undefined) stopWhen.push(isStepCount(input.def.maxSteps))
@@ -115,6 +121,7 @@ export function buildAgentCall(input: AgentCallInput): AgentCall {
       ? { providerOptions: modelConfig.providerOptions }
       : {}),
     ...(input.telemetry ? { telemetry: input.telemetry } : {}),
-    ...(input.toolChoice ? { toolChoice: input.toolChoice } : {})
+    ...(input.toolChoice ? { toolChoice: input.toolChoice } : {}),
+    ...(headers ? { headers } : {})
   }
 }

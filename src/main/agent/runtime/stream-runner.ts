@@ -355,6 +355,7 @@ export function startAgentStream(
         ...(agentCall.providerOptions ? { providerOptions: agentCall.providerOptions } : {}),
         ...(agentCall.telemetry ? { telemetry: agentCall.telemetry } : {}),
         ...(agentCall.toolChoice ? { toolChoice: agentCall.toolChoice } : {}),
+        ...(agentCall.headers ? { headers: agentCall.headers } : {}),
         messages: initialMessages,
         abortSignal: opts.signal,
         // Keep this callback synchronous and O(1): the SDK pauses stream processing

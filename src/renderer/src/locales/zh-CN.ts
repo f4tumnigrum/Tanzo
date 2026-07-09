@@ -192,8 +192,8 @@ export const zhCN = {
             '工作区会从列表中移除，其中的 {{count}} 个对话也会被永久删除。磁盘上的文件不会被删除。'
         },
         deleteFamily: {
-          title: '删除此对话及其分支？',
-          description: '该对话以及它的 {{count}} 个分支都会被永久删除，此操作无法撤销。'
+          title: '删除此对话？',
+          description: '只会永久删除此对话。它的 {{count}} 个分支对话会保留，并从此对话下移出。此操作无法撤销。'
         },
         justNow: '刚刚',
         minutesAgo: '{{count}} 分钟前',

@@ -136,4 +136,42 @@ describe('agent/runtime', () => {
     // Runtime default when the user has not configured retries.
     expect(call.callSettings).toEqual({ maxRetries: 5 })
   })
+
+  it('adds the x-grok-conv-id header for Grok models keyed on the conversation', () => {
+    const providerService = {
+      resolveLanguageModel: vi.fn(() => 'model'),
+      getProviderOptions: vi.fn(() => ({})),
+      getCallSettings: vi.fn(() => ({}))
+    }
+
+    const call = buildAgentCall({
+      def: { ...agentDef, modelRef: 'grok:grok-4.5' },
+      chatId: 'chat-42',
+      mode: 'default',
+      providerService: providerService as never,
+      tools: {} as never,
+      decide: vi.fn()
+    })
+
+    expect(call.headers).toEqual({ 'x-grok-conv-id': 'chat-42' })
+  })
+
+  it('omits conversation headers for non-Grok providers', () => {
+    const providerService = {
+      resolveLanguageModel: vi.fn(() => 'model'),
+      getProviderOptions: vi.fn(() => ({})),
+      getCallSettings: vi.fn(() => ({}))
+    }
+
+    const call = buildAgentCall({
+      def: agentDef,
+      chatId: 'chat-1',
+      mode: 'default',
+      providerService: providerService as never,
+      tools: {} as never,
+      decide: vi.fn()
+    })
+
+    expect(call.headers).toBeUndefined()
+  })
 })

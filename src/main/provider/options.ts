@@ -12,6 +12,7 @@ import { getReasoningCapability } from './capabilities'
 import { anthropicOptionSchemas } from './options/anthropic'
 import { deepseekOptionSchemas } from './options/deepseek'
 import { googleOptionSchemas } from './options/google'
+import { grokOptionSchemas } from './options/grok'
 import { minimaxOptionSchemas } from './options/minimax'
 import { openaiOptionSchemas } from './options/openai'
 import { openaiChatOptionSchemas } from './options/openai-chat'
@@ -34,6 +35,7 @@ export const OPTION_SCHEMAS: ProviderOptionSchema[] = [
   ...deepseekOptionSchemas,
   ...zhipuOptionSchemas,
   ...minimaxOptionSchemas,
+  ...grokOptionSchemas,
   ...openaiCompatibleOptionSchemas
 ]
 

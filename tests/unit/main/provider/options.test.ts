@@ -116,6 +116,10 @@ describe('main/provider/options', () => {
     expect(reasoningEffortOverlay('minimax', 'medium')).toEqual({
       minimax: { reasoningEffort: 'medium' }
     })
+    expect(reasoningEffortOverlay('grok', 'medium')).toEqual({
+      grok: { reasoningEffort: 'medium' }
+    })
+    expect(reasoningEffortOverlay('grok', 'xhigh')).toBeUndefined()
     expect(reasoningEffortOverlay('google', 'medium')).toEqual({
       google: { thinkingConfig: { thinkingLevel: 'medium' } }
     })

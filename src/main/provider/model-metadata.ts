@@ -47,7 +47,8 @@ const PROVIDER_KEY_MAP: Partial<Record<ProviderId, string>> = {
   google: 'google',
   deepseek: 'deepseek',
   zhipu: 'zhipuai',
-  minimax: 'minimax'
+  minimax: 'minimax',
+  grok: 'xai'
 }
 
 let cachedData: ModelsDevData | null = null

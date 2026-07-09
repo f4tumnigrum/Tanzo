@@ -246,6 +246,31 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     ],
     families: { language: languageFamily }
   },
+  grok: {
+    id: 'grok',
+    name: 'Grok (xAI)',
+    description: 'xAI Grok language models.',
+    docsUrl: 'https://docs.x.ai/docs',
+    credentialFields: [
+      {
+        key: 'apiKey',
+        label: 'API key',
+        type: 'password',
+        required: true,
+        secret: true,
+        placeholder: 'xai-...'
+      },
+      {
+        key: 'baseUrl',
+        label: 'Base URL',
+        type: 'url',
+        required: false,
+        secret: false,
+        placeholder: 'https://api.x.ai/v1'
+      }
+    ],
+    families: { language: languageFamily }
+  },
   'openai-compatible': {
     id: 'openai-compatible',
     name: 'OpenAI-compatible',

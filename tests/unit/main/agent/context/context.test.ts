@@ -398,6 +398,19 @@ describe('main/agent/context provider strategies', () => {
       strategyFor('deepseek:deepseek-chat', 'chat-1').applyCaching({ plan, summaryIndex: -1 })
     ).toEqual(plan)
   })
+
+  it('leaves Grok provider options unchanged because caching is automatic and header-driven', () => {
+    const plan = {
+      system: [],
+      stableBoundary: 0,
+      leadingUser: [],
+      history: [],
+      provenance: { system: [], leadingUser: [], history: [] }
+    }
+    const out = strategyFor('grok:grok-4.5', 'chat-9').applyCaching({ plan, summaryIndex: -1 })
+    expect(out).toEqual(plan)
+    expect(out.providerOptions).toBeUndefined()
+  })
 })
 
 describe('main/agent/context ledger', () => {

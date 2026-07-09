@@ -29,6 +29,7 @@ export const PROVIDER_IDS = [
   'deepseek',
   'zhipu',
   'minimax',
+  'grok',
   'openai-compatible'
 ] as const
 

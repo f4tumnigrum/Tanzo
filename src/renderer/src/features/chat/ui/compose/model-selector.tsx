@@ -22,6 +22,7 @@ const PROVIDER_ICON: Record<string, typeof Cloud> = {
   deepseek: Sparkles,
   zhipu: Sparkles,
   minimax: Sparkles,
+  grok: Sparkles,
   'openai-compatible': Plug
 }
 
@@ -31,6 +32,7 @@ const PROVIDER_DISPLAY_NAME: Partial<Record<ProviderId, string>> = {
   anthropic: 'Anthropic',
   google: 'Google',
   deepseek: 'DeepSeek',
+  grok: 'Grok',
   'openai-compatible': 'OpenAI-compatible'
 }
 

@@ -13,9 +13,9 @@ describe('database/migrations on real sqlite', () => {
           .all(['tanzo']) as Array<{ version: number }>
       ).map((row) => row.version)
 
-    expect(versions()).toEqual([1, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29])
+    expect(versions()).toEqual([1, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30])
     expect(() => runMigrations(db, [tanzoMigrations])).not.toThrow()
-    expect(versions()).toEqual([1, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29])
+    expect(versions()).toEqual([1, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30])
   })
 
   it('adds reasoning_effort to conversations created by the initial schema (v24)', () => {
@@ -148,6 +148,72 @@ describe('database/migrations on real sqlite', () => {
         output_tokens INTEGER,
         total_tokens INTEGER,
         error_json TEXT
+      );
+      -- Provider tables/trigger as a real v28 database would have them (post-v27 rebuild).
+      CREATE TABLE provider_connections (
+        provider_id TEXT PRIMARY KEY,
+        public_fields_json TEXT NOT NULL DEFAULT '{}',
+        secret_fields_encrypted_json TEXT NOT NULL DEFAULT '{}',
+        active_key_id TEXT,
+        connected_at INTEGER,
+        updated_at INTEGER NOT NULL,
+        last_validated_at INTEGER,
+        last_validation_succeeded INTEGER,
+        last_validation_message TEXT,
+        last_validation_latency INTEGER
+      );
+      CREATE TABLE provider_keys (
+        id TEXT PRIMARY KEY,
+        provider_id TEXT NOT NULL,
+        key_id TEXT NOT NULL,
+        label TEXT NOT NULL,
+        encrypted_value TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'untested',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        last_used_at INTEGER,
+        last_validated_at INTEGER,
+        last_validation_succeeded INTEGER,
+        last_validation_message TEXT,
+        last_validation_latency INTEGER,
+        UNIQUE (provider_id, key_id)
+      );
+      CREATE TRIGGER trg_provider_keys__clear_active_on_delete
+      AFTER DELETE ON provider_keys
+      FOR EACH ROW
+      BEGIN
+        UPDATE provider_connections
+        SET active_key_id = NULL,
+            updated_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000
+        WHERE provider_id = OLD.provider_id
+          AND active_key_id = OLD.key_id;
+      END;
+      CREATE TABLE provider_models (
+        provider_id TEXT NOT NULL,
+        family TEXT NOT NULL,
+        model_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        is_custom INTEGER NOT NULL DEFAULT 0,
+        source TEXT NOT NULL DEFAULT 'api',
+        model_json TEXT NOT NULL DEFAULT '{}',
+        context_window_override INTEGER,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (provider_id, family, model_id)
+      );
+      CREATE TABLE provider_default_models (
+        provider_id TEXT NOT NULL,
+        family TEXT NOT NULL,
+        model_id TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (provider_id, family)
+      );
+      CREATE TABLE provider_defaults (
+        provider_id TEXT NOT NULL,
+        family TEXT NOT NULL,
+        defaults_json TEXT NOT NULL DEFAULT '{}',
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (provider_id, family)
       );
     `)
     const insert = db.prepare(
@@ -301,6 +367,21 @@ describe('database/migrations on real sqlite', () => {
            ) VALUES (?, '{}', '{}', 2)`
         )
         .run(['minimax'])
+    ).not.toThrow()
+    db.close()
+  })
+
+  it('accepts the grok provider id after the v30 rebuild', () => {
+    const db = createRealDb()
+
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO provider_connections (
+             provider_id, public_fields_json, secret_fields_encrypted_json, updated_at
+           ) VALUES (?, '{}', '{}', 2)`
+        )
+        .run(['grok'])
     ).not.toThrow()
     db.close()
   })

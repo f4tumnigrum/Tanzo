@@ -4,6 +4,7 @@ import type { ProviderAdapter } from './adapter-types'
 import { anthropicAdapter } from './adapters/anthropic'
 import { deepseekAdapter } from './adapters/deepseek'
 import { googleAdapter } from './adapters/google'
+import { grokAdapter } from './adapters/grok'
 import { minimaxAdapter } from './adapters/minimax'
 import { openaiAdapter } from './adapters/openai'
 import { openaiChatAdapter } from './adapters/openai-chat'
@@ -20,6 +21,7 @@ export const ADAPTERS: Record<ProviderId, ProviderAdapter> = {
   deepseek: deepseekAdapter,
   zhipu: zhipuAdapter,
   minimax: minimaxAdapter,
+  grok: grokAdapter,
   'openai-compatible': openaiCompatibleAdapter
 }
 

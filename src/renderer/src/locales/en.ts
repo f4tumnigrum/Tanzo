@@ -192,9 +192,9 @@ export const en = {
             'This removes the workspace from the list and permanently deletes {{count}} conversations in it. Files on disk are not deleted.'
         },
         deleteFamily: {
-          title: 'Delete this conversation and its branches?',
+          title: 'Delete this conversation?',
           description:
-            'This conversation and its {{count}} branches will be permanently deleted. This cannot be undone.'
+            'Only this conversation will be permanently deleted. Its {{count}} branch conversations will be kept and moved out from under it. This cannot be undone.'
         },
         justNow: 'just now',
         minutesAgo: '{{count}}m ago',

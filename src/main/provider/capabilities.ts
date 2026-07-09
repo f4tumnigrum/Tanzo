@@ -97,6 +97,13 @@ const minimaxEffort = defineEffort<OpenAICompatibleProviderOptions>()({
   default: 'high'
 })
 
+const grokEffort = defineEffort<OpenAICompatibleProviderOptions>()({
+  providerKey: 'grok',
+  path: 'reasoningEffort',
+  values: ['low', 'medium', 'high'],
+  default: 'high'
+})
+
 const openaiCompatibleEffort = defineEffort<OpenAICompatibleProviderOptions>()({
   providerKey: 'openaiCompatible',
   path: 'reasoningEffort',
@@ -112,6 +119,7 @@ const EFFORTS: Record<ProviderId, ReasoningEffortCapability | null> = {
   deepseek: deepseekEffort,
   zhipu: zhipuEffort,
   minimax: minimaxEffort,
+  grok: grokEffort,
   'openai-compatible': openaiCompatibleEffort
 }
 

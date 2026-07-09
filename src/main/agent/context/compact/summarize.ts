@@ -14,6 +14,7 @@ import type { AgentDefinition } from '../../agents/types'
 import type { ContextEngine } from '../index'
 import { estimateModelMessagesTokens, estimateTextTokens } from '../ledger'
 import { mergeProviderOptionsInto } from '../../../provider/options'
+import { conversationRequestHeaders } from '../../../provider/request-headers'
 import { hasProviderOptions, resolveLanguageModelConfig } from '../../runtime/model-config'
 import type { AgentRuntimeDeps, Logger } from '../../runtime/types'
 import { extractPartialSummary } from './prompt'
@@ -197,6 +198,7 @@ interface StreamSummaryCall {
   telemetry?: TelemetryOptions
   abortSignal?: AbortSignal
   onSummary?: (summary: string) => void
+  headers?: Record<string, string>
 }
 
 async function streamSummary(call: StreamSummaryCall): Promise<SummarizeForkResult> {
@@ -244,6 +246,7 @@ async function streamSummary(call: StreamSummaryCall): Promise<SummarizeForkResu
         ? { providerOptions: mergedProviderOptions }
         : {}),
       ...(call.telemetry ? { telemetry: call.telemetry } : {}),
+      ...(call.headers ? { headers: call.headers } : {}),
       messages: call.messages,
       ...(call.abortSignal ? { abortSignal: call.abortSignal } : {}),
       onError: ({ error }) => {
@@ -311,6 +314,12 @@ export async function runSummarizeFork(
     )
 
     const anthropic = providerOf(input.def.modelRef) === 'anthropic'
+    // This fork reuses the live conversation prefix, so the conv-id header lets
+    // Grok route it to the server holding that cached prefix.
+    const convHeaders = conversationRequestHeaders(
+      requireModelRef(forkRef).providerId,
+      input.chatId
+    )
     return streamSummary({
       model: modelConfig,
       ...(built.instructions.length > 0 ? { instructions: built.instructions } : {}),
@@ -320,6 +329,7 @@ export async function runSummarizeFork(
       ...(built.providerOptions ? { providerOptions: built.providerOptions } : {}),
       ...(input.telemetry ? { telemetry: input.telemetry } : {}),
       ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
+      ...(convHeaders ? { headers: convHeaders } : {}),
       ...(input.onSummary ? { onSummary: input.onSummary } : {})
     })
   }
