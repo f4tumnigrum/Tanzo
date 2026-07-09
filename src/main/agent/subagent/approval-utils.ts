@@ -6,7 +6,13 @@ type AnyPart = TanzoUIMessage['parts'][number]
 interface ApprovalToolPart {
   state?: string
   input?: unknown
-  approval?: { id?: string; approved?: boolean; reason?: string }
+  approval?: {
+    id?: string
+    approved?: boolean
+    reason?: string
+    isAutomatic?: boolean
+    signature?: string
+  }
 }
 
 export interface PendingApprovalInfo {
@@ -86,7 +92,12 @@ export function applyApprovalResponse(
       return {
         ...(part as object),
         state: 'approval-responded',
-        approval: { id: approvalId, approved, ...(reason ? { reason } : {}) }
+        approval: {
+          ...tp.approval,
+          id: approvalId,
+          approved,
+          ...(reason ? { reason } : {})
+        }
       } as AnyPart
     })
     return changed ? { ...message, parts } : message

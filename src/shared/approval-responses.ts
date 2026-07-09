@@ -11,7 +11,7 @@ export interface AppliedApprovalResponse {
 interface ApprovalToolPart {
   state?: string
   input?: unknown
-  approval?: { id?: string }
+  approval?: { id?: string; isAutomatic?: boolean; signature?: string }
 }
 
 function isToolPart(part: TanzoUIMessage['parts'][number]): boolean {
@@ -58,6 +58,7 @@ export function applyApprovalResponses(
         ...part,
         state: 'approval-responded',
         approval: {
+          ...toolPart.approval,
           id: response.approvalId,
           approved: response.approved,
           ...(response.reason ? { reason: response.reason } : {})

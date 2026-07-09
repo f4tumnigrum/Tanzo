@@ -8,7 +8,11 @@ import {
 } from '@main/agent/subagent/approval-utils'
 
 vi.mock('ai', () => ({
-  getToolName: vi.fn((part: { type?: string }) => part.type?.replace(/^tool-/, '') ?? 'unknown'),
+  getToolName: vi.fn((part: { type?: string; toolName?: string }) =>
+    part.type === 'dynamic-tool'
+      ? (part.toolName ?? 'unknown')
+      : (part.type?.replace(/^tool-/, '') ?? 'unknown')
+  ),
   isDynamicToolUIPart: vi.fn((part: { type?: string }) => part.type === 'dynamic-tool'),
   isToolUIPart: vi.fn((part: { type?: string }) => part.type?.startsWith('tool-') ?? false)
 }))
@@ -120,7 +124,7 @@ describe('agent/subagent-approval', () => {
           toolCallId: 'edit-call',
           state: 'approval-requested',
           input: { path: 'a.ts', oldText: 'a', newText: 'b' },
-          approval: { id: 'approval-1' }
+          approval: { id: 'approval-1', signature: 'sig-1', isAutomatic: true }
         } as never,
         { type: 'text', text: 'waiting' }
       ]
@@ -137,13 +141,47 @@ describe('agent/subagent-approval', () => {
     expect(result.input).toEqual({ path: 'a.ts', oldText: 'a', newText: 'b' })
     expect(result.messages[1].parts[0]).toMatchObject({
       state: 'approval-responded',
-      approval: { id: 'approval-1', approved: false, reason: 'Nope' }
+      approval: {
+        id: 'approval-1',
+        approved: false,
+        reason: 'Nope',
+        signature: 'sig-1',
+        isAutomatic: true
+      }
     })
     expect(pending.parts[0]).toMatchObject({ state: 'approval-requested' })
 
     expect(applyApprovalResponse([pending], 'missing', true)).toEqual({
       messages: [pending],
       input: undefined
+    })
+  })
+
+  it('preserves signed metadata for dynamic tool approvals', () => {
+    const pending = message({
+      parts: [
+        {
+          type: 'dynamic-tool',
+          toolName: 'mcp_tool',
+          toolCallId: 'dynamic-call',
+          state: 'approval-requested',
+          input: { value: 1 },
+          approval: { id: 'dynamic-approval', signature: 'sig-dynamic', isAutomatic: false }
+        } as never
+      ]
+    })
+
+    const result = applyApprovalResponse([pending], 'dynamic-approval', true)
+
+    expect(result.toolName).toBe('mcp_tool')
+    expect(result.messages[0].parts[0]).toMatchObject({
+      state: 'approval-responded',
+      approval: {
+        id: 'dynamic-approval',
+        approved: true,
+        signature: 'sig-dynamic',
+        isAutomatic: false
+      }
     })
   })
 

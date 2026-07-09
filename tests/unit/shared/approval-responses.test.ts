@@ -14,7 +14,7 @@ const history: TanzoUIMessage[] = [
         toolCallId: 'call-1',
         state: 'approval-requested',
         input: { path: 'src/main.ts', oldText: 'a', newText: 'b' },
-        approval: { id: 'approval-1' }
+        approval: { id: 'approval-1', signature: 'sig-1', isAutomatic: false }
       },
       {
         type: 'tool-shell',
@@ -38,7 +38,12 @@ describe('agent/runtime/approval-responses', () => {
     const parts = messages[1].parts as Array<Record<string, unknown>>
     expect(parts[1]).toMatchObject({
       state: 'approval-responded',
-      approval: { id: 'approval-1', approved: true }
+      approval: {
+        id: 'approval-1',
+        approved: true,
+        signature: 'sig-1',
+        isAutomatic: false
+      }
     })
     expect(parts[2]).toMatchObject({
       state: 'approval-responded',
