@@ -9,41 +9,41 @@ importers:
   .:
     dependencies:
       '@ai-sdk/anthropic':
-        specifier: 4.0.6
-        version: 4.0.6(zod@4.4.3)
+        specifier: 4.0.10
+        version: 4.0.10(zod@4.4.3)
       '@ai-sdk/deepseek':
-        specifier: 3.0.4
-        version: 3.0.4(zod@4.4.3)
+        specifier: 3.0.6
+        version: 3.0.6(zod@4.4.3)
       '@ai-sdk/google':
-        specifier: 4.0.7
-        version: 4.0.7(zod@4.4.3)
+        specifier: 4.0.10
+        version: 4.0.10(zod@4.4.3)
       '@ai-sdk/mcp':
-        specifier: 2.0.6
-        version: 2.0.6(zod@4.4.3)
+        specifier: 2.0.9
+        version: 2.0.9(zod@4.4.3)
       '@ai-sdk/openai':
-        specifier: 4.0.6
-        version: 4.0.6(zod@4.4.3)
+        specifier: 4.0.9
+        version: 4.0.9(zod@4.4.3)
       '@ai-sdk/openai-compatible':
-        specifier: 3.0.4
-        version: 3.0.4(zod@4.4.3)
+        specifier: 3.0.6
+        version: 3.0.6(zod@4.4.3)
       '@ai-sdk/provider':
-        specifier: 4.0.1
-        version: 4.0.1
+        specifier: 4.0.2
+        version: 4.0.2
       '@ai-sdk/provider-utils':
-        specifier: 5.0.4
-        version: 5.0.4(zod@4.4.3)
+        specifier: 5.0.6
+        version: 5.0.6(zod@4.4.3)
       '@ai-sdk/xai':
-        specifier: 4.0.5
-        version: 4.0.5(zod@4.4.3)
+        specifier: 4.0.9
+        version: 4.0.9(zod@4.4.3)
       '@base-ui/react':
         specifier: ^1.6.0
         version: 1.6.0(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@chat-adapter/discord':
         specifier: ^4.32.0
-        version: 4.32.0(ai@7.0.12(zod@4.4.3))(zod@4.4.3)
+        version: 4.32.0(ai@7.0.18(zod@4.4.3))(zod@4.4.3)
       '@chat-adapter/state-memory':
         specifier: ^4.32.0
-        version: 4.32.0(ai@7.0.12(zod@4.4.3))(zod@4.4.3)
+        version: 4.32.0(ai@7.0.18(zod@4.4.3))(zod@4.4.3)
       '@electron-toolkit/utils':
         specifier: ^4.0.0
         version: 4.0.0(electron@41.9.2)
@@ -70,22 +70,22 @@ importers:
         version: 1.18.0
       '@youglin/adapter-qq-bot':
         specifier: ^0.1.0
-        version: 0.1.0(ai@7.0.12(zod@4.4.3))(chat@4.32.0(ai@7.0.12(zod@4.4.3))(zod@4.4.3))(zod@4.4.3)
+        version: 0.1.0(ai@7.0.18(zod@4.4.3))(chat@4.32.0(ai@7.0.18(zod@4.4.3))(zod@4.4.3))(zod@4.4.3)
       ai:
-        specifier: 7.0.12
-        version: 7.0.12(zod@4.4.3)
+        specifier: 7.0.18
+        version: 7.0.18(zod@4.4.3)
       better-sqlite3:
         specifier: 12.11.1
         version: 12.11.1
       chat:
         specifier: ^4.32.0
-        version: 4.32.0(ai@7.0.12(zod@4.4.3))(zod@4.4.3)
+        version: 4.32.0(ai@7.0.18(zod@4.4.3))(zod@4.4.3)
       chat-adapter-lark:
         specifier: ^0.3.1
-        version: 0.3.1(ai@7.0.12(zod@4.4.3))(chat@4.32.0(ai@7.0.12(zod@4.4.3))(zod@4.4.3))(zod@4.4.3)
+        version: 0.3.1(ai@7.0.18(zod@4.4.3))(chat@4.32.0(ai@7.0.18(zod@4.4.3))(zod@4.4.3))(zod@4.4.3)
       chat-adapter-wechat:
         specifier: ^0.3.4
-        version: 0.3.4(@chat-adapter/shared@4.32.0(ai@7.0.12(zod@4.4.3))(zod@4.4.3))(chat@4.32.0(ai@7.0.12(zod@4.4.3))(zod@4.4.3))
+        version: 0.3.4(@chat-adapter/shared@4.32.0(ai@7.0.18(zod@4.4.3))(zod@4.4.3))(chat@4.32.0(ai@7.0.18(zod@4.4.3))(zod@4.4.3))
       chokidar:
         specifier: 5.0.0
         version: 5.0.0
@@ -261,44 +261,44 @@ packages:
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
-  '@ai-sdk/anthropic@4.0.6':
-    resolution: {integrity: sha512-fiJFyYmqzppHg6+dkoiPg4zb3sW7vKz+/jsTsGgmuSaIgtcMusuf1Njgnx46XFCvyKnW/EJJNvo1f92nhNQoHg==}
+  '@ai-sdk/anthropic@4.0.10':
+    resolution: {integrity: sha512-L9GlJyL8stPyv5QTRONnVoRVw82b6iBuX4LTiRJMM++I2RfDe+yrBsPa6gz6Msll9GZ7JsX0MRNUP4G1afjDTw==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
-  '@ai-sdk/deepseek@3.0.4':
-    resolution: {integrity: sha512-DmRLllD9qIOqGVMu6BaaXjsEaQmcRFaf6KQac8ZhHMQnp8zcpFIUNgkNLoML7zHMeVJgziTyA99z458INKkmkA==}
+  '@ai-sdk/deepseek@3.0.6':
+    resolution: {integrity: sha512-mPX5fqMN6flScSq5XvU/Oli4r6GXRx57I7h/NVQSAHChzpZAl4bGirV3eEKCCR9pS65WVEc9iNI4w+hqrFBecQ==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
-  '@ai-sdk/gateway@4.0.9':
-    resolution: {integrity: sha512-FJGMh53d3+IQ/Dwsr5wUjaQBgFoKV/3BBCqS2TAezd2hbHcAPJSuiFhiMQFIWKmEbV+wqETs4xmadetj2mF8Fw==}
+  '@ai-sdk/gateway@4.0.14':
+    resolution: {integrity: sha512-wbYqQKpASsuK7bdoa1fp+QA6oy3ddqqBOukN3IkyaR8PAp0pWoc66ch2td+ixeknoCcO4F6VTkSFKVC6MP3bTQ==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
-  '@ai-sdk/google@4.0.7':
-    resolution: {integrity: sha512-riRCkWrvpM8wx9xpiszm3r+L5nJjp30REUkTV6NfR97GNi6FOHieD5inUSxk7Ihs9cXeZh8L2sFJkE2nTggZMw==}
+  '@ai-sdk/google@4.0.10':
+    resolution: {integrity: sha512-+g629pKE4xhLB6LnskHlOkie30UENhiKpdYMGQoGYm09191kfRU8qAU7wgF01PmzGFe0h3JYpls6Ok2aCYmjzQ==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
-  '@ai-sdk/mcp@2.0.6':
-    resolution: {integrity: sha512-DwHnIO1xLWvfD3/sqOknjqnaCn3kAyZQ69s6kzPFT/wGqhb2WE7OPU/u1LtJ0CKanS0w8SfkyvUD04fVNviuEQ==}
+  '@ai-sdk/mcp@2.0.9':
+    resolution: {integrity: sha512-Mokfd6Ff5QjpdftICnQ9jC9opJcUqfPE31oG9sTYiXEykj5InIt0FA+9acLtCrnM/hx3Tz2BgkNQCXibjSDhpA==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
-  '@ai-sdk/openai-compatible@3.0.4':
-    resolution: {integrity: sha512-jnW9Wfkn75M7lN5O9HUlgs4il6jbJKGwoRtsuRWDovr4Fz81qwB9Kx/kxoEL7cZn0cBg5/CZVOuMXJsmkxi9zw==}
+  '@ai-sdk/openai-compatible@3.0.6':
+    resolution: {integrity: sha512-1YB8Wt2l3X1gCLuF5bYoaQn04XXw+GKqxSvnHAnGEpK+xflJfnJ1l93KHbijLBObM6KAC7amKT9KjM9iu1B6zA==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
-  '@ai-sdk/openai@4.0.6':
-    resolution: {integrity: sha512-T8RrVBYFqLbsrYgPgv6IJdGufQOJc7KXHtJTgZsd+d3Tkph8x3s+EqPENeIjhTx00fRTiSS/sy/GsDReZuS3Iw==}
+  '@ai-sdk/openai@4.0.9':
+    resolution: {integrity: sha512-j7x7FC6KQJMQaJoi6hFLzbB2aXMnR+IA8h0BQH8YCbQESppbM7SzmZ4VAPpobIvx0rqiVNJ1JjraElOLuA31Ag==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
@@ -321,8 +321,8 @@ packages:
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
-  '@ai-sdk/provider-utils@5.0.4':
-    resolution: {integrity: sha512-07zxTR0ajL+jsuCBK+UdKdQ9xQQOLhJtLr5LBrBSkeRSWS07GGhcj1jVZ8YyvJmofQSvNxUSka+QObOMv9qWig==}
+  '@ai-sdk/provider-utils@5.0.6':
+    resolution: {integrity: sha512-i4mVayGtC+HrRmtfPFOxvKKQgFU+1dwTTsh4MY0jY1MaGuppOwDFrNYrJ3dDXWMkO3o6FDVAKY8ZDsy7hLsO9Q==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
@@ -339,12 +339,12 @@ packages:
     resolution: {integrity: sha512-HrEmNt/BH/hkQ7zpi2o6N3k1ZR1QTb7z85WYhYygiTxOQuaml4CMtHCWRbric5WPU+RNsYI7r1EpyVQMKO1pYw==}
     engines: {node: '>=18'}
 
-  '@ai-sdk/provider@4.0.1':
-    resolution: {integrity: sha512-6p3C/vGqVIjcptBu1DnVd/BZJ2wWmV9TUv9192vT6ZvT9KNED8EwRTqyqFpoQZKgSbMDSvBSq3dqR524Nt/Crw==}
+  '@ai-sdk/provider@4.0.2':
+    resolution: {integrity: sha512-pfPoy9J1B1xV7cqJ8MYHOsDYrMv5tR3+EMNfI249OhkD2uRakvav3Fo7XpD2luuN/YNCBY7KfEQc7vEV7KEtyw==}
     engines: {node: '>=22'}
 
-  '@ai-sdk/xai@4.0.5':
-    resolution: {integrity: sha512-+b65HfdQ/DikoiwPzIFXK8hgDfo4LM5ipRWZFvR1hpYQf0kYkS50R17sZmMcS+a/c1tknu60gI7x3kMg6FqGKA==}
+  '@ai-sdk/xai@4.0.9':
+    resolution: {integrity: sha512-hwK3vplmnjylCPfTvugj+n41ueFfW6C5U5twXHpkVdldOSp05Uc4ZocW+XVykWDyv4HdBUL0ia1BwAGXkJQt7g==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
@@ -1824,8 +1824,8 @@ packages:
     resolution: {integrity: sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ==}
     engines: {node: '>= 14'}
 
-  ai@7.0.12:
-    resolution: {integrity: sha512-omVLFHduNks/lVokYxP+6eK+Ec0ZqdS/3LvzSRhszfAHk2f7dEG3HiVSHyFrIV7MJfZsv3Emzgtbrf1NvsrM+Q==}
+  ai@7.0.18:
+    resolution: {integrity: sha512-/DsiRfbLPtoHf9C47Hy+LK+HkjNowX1DQo3id4zWegfU6z1WjVDRAHYJAiX7SXhGp0mWX4tcenUhfIFessDWnw==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
@@ -4725,48 +4725,48 @@ snapshots:
       '@ai-sdk/provider-utils': 4.0.3(zod@4.4.3)
       zod: 4.4.3
 
-  '@ai-sdk/anthropic@4.0.6(zod@4.4.3)':
+  '@ai-sdk/anthropic@4.0.10(zod@4.4.3)':
     dependencies:
-      '@ai-sdk/provider': 4.0.1
-      '@ai-sdk/provider-utils': 5.0.4(zod@4.4.3)
+      '@ai-sdk/provider': 4.0.2
+      '@ai-sdk/provider-utils': 5.0.6(zod@4.4.3)
       zod: 4.4.3
 
-  '@ai-sdk/deepseek@3.0.4(zod@4.4.3)':
+  '@ai-sdk/deepseek@3.0.6(zod@4.4.3)':
     dependencies:
-      '@ai-sdk/provider': 4.0.1
-      '@ai-sdk/provider-utils': 5.0.4(zod@4.4.3)
+      '@ai-sdk/provider': 4.0.2
+      '@ai-sdk/provider-utils': 5.0.6(zod@4.4.3)
       zod: 4.4.3
 
-  '@ai-sdk/gateway@4.0.9(zod@4.4.3)':
+  '@ai-sdk/gateway@4.0.14(zod@4.4.3)':
     dependencies:
-      '@ai-sdk/provider': 4.0.1
-      '@ai-sdk/provider-utils': 5.0.4(zod@4.4.3)
+      '@ai-sdk/provider': 4.0.2
+      '@ai-sdk/provider-utils': 5.0.6(zod@4.4.3)
       '@vercel/oidc': 3.2.0
       zod: 4.4.3
 
-  '@ai-sdk/google@4.0.7(zod@4.4.3)':
+  '@ai-sdk/google@4.0.10(zod@4.4.3)':
     dependencies:
-      '@ai-sdk/provider': 4.0.1
-      '@ai-sdk/provider-utils': 5.0.4(zod@4.4.3)
+      '@ai-sdk/provider': 4.0.2
+      '@ai-sdk/provider-utils': 5.0.6(zod@4.4.3)
       zod: 4.4.3
 
-  '@ai-sdk/mcp@2.0.6(zod@4.4.3)':
+  '@ai-sdk/mcp@2.0.9(zod@4.4.3)':
     dependencies:
-      '@ai-sdk/provider': 4.0.1
-      '@ai-sdk/provider-utils': 5.0.4(zod@4.4.3)
+      '@ai-sdk/provider': 4.0.2
+      '@ai-sdk/provider-utils': 5.0.6(zod@4.4.3)
       pkce-challenge: 5.0.1
       zod: 4.4.3
 
-  '@ai-sdk/openai-compatible@3.0.4(zod@4.4.3)':
+  '@ai-sdk/openai-compatible@3.0.6(zod@4.4.3)':
     dependencies:
-      '@ai-sdk/provider': 4.0.1
-      '@ai-sdk/provider-utils': 5.0.4(zod@4.4.3)
+      '@ai-sdk/provider': 4.0.2
+      '@ai-sdk/provider-utils': 5.0.6(zod@4.4.3)
       zod: 4.4.3
 
-  '@ai-sdk/openai@4.0.6(zod@4.4.3)':
+  '@ai-sdk/openai@4.0.9(zod@4.4.3)':
     dependencies:
-      '@ai-sdk/provider': 4.0.1
-      '@ai-sdk/provider-utils': 5.0.4(zod@4.4.3)
+      '@ai-sdk/provider': 4.0.2
+      '@ai-sdk/provider-utils': 5.0.6(zod@4.4.3)
       zod: 4.4.3
 
   '@ai-sdk/provider-utils@4.0.3(zod@4.4.3)':
@@ -4790,9 +4790,9 @@ snapshots:
       eventsource-parser: 3.1.0
       zod: 4.4.3
 
-  '@ai-sdk/provider-utils@5.0.4(zod@4.4.3)':
+  '@ai-sdk/provider-utils@5.0.6(zod@4.4.3)':
     dependencies:
-      '@ai-sdk/provider': 4.0.1
+      '@ai-sdk/provider': 4.0.2
       '@standard-schema/spec': 1.1.0
       '@workflow/serde': 4.1.0
       eventsource-parser: 3.1.0
@@ -4810,15 +4810,15 @@ snapshots:
     dependencies:
       json-schema: 0.4.0
 
-  '@ai-sdk/provider@4.0.1':
+  '@ai-sdk/provider@4.0.2':
     dependencies:
       json-schema: 0.4.0
 
-  '@ai-sdk/xai@4.0.5(zod@4.4.3)':
+  '@ai-sdk/xai@4.0.9(zod@4.4.3)':
     dependencies:
-      '@ai-sdk/openai-compatible': 3.0.4(zod@4.4.3)
-      '@ai-sdk/provider': 4.0.1
-      '@ai-sdk/provider-utils': 5.0.4(zod@4.4.3)
+      '@ai-sdk/openai-compatible': 3.0.6(zod@4.4.3)
+      '@ai-sdk/provider': 4.0.2
+      '@ai-sdk/provider-utils': 5.0.6(zod@4.4.3)
       zod: 4.4.3
 
   '@babel/code-frame@7.29.7':
@@ -4955,10 +4955,10 @@ snapshots:
 
   '@bcoe/v8-coverage@1.0.2': {}
 
-  '@chat-adapter/discord@4.32.0(ai@7.0.12(zod@4.4.3))(zod@4.4.3)':
+  '@chat-adapter/discord@4.32.0(ai@7.0.18(zod@4.4.3))(zod@4.4.3)':
     dependencies:
-      '@chat-adapter/shared': 4.32.0(ai@7.0.12(zod@4.4.3))(zod@4.4.3)
-      chat: 4.32.0(ai@7.0.12(zod@4.4.3))(zod@4.4.3)
+      '@chat-adapter/shared': 4.32.0(ai@7.0.18(zod@4.4.3))(zod@4.4.3)
+      chat: 4.32.0(ai@7.0.18(zod@4.4.3))(zod@4.4.3)
       discord-api-types: 0.37.120
       discord-interactions: 4.4.0
       discord.js: 14.26.4
@@ -4969,17 +4969,17 @@ snapshots:
       - utf-8-validate
       - zod
 
-  '@chat-adapter/shared@4.32.0(ai@7.0.12(zod@4.4.3))(zod@4.4.3)':
+  '@chat-adapter/shared@4.32.0(ai@7.0.18(zod@4.4.3))(zod@4.4.3)':
     dependencies:
-      chat: 4.32.0(ai@7.0.12(zod@4.4.3))(zod@4.4.3)
+      chat: 4.32.0(ai@7.0.18(zod@4.4.3))(zod@4.4.3)
     transitivePeerDependencies:
       - ai
       - supports-color
       - zod
 
-  '@chat-adapter/state-memory@4.32.0(ai@7.0.12(zod@4.4.3))(zod@4.4.3)':
+  '@chat-adapter/state-memory@4.32.0(ai@7.0.18(zod@4.4.3))(zod@4.4.3)':
     dependencies:
-      chat: 4.32.0(ai@7.0.12(zod@4.4.3))(zod@4.4.3)
+      chat: 4.32.0(ai@7.0.18(zod@4.4.3))(zod@4.4.3)
     transitivePeerDependencies:
       - ai
       - supports-color
@@ -6169,10 +6169,10 @@ snapshots:
 
   '@xmldom/xmldom@0.8.13': {}
 
-  '@youglin/adapter-qq-bot@0.1.0(ai@7.0.12(zod@4.4.3))(chat@4.32.0(ai@7.0.12(zod@4.4.3))(zod@4.4.3))(zod@4.4.3)':
+  '@youglin/adapter-qq-bot@0.1.0(ai@7.0.18(zod@4.4.3))(chat@4.32.0(ai@7.0.18(zod@4.4.3))(zod@4.4.3))(zod@4.4.3)':
     dependencies:
-      '@chat-adapter/shared': 4.32.0(ai@7.0.12(zod@4.4.3))(zod@4.4.3)
-      chat: 4.32.0(ai@7.0.12(zod@4.4.3))(zod@4.4.3)
+      '@chat-adapter/shared': 4.32.0(ai@7.0.18(zod@4.4.3))(zod@4.4.3)
+      chat: 4.32.0(ai@7.0.18(zod@4.4.3))(zod@4.4.3)
       tweetnacl: 1.0.3
       ws: 8.21.0
     transitivePeerDependencies:
@@ -6192,11 +6192,11 @@ snapshots:
 
   agent-base@7.1.4: {}
 
-  ai@7.0.12(zod@4.4.3):
+  ai@7.0.18(zod@4.4.3):
     dependencies:
-      '@ai-sdk/gateway': 4.0.9(zod@4.4.3)
-      '@ai-sdk/provider': 4.0.1
-      '@ai-sdk/provider-utils': 5.0.4(zod@4.4.3)
+      '@ai-sdk/gateway': 4.0.14(zod@4.4.3)
+      '@ai-sdk/provider': 4.0.2
+      '@ai-sdk/provider-utils': 5.0.6(zod@4.4.3)
       zod: 4.4.3
 
   ajv@6.15.0:
@@ -6508,11 +6508,11 @@ snapshots:
 
   character-reference-invalid@2.0.1: {}
 
-  chat-adapter-lark@0.3.1(ai@7.0.12(zod@4.4.3))(chat@4.32.0(ai@7.0.12(zod@4.4.3))(zod@4.4.3))(zod@4.4.3):
+  chat-adapter-lark@0.3.1(ai@7.0.18(zod@4.4.3))(chat@4.32.0(ai@7.0.18(zod@4.4.3))(zod@4.4.3))(zod@4.4.3):
     dependencies:
-      '@chat-adapter/shared': 4.32.0(ai@7.0.12(zod@4.4.3))(zod@4.4.3)
+      '@chat-adapter/shared': 4.32.0(ai@7.0.18(zod@4.4.3))(zod@4.4.3)
       '@larksuiteoapi/node-sdk': 1.70.0
-      chat: 4.32.0(ai@7.0.12(zod@4.4.3))(zod@4.4.3)
+      chat: 4.32.0(ai@7.0.18(zod@4.4.3))(zod@4.4.3)
     transitivePeerDependencies:
       - ai
       - bufferutil
@@ -6521,12 +6521,12 @@ snapshots:
       - utf-8-validate
       - zod
 
-  chat-adapter-wechat@0.3.4(@chat-adapter/shared@4.32.0(ai@7.0.12(zod@4.4.3))(zod@4.4.3))(chat@4.32.0(ai@7.0.12(zod@4.4.3))(zod@4.4.3)):
+  chat-adapter-wechat@0.3.4(@chat-adapter/shared@4.32.0(ai@7.0.18(zod@4.4.3))(zod@4.4.3))(chat@4.32.0(ai@7.0.18(zod@4.4.3))(zod@4.4.3)):
     dependencies:
-      '@chat-adapter/shared': 4.32.0(ai@7.0.12(zod@4.4.3))(zod@4.4.3)
-      chat: 4.32.0(ai@7.0.12(zod@4.4.3))(zod@4.4.3)
+      '@chat-adapter/shared': 4.32.0(ai@7.0.18(zod@4.4.3))(zod@4.4.3)
+      chat: 4.32.0(ai@7.0.18(zod@4.4.3))(zod@4.4.3)
 
-  chat@4.32.0(ai@7.0.12(zod@4.4.3))(zod@4.4.3):
+  chat@4.32.0(ai@7.0.18(zod@4.4.3))(zod@4.4.3):
     dependencies:
       '@workflow/serde': 4.1.0-beta.2
       mdast-util-to-string: 4.0.0
@@ -6536,7 +6536,7 @@ snapshots:
       remend: 1.3.0
       unified: 11.0.5
     optionalDependencies:
-      ai: 7.0.12(zod@4.4.3)
+      ai: 7.0.18(zod@4.4.3)
       zod: 4.4.3
     transitivePeerDependencies:
       - supports-color
