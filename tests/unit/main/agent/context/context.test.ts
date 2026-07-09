@@ -353,13 +353,13 @@ describe('main/agent/context provider strategies', () => {
       provenance: { system: [], leadingUser: [], history: [] }
     }
     const out = strategyFor('openai:gpt-5', 'chat-9').applyCaching({ plan, summaryIndex: -1 })
-    const otherChat = strategyFor('openai:gpt-5', 'chat-10').applyCaching({
+    const otherChat = strategyFor('openai:gpt-5.1', 'chat-10').applyCaching({
       plan,
       summaryIndex: -1
     })
 
     expect(out.providerOptions).toEqual({
-      openai: { promptCacheKey: 'tanzo:chat:chat-9', promptCacheRetention: '24h' }
+      openai: { promptCacheKey: 'tanzo:chat:chat-9' }
     })
     expect(otherChat.providerOptions).toEqual({
       openai: { promptCacheKey: 'tanzo:chat:chat-10', promptCacheRetention: '24h' }

@@ -8,12 +8,13 @@ import type { ProviderContextStrategy } from './strategy'
 export type { ProviderContextStrategy, CacheKind, CachingInput } from './strategy'
 
 export function strategyFor(modelRef: string, chatId: string): ProviderContextStrategy {
-  switch (parseModelRef(modelRef)?.providerId) {
+  const parsed = parseModelRef(modelRef)
+  switch (parsed?.providerId) {
     case 'anthropic':
       return createAnthropicStrategy()
     case 'openai':
     case 'openai-chat':
-      return createOpenAIStrategy(chatId)
+      return createOpenAIStrategy(chatId, parsed.modelId)
     case 'openai-compatible':
       return createOpenAICompatibleStrategy(chatId)
     case 'grok':

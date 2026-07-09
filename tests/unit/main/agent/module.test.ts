@@ -240,6 +240,22 @@ describe('agent/module', () => {
         providerId: 'fallback',
         connection: { status: 'connected' },
         modalities: { language: { enabledModelIds: ['small'] } }
+      },
+      {
+        providerId: 'anthropic',
+        connection: { status: 'connected' },
+        modalities: {
+          language: { defaultModelId: 'claude-default', enabledModelIds: ['claude-default'] }
+        }
+      }
+    ])
+    expect(mocks.identityOptions?.defaultModelRef()).toBe('anthropic:claude-default')
+
+    providerService.listSetups.mockReturnValueOnce([
+      {
+        providerId: 'fallback',
+        connection: { status: 'connected' },
+        modalities: { language: { enabledModelIds: ['small'] } }
       }
     ])
     expect(mocks.identityOptions?.defaultModelRef()).toBe('fallback:small')

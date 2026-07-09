@@ -204,11 +204,16 @@ function goalSnapshot(goal: ThreadGoal): {
 }
 
 function defaultModelRef(providerService: ProviderService): string {
-  for (const setup of providerService.listSetups()) {
-    if (setup.connection.status !== 'connected') continue
+  const connected = providerService
+    .listSetups()
+    .filter((setup) => setup.connection.status === 'connected')
 
-    const language = setup.modalities.language
-    const modelId = language?.defaultModelId ?? language?.enabledModelIds[0]
+  for (const setup of connected) {
+    const modelId = setup.modalities.language?.defaultModelId
+    if (modelId) return `${setup.providerId}:${modelId}`
+  }
+  for (const setup of connected) {
+    const modelId = setup.modalities.language?.enabledModelIds[0]
     if (modelId) return `${setup.providerId}:${modelId}`
   }
   return ''

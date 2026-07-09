@@ -21,14 +21,14 @@ function withProviderOptions(
   }
 }
 
-export function createOpenAIStrategy(chatId: string): ProviderContextStrategy {
+export function createOpenAIStrategy(chatId: string, modelId: string): ProviderContextStrategy {
   return {
     cacheKind: 'auto',
 
     applyCaching: ({ plan }: CachingInput) =>
       withProviderOptions(plan, 'openai', {
         promptCacheKey: chatPromptCacheKey(chatId),
-        promptCacheRetention: '24h'
+        ...(modelId.startsWith('gpt-5.1') ? { promptCacheRetention: '24h' } : {})
       })
   }
 }
