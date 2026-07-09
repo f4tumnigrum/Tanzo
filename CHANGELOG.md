@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.5] - 2026-07-09
+
+### Added
+
+- Providers: Grok (xAI) support, with API key and optional base URL credential
+  fields and a new provider-request-headers layer for adapter-specific headers.
+
+### Changed
+
+- Context: raised the compaction trigger threshold so summarization kicks in
+  later, keeping more live context before compacting.
+
+### Fixed
+
+- Chat: aligned composer popup glass surfaces (slash-command and mention menus)
+  for a consistent look.
+
 ## [0.4.4] - 2026-07-08
 
 ### Added
