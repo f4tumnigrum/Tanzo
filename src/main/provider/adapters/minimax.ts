@@ -1,4 +1,4 @@
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
+import { createMinimaxOpenAI } from 'vercel-minimax-ai-provider'
 import { TanzoValidationError } from '@shared/errors'
 import type { Credentials } from '../adapter-types'
 import { ensureUrlProtocol, fetchJson, idOnlyModelListSchema } from '../http'
@@ -13,8 +13,7 @@ function minimaxBaseUrl(credentials: Credentials): string {
 
 function minimaxProvider(credentials: Credentials) {
   const apiKey = credentialText(credentials.apiKey)
-  return createOpenAICompatible({
-    name: 'minimax',
+  return createMinimaxOpenAI({
     baseURL: minimaxBaseUrl(credentials),
     ...(apiKey ? { apiKey } : {})
   })
@@ -24,7 +23,7 @@ export const minimaxAdapter: ProviderAdapter = {
   providerId: 'minimax',
   validateCredentials: (credentials) => Boolean(credentials.apiKey?.trim()),
   createLanguageModel(modelId, credentials) {
-    return minimaxProvider(credentials).chatModel(modelId)
+    return minimaxProvider(credentials).chat(modelId)
   },
   async fetchModels(credentials, family) {
     if (family !== 'language') return []

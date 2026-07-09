@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { ModelCapabilityFlags, ProviderId, ProviderModel } from '@shared/provider'
 import { createLogger } from '../logger'
+import { readResponseText } from './http'
 
 const log = createLogger('provider.model-metadata')
 
@@ -68,7 +69,8 @@ async function fetchModelsDevData(): Promise<ModelsDevData> {
     if (!response.ok) {
       throw new Error(`models.dev returned HTTP ${response.status}`)
     }
-    const data = modelsDevDataSchema.parse(await response.json())
+    const text = await readResponseText(response)
+    const data = modelsDevDataSchema.parse(JSON.parse(text))
     cachedData = data
     cachedAt = now
     return data
@@ -82,7 +84,7 @@ function extractCapabilities(model: ModelsDevModel): ModelCapabilityFlags {
   const inputModalities = model.modalities?.input ?? []
   const outputModalities = model.modalities?.output ?? []
 
-  if (model.reasoning) capabilities.reasoning = true
+  capabilities.reasoning = model.reasoning ?? false
   if (model.tool_call) capabilities.toolCall = true
   if (model.attachment || inputModalities.includes('image')) capabilities.vision = true
   if (outputModalities.includes('json')) capabilities.json = true

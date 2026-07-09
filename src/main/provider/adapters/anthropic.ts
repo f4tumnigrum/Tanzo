@@ -5,7 +5,11 @@ import type { Credentials, ProviderAdapter, RemoteModel } from '../adapter-types
 import { credentialText, testByFetching, TIMEOUTS } from '../adapter-utils'
 
 function anthropicBaseUrl(credentials: Credentials): string {
-  return ensureUrlProtocol(credentials.baseUrl, 'https://api.anthropic.com/v1').replace(/\/+$/, '')
+  const normalized = ensureUrlProtocol(credentials.baseUrl, 'https://api.anthropic.com/v1').replace(
+    /\/+$/,
+    ''
+  )
+  return normalized === 'https://api.anthropic.com' ? `${normalized}/v1` : normalized
 }
 
 function anthropicHeaders(credentials: Credentials): Record<string, string> {

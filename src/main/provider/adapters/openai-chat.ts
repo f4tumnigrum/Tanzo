@@ -25,6 +25,16 @@ function openaiChatProvider(credentials: Credentials) {
   })
 }
 
+function isChatModel(id: string): boolean {
+  const normalized = id.toLowerCase()
+  return (
+    !normalized.includes('moderation') &&
+    !normalized.includes('instruct') &&
+    !normalized.includes('babbage') &&
+    !normalized.includes('davinci')
+  )
+}
+
 export const openaiChatAdapter: ProviderAdapter = {
   providerId: 'openai-chat',
   validateCredentials: (credentials) => Boolean(credentials.apiKey?.trim()),
@@ -49,7 +59,11 @@ export const openaiChatAdapter: ProviderAdapter = {
         headers: buildHeaders(credentials, bearer(credentials.apiKey))
       }
     )
-    return mapIdModels(data.data, family, 'OpenAI model (Chat Completions)')
+    return mapIdModels(
+      data.data.filter((model) => isChatModel(model.id)),
+      family,
+      'OpenAI model (Chat Completions)'
+    )
   },
   testConnection(credentials) {
     return testByFetching(this, credentials)

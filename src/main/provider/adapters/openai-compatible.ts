@@ -16,15 +16,26 @@ function compatibleBaseUrl(credentials: Credentials): string {
     /\/+$/,
     ''
   )
-  if (normalized.endsWith('/v1')) return normalized
   if (normalized.endsWith('/api')) return `${normalized.slice(0, -4)}/v1`
-  return `${normalized}/v1`
+  try {
+    const url = new URL(normalized)
+    if (
+      (url.hostname === 'localhost' || url.hostname === '127.0.0.1') &&
+      url.port === '11434' &&
+      (url.pathname === '' || url.pathname === '/')
+    ) {
+      return `${normalized}/v1`
+    }
+  } catch {
+    // ensureUrlProtocol already normalizes ordinary user input; leave unusual URLs unchanged.
+  }
+  return normalized
 }
 
 function openaiCompatibleProvider(credentials: Credentials) {
   const apiKey = credentialText(credentials.apiKey)
   return createOpenAICompatible({
-    name: 'openai-compatible',
+    name: credentialText(credentials.name) ?? 'openai-compatible',
     baseURL: compatibleBaseUrl(credentials),
     fetch: filterResponsesApiSseFetch(),
     ...(apiKey ? { apiKey } : {})
@@ -66,9 +77,7 @@ export const openaiCompatibleAdapter: ProviderAdapter = {
       .map((model) => ({
         id: model.id,
         name: formatModelName(model.id),
-        description: model.owned_by ? `Owned by ${model.owned_by}` : 'OpenAI-compatible model',
-        ...(family === 'embedding' ? { dimensions: model.id.includes('large') ? 3072 : 1536 } : {}),
-        ...(family === 'image' ? { maxImagesPerCall: 10 } : {})
+        description: model.owned_by ? `Owned by ${model.owned_by}` : 'OpenAI-compatible model'
       }))
       .sort((a, b) => a.name.localeCompare(b.name))
   },

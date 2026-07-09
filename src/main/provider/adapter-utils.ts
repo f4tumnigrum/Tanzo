@@ -28,8 +28,7 @@ export function mapIdModels(
     .map((model) => ({
       id: model.id,
       name: formatModelName(model.id),
-      description: model.owned_by ? `Owned by ${model.owned_by}` : description,
-      ...(family === 'embedding' ? { dimensions: model.id.includes('large') ? 3072 : 1536 } : {})
+      description: model.owned_by ? `Owned by ${model.owned_by}` : description
     }))
     .sort((a, b) => a.name.localeCompare(b.name))
 }
@@ -40,7 +39,11 @@ export function modelLooksLikeFamily(id: string, family: ModelFamily): boolean {
     return normalized.includes('embedding') || normalized.includes('embed')
   if (family === 'image')
     return (
-      normalized.includes('image') || normalized.includes('dall-e') || normalized.includes('imagen')
+      normalized.includes('image') ||
+      normalized.includes('dall-e') ||
+      normalized.includes('imagen') ||
+      normalized.includes('cogview') ||
+      normalized.includes('glm-image')
     )
   if (family === 'transcription')
     return normalized.includes('transcribe') || normalized.includes('whisper')
@@ -51,9 +54,12 @@ export function modelLooksLikeFamily(id: string, family: ModelFamily): boolean {
     !normalized.includes('image') &&
     !normalized.includes('dall-e') &&
     !normalized.includes('imagen') &&
+    !normalized.includes('cogview') &&
+    !normalized.includes('glm-image') &&
     !normalized.includes('transcribe') &&
     !normalized.includes('whisper') &&
-    !normalized.includes('tts')
+    !normalized.includes('tts') &&
+    !normalized.includes('speech')
   )
 }
 

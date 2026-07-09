@@ -33,14 +33,21 @@ describe('shared/reasoning resolveReasoningControl', () => {
     ).toMatchObject({ visible: false, options: [] })
   })
 
-  it('hides when the model is not reasoning capable', () => {
+  it('hides when the model is not explicitly reasoning capable', () => {
     expect(
       resolveReasoningControl({ capability: openai, modelReasoningCapable: false })
     ).toMatchObject({ visible: false })
+    expect(resolveReasoningControl({ capability: openai })).toMatchObject({ visible: false })
   })
 
   it('prefers the conversation override', () => {
-    expect(resolveReasoningControl({ capability: openai, override: 'low' })).toMatchObject({
+    expect(
+      resolveReasoningControl({
+        capability: openai,
+        modelReasoningCapable: true,
+        override: 'low'
+      })
+    ).toMatchObject({
       visible: true,
       current: 'low',
       source: 'override'
@@ -49,12 +56,18 @@ describe('shared/reasoning resolveReasoningControl', () => {
 
   it('falls back to the provider default when there is no override', () => {
     expect(
-      resolveReasoningControl({ capability: openai, providerDefault: 'medium' })
+      resolveReasoningControl({
+        capability: openai,
+        modelReasoningCapable: true,
+        providerDefault: 'medium'
+      })
     ).toMatchObject({ current: 'medium', source: 'provider-default' })
   })
 
   it('falls back to the capability default last', () => {
-    expect(resolveReasoningControl({ capability: openai })).toMatchObject({
+    expect(
+      resolveReasoningControl({ capability: openai, modelReasoningCapable: true })
+    ).toMatchObject({
       current: 'high',
       source: 'capability-default'
     })
@@ -62,7 +75,12 @@ describe('shared/reasoning resolveReasoningControl', () => {
 
   it('treats the literal "default" and out-of-range values as no selection', () => {
     expect(
-      resolveReasoningControl({ capability: openai, override: 'default', providerDefault: 'xhigh' })
+      resolveReasoningControl({
+        capability: openai,
+        modelReasoningCapable: true,
+        override: 'default',
+        providerDefault: 'xhigh'
+      })
     ).toMatchObject({ current: 'high', source: 'capability-default' })
   })
 })

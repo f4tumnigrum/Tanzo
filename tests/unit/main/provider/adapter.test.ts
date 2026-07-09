@@ -79,6 +79,78 @@ describe('main/provider/adapter', () => {
     )
   })
 
+  it('paginates Google model discovery', async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(String(input))
+      if (!url.searchParams.has('pageToken')) {
+        return Response.json({
+          models: [
+            {
+              name: 'models/gemini-first',
+              supportedGenerationMethods: ['generateContent']
+            }
+          ],
+          nextPageToken: 'next-page'
+        })
+      }
+      return Response.json({
+        models: [
+          {
+            name: 'models/gemini-second',
+            supportedGenerationMethods: ['generateContent']
+          }
+        ]
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(getAdapter('google').fetchModels({ apiKey: 'key' }, 'language')).resolves.toEqual([
+      expect.objectContaining({ id: 'gemini-first' }),
+      expect.objectContaining({ id: 'gemini-second' })
+    ])
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('uses dedicated Zhipu and MiniMax adapters', () => {
+    expect(getAdapter('zhipu').createLanguageModel('glm-5', { apiKey: 'key' })).toMatchObject({
+      specificationVersion: 'v3'
+    })
+    expect(getAdapter('zhipu').createImageModel?.('cogview-4', { apiKey: 'key' })).toMatchObject({
+      specificationVersion: 'v3'
+    })
+    expect(
+      getAdapter('minimax').createLanguageModel('MiniMax-M2.1', { apiKey: 'key' })
+    ).toMatchObject({
+      specificationVersion: 'v3'
+    })
+  })
+
+  it('preserves configured API prefixes and normalizes known bare official hosts', async () => {
+    const fetchMock = vi.fn(async () => Response.json({ data: [] }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await getAdapter('anthropic').fetchModels(
+      { apiKey: 'key', baseUrl: 'https://api.anthropic.com' },
+      'language'
+    )
+    expect(fetchMock.mock.calls[0]?.[0]).toContain('https://api.anthropic.com/v1/models')
+
+    await getAdapter('grok').fetchModels({ apiKey: 'key', baseUrl: 'https://api.x.ai' }, 'language')
+    expect(fetchMock.mock.calls[1]?.[0]).toBe('https://api.x.ai/v1/models')
+
+    await getAdapter('openai-compatible').fetchModels(
+      { baseUrl: 'https://gateway.test/v1beta/openai' },
+      'language'
+    )
+    expect(fetchMock.mock.calls[2]?.[0]).toBe('https://gateway.test/v1beta/openai/models')
+
+    await getAdapter('openai-compatible').fetchModels(
+      { baseUrl: 'http://localhost:11434' },
+      'language'
+    )
+    expect(fetchMock.mock.calls[3]?.[0]).toBe('http://localhost:11434/v1/models')
+  })
+
   it('returns Anthropic connection result from model discovery', async () => {
     vi.stubGlobal(
       'fetch',

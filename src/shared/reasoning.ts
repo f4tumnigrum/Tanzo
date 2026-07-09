@@ -31,7 +31,7 @@ function pick(value: string | null | undefined, options: string[]): string | nul
 
 export function resolveReasoningControl(input: ResolveReasoningInput): ReasoningControl {
   const effort = input.capability?.effort
-  if (!effort || effort.values.length === 0 || input.modelReasoningCapable === false) {
+  if (!effort || effort.values.length === 0 || input.modelReasoningCapable !== true) {
     return HIDDEN
   }
   const options = effort.values

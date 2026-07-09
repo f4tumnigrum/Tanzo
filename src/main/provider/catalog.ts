@@ -220,7 +220,11 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
         placeholder: 'https://open.bigmodel.cn/api/paas/v4'
       }
     ],
-    families: { language: languageFamily, embedding: embeddingFamily, image: imageFamily }
+    families: {
+      language: languageFamily,
+      embedding: embeddingFamily,
+      image: { ...imageFamily, modelDiscoveryStrategy: 'api' }
+    }
   },
   minimax: {
     id: 'minimax',

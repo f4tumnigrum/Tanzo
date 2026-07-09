@@ -8,7 +8,11 @@ import { bearer, credentialText, mapIdModels, testByFetching, TIMEOUTS } from '.
 const GROK_DEFAULT_BASE_URL = 'https://api.x.ai/v1'
 
 function grokBaseUrl(credentials: Credentials): string {
-  return ensureUrlProtocol(credentials.baseUrl, GROK_DEFAULT_BASE_URL).replace(/\/+$/, '')
+  const normalized = ensureUrlProtocol(credentials.baseUrl, GROK_DEFAULT_BASE_URL).replace(
+    /\/+$/,
+    ''
+  )
+  return normalized === 'https://api.x.ai' ? `${normalized}/v1` : normalized
 }
 
 function grokProvider(credentials: Credentials) {

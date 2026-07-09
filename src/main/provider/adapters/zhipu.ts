@@ -1,4 +1,4 @@
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
+import { createZhipu } from 'zhipu-ai-provider'
 import { TanzoValidationError } from '@shared/errors'
 import type { Credentials } from '../adapter-types'
 import { ensureUrlProtocol, fetchJson, idOnlyModelListSchema } from '../http'
@@ -13,8 +13,7 @@ function zhipuBaseUrl(credentials: Credentials): string {
 
 function zhipuProvider(credentials: Credentials) {
   const apiKey = credentialText(credentials.apiKey)
-  return createOpenAICompatible({
-    name: 'zhipu',
+  return createZhipu({
     baseURL: zhipuBaseUrl(credentials),
     ...(apiKey ? { apiKey } : {})
   })
@@ -24,13 +23,13 @@ export const zhipuAdapter: ProviderAdapter = {
   providerId: 'zhipu',
   validateCredentials: (credentials) => Boolean(credentials.apiKey?.trim()),
   createLanguageModel(modelId, credentials) {
-    return zhipuProvider(credentials).chatModel(modelId)
+    return zhipuProvider(credentials).chat(modelId)
   },
   createEmbeddingModel(modelId, credentials) {
-    return zhipuProvider(credentials).embeddingModel(modelId)
+    return zhipuProvider(credentials).embedding(modelId)
   },
   createImageModel(modelId, credentials) {
-    return zhipuProvider(credentials).imageModel(modelId)
+    return zhipuProvider(credentials).image(modelId)
   },
   async fetchModels(credentials, family) {
     if (family === 'transcription' || family === 'speech') return []

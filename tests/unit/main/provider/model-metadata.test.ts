@@ -20,6 +20,11 @@ describe('main/provider/model-metadata', () => {
                 reasoning: true,
                 tool_call: true,
                 modalities: { input: ['text', 'image'], output: ['text', 'json'] }
+              },
+              'gpt-basic': {
+                id: 'gpt-basic',
+                reasoning: false,
+                modalities: { input: ['text'], output: ['text'] }
               }
             }
           }
@@ -29,7 +34,10 @@ describe('main/provider/model-metadata', () => {
     const { enrichLanguageModelsWithMetadata } = await import('@main/provider/model-metadata')
 
     await expect(
-      enrichLanguageModelsWithMetadata('openai', [{ id: 'gpt-test', name: 'GPT Test' }])
+      enrichLanguageModelsWithMetadata('openai', [
+        { id: 'gpt-test', name: 'GPT Test' },
+        { id: 'gpt-basic', name: 'GPT Basic' }
+      ])
     ).resolves.toEqual([
       {
         id: 'gpt-test',
@@ -37,6 +45,11 @@ describe('main/provider/model-metadata', () => {
         contextWindow: 1000,
         maxOutput: 200,
         capabilities: { reasoning: true, toolCall: true, vision: true, json: true }
+      },
+      {
+        id: 'gpt-basic',
+        name: 'GPT Basic',
+        capabilities: { reasoning: false }
       }
     ])
   })

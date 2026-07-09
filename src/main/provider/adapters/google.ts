@@ -20,6 +20,49 @@ function googleProvider(credentials: Credentials) {
   })
 }
 
+async function fetchGoogleModels(
+  credentials: Credentials,
+  family: 'language' | 'embedding'
+): Promise<RemoteModel[]> {
+  const seen = new Set<string>()
+  const out: RemoteModel[] = []
+  let pageToken: string | undefined
+
+  for (let page = 0; page < 20; page += 1) {
+    const url = new URL(`${googleBaseUrl(credentials)}/models`)
+    url.searchParams.set('pageSize', '1000')
+    if (pageToken) url.searchParams.set('pageToken', pageToken)
+    const data = await fetchJson(url.toString(), (value) => googleModelListSchema.parse(value), {
+      timeout: TIMEOUTS.MODEL_FETCH,
+      headers: { 'x-goog-api-key': credentialText(credentials.apiKey) ?? '' }
+    })
+
+    for (const model of data.models ?? []) {
+      const id = (model.baseModelId || model.name || '').replace(/^models\//, '').trim()
+      if (!id || seen.has(id)) continue
+      const methods = (model.supportedGenerationMethods ?? []).map((method) => method.toLowerCase())
+      const supportsEmbedding = methods.some((method) => method.includes('embed'))
+      const supportsLanguage = methods.some((method) => method.includes('generatecontent'))
+      if (family === 'embedding' && !supportsEmbedding) continue
+      if (family === 'language' && !supportsLanguage) continue
+      seen.add(id)
+      out.push({
+        id,
+        name: model.displayName?.trim() || formatModelName(id),
+        description:
+          model.description?.trim() ||
+          (family === 'embedding' ? 'Google embedding model' : 'Google model')
+      })
+    }
+
+    const nextPageToken = data.nextPageToken?.trim()
+    if (!nextPageToken || nextPageToken === pageToken) break
+    pageToken = nextPageToken
+  }
+
+  return out.sort((a, b) => a.name.localeCompare(b.name))
+}
+
 export const googleAdapter: ProviderAdapter = {
   providerId: 'google',
   validateCredentials: (credentials) => Boolean(credentials.apiKey?.trim()),
@@ -42,34 +85,7 @@ export const googleAdapter: ProviderAdapter = {
         }
       )
     if (family === 'image' || family === 'transcription' || family === 'speech') return []
-    const data = await fetchJson(
-      `${googleBaseUrl(credentials)}/models`,
-      (value) => googleModelListSchema.parse(value),
-      {
-        timeout: TIMEOUTS.MODEL_FETCH,
-        headers: { 'x-goog-api-key': credentialText(credentials.apiKey) ?? '' }
-      }
-    )
-    const seen = new Set<string>()
-    const out: RemoteModel[] = []
-    for (const model of data.models ?? []) {
-      const id = (model.baseModelId || model.name || '').replace(/^models\//, '').trim()
-      if (!id || seen.has(id)) continue
-      const methods = (model.supportedGenerationMethods ?? []).map((method) => method.toLowerCase())
-      const supportsEmbedding = methods.some((method) => method.includes('embed'))
-      const supportsLanguage = methods.some((method) => method.includes('generatecontent'))
-      if (family === 'embedding' && !supportsEmbedding) continue
-      if (family === 'language' && !supportsLanguage) continue
-      seen.add(id)
-      out.push({
-        id,
-        name: model.displayName?.trim() || formatModelName(id),
-        description:
-          model.description?.trim() ||
-          (family === 'embedding' ? 'Google embedding model' : 'Google model')
-      })
-    }
-    return out.sort((a, b) => a.name.localeCompare(b.name))
+    return fetchGoogleModels(credentials, family)
   },
   testConnection(credentials) {
     return testByFetching(this, credentials)
