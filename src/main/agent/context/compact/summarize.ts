@@ -245,6 +245,7 @@ async function streamSummary(call: StreamSummaryCall): Promise<SummarizeForkResu
       ...(hasProviderOptions(mergedProviderOptions)
         ? { providerOptions: mergedProviderOptions }
         : {}),
+      ...(call.model.reasoning ? { reasoning: call.model.reasoning } : {}),
       ...(call.telemetry ? { telemetry: call.telemetry } : {}),
       ...(call.headers ? { headers: call.headers } : {}),
       messages: call.messages,

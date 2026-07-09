@@ -158,11 +158,12 @@ describe('compact/summarize — fork paths', () => {
       tools: { shell: {} } as never
     })
 
-    // Path A built options (promptCacheKey) must not clobber the user's
-    // configured namespace — both survive the merge.
+    // Prompt cache options remain provider-scoped while reasoning is passed through
+    // the SDK's model-aware top-level setting.
     expect(aiMocks.calls[0].providerOptions).toEqual({
-      openai: { reasoningEffort: 'high', promptCacheKey: 'tanzo:chat:c1' }
+      openai: { promptCacheKey: 'tanzo:chat:c1' }
     })
+    expect(aiMocks.calls[0].reasoning).toBe('high')
   })
 
   it('inherits only the retry policy from user call settings', async () => {

@@ -54,7 +54,7 @@ describe('agent/runtime', () => {
       model: { model: 'language-model' },
       tools,
       runtimeContext: { chatId: 'chat-1', mode: 'acceptEdits' },
-      providerOptions: { openai: { reasoningEffort: 'low' } },
+      reasoning: 'low',
       telemetry
     })
     expect(call.stopWhen).toHaveLength(1)
@@ -92,7 +92,7 @@ describe('agent/runtime', () => {
     })
   })
 
-  it('overlays the conversation reasoning effort onto provider options', () => {
+  it('passes conversation reasoning through the SDK top-level setting', () => {
     const providerService = {
       resolveLanguageModel: vi.fn(() => 'model'),
       getProviderOptions: vi.fn(() => ({ openai: { serviceTier: 'priority' } })),
@@ -109,10 +109,10 @@ describe('agent/runtime', () => {
       reasoningEffort: 'high'
     })
 
-    // Deep merge: the override lands next to existing provider defaults.
     expect(call.providerOptions).toEqual({
-      openai: { serviceTier: 'priority', reasoningEffort: 'high' }
+      openai: { serviceTier: 'priority' }
     })
+    expect(call.reasoning).toBe('high')
   })
 
   it('omits the maxSteps stop condition and provider options when absent', () => {

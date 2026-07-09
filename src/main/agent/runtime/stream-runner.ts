@@ -353,6 +353,7 @@ export function startAgentStream(
         stopWhen: agentCall.stopWhen,
         ...agentCall.callSettings,
         ...(agentCall.providerOptions ? { providerOptions: agentCall.providerOptions } : {}),
+        ...(agentCall.reasoning ? { reasoning: agentCall.reasoning } : {}),
         ...(agentCall.telemetry ? { telemetry: agentCall.telemetry } : {}),
         ...(agentCall.toolChoice ? { toolChoice: agentCall.toolChoice } : {}),
         ...(agentCall.headers ? { headers: agentCall.headers } : {}),

@@ -14,7 +14,12 @@ import type { ProviderService } from '../../provider/service'
 import { conversationRequestHeaders } from '../../provider/request-headers'
 import type { PolicyEngine, ToolPolicyKind } from '../policy/types'
 import { effectiveTokens } from '../goal/accounting'
-import { hasProviderOptions, resolveLanguageModelConfig, type CallSettings } from './model-config'
+import {
+  hasProviderOptions,
+  resolveLanguageModelConfig,
+  type CallSettings,
+  type LanguageModelConfig
+} from './model-config'
 
 function toolPolicyMeta(
   tools: ToolSet | undefined,
@@ -65,6 +70,7 @@ export interface AgentCall {
   stopWhen: StopCondition<ToolSet>[]
   callSettings: CallSettings
   providerOptions?: ProviderOptions
+  reasoning?: LanguageModelConfig['reasoning']
   telemetry?: TelemetryOptions
   toolChoice?: ToolChoice<ToolSet>
   headers?: Record<string, string>
@@ -120,6 +126,7 @@ export function buildAgentCall(input: AgentCallInput): AgentCall {
     ...(hasProviderOptions(modelConfig.providerOptions)
       ? { providerOptions: modelConfig.providerOptions }
       : {}),
+    ...(modelConfig.reasoning ? { reasoning: modelConfig.reasoning } : {}),
     ...(input.telemetry ? { telemetry: input.telemetry } : {}),
     ...(input.toolChoice ? { toolChoice: input.toolChoice } : {}),
     ...(headers ? { headers } : {})
