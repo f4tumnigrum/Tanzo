@@ -46,6 +46,29 @@ const openaiChatLanguageFields: ProviderOptionField[] = [
     step: 1
   },
   {
+    path: 'promptCacheKey',
+    label: 'Prompt cache key',
+    control: 'string'
+  },
+  {
+    path: 'promptCacheOptions.mode',
+    label: 'Prompt cache mode',
+    control: 'select',
+    choices: [{ value: 'implicit', label: 'implicit' }]
+  },
+  {
+    path: 'promptCacheOptions.ttl',
+    label: 'Prompt cache TTL',
+    control: 'select',
+    choices: [{ value: '30m', label: '30m' }]
+  },
+  {
+    path: 'promptCacheRetention',
+    label: 'Legacy prompt cache retention',
+    control: 'select',
+    choices: ['in_memory', '24h'].map((value) => ({ value, label: value }))
+  },
+  {
     path: 'safetyIdentifier',
     label: 'Safety identifier',
     control: 'string'

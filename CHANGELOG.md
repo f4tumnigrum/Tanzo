@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.7] - 2026-07-12
+
+### Added
+
+- Providers: support GPT-5.6 `max` reasoning effort, reasoning mode and context,
+  OpenAI Responses and Chat prompt-cache controls, and Google standalone safety
+  thresholds. Grok 4.5 is available through dynamic xAI model discovery.
+
+### Changed
+
+- Dependencies: updated AI SDK core and provider packages to their latest patch
+  releases.
+
 ## [0.4.6] - 2026-07-12
 
 ### Changed

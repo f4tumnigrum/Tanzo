@@ -52,14 +52,14 @@ function defineEffort<TOptions>() {
 const openaiEffort = defineEffort<OpenAIResponsesProviderOptions>()({
   providerKey: 'openai',
   path: 'reasoningEffort',
-  values: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'],
+  values: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
   default: 'high'
 })
 
 const openaiChatEffort = defineEffort<OpenAIChatLanguageModelOptions>()({
   providerKey: 'openai',
   path: 'reasoningEffort',
-  values: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'],
+  values: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
   default: 'high'
 })
 

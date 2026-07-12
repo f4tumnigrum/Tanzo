@@ -21,6 +21,29 @@ describe('main/provider/options', () => {
       providerKey: 'openai'
     })
     expect(openaiLanguage[0].fields.map((field) => field.path)).not.toContain('reasoningEffort')
+    expect(openaiLanguage[0].fields.map((field) => field.path)).toEqual(
+      expect.arrayContaining([
+        'reasoningMode',
+        'reasoningContext',
+        'promptCacheKey',
+        'promptCacheOptions.mode',
+        'promptCacheOptions.ttl',
+        'promptCacheRetention'
+      ])
+    )
+    expect(
+      listOptionSchemas('openai-chat', 'language')[0].fields.map((field) => field.path)
+    ).toEqual(
+      expect.arrayContaining([
+        'promptCacheKey',
+        'promptCacheOptions.mode',
+        'promptCacheOptions.ttl',
+        'promptCacheRetention'
+      ])
+    )
+    expect(listOptionSchemas('google', 'language')[0].fields.map((field) => field.path)).toContain(
+      'threshold'
+    )
     expect(listOptionSchemas('openai-compatible', 'language')[0]).toMatchObject({
       providerId: 'openai-compatible',
       family: 'language',
@@ -105,6 +128,9 @@ describe('main/provider/options', () => {
     expect(reasoningEffortOverlay('openai', 'high')).toEqual({
       openai: { reasoningEffort: 'high' }
     })
+    expect(reasoningEffortOverlay('openai', 'max')).toEqual({
+      openai: { reasoningEffort: 'max' }
+    })
     expect(reasoningEffortOverlay('anthropic', 'xhigh')).toEqual({
       anthropic: { effort: 'xhigh' }
     })
@@ -125,13 +151,35 @@ describe('main/provider/options', () => {
     expect(reasoningEffortOverlay('openai-compatible', 'minimal')).toEqual({
       openaiCompatible: { reasoningEffort: 'minimal' }
     })
-    expect(reasoningEffortOverlay('openai', 'max')).toBeUndefined()
+    expect(reasoningEffortOverlay('openai', 'ultra-think')).toBeUndefined()
     expect(reasoningEffortOverlay('google', 'xhigh')).toBeUndefined()
     expect(reasoningEffortOverlay('openai-compatible', 'ultra-think')).toBeUndefined()
+    expect(reasoningEffortOverlay('openai-compatible', 'max')).toBeUndefined()
   })
 
   it('validates structured provider option values', () => {
     expect(() => validateProviderOptions('openai', 'language', { logprobs: 1 })).not.toThrow()
+    expect(() =>
+      validateProviderOptions('openai', 'language', {
+        openai: { promptCacheOptions: { mode: 'implicit', ttl: '30m' } }
+      })
+    ).not.toThrow()
+    expect(() =>
+      validateProviderOptions('openai', 'language', {
+        openai: { promptCacheOptions: { mode: 'explicit' } }
+      })
+    ).toThrow(/promptCacheOptions.mode/)
+    expect(() =>
+      validateProviderOptions('openai-chat', 'language', {
+        openai: { promptCacheOptions: { mode: 'implicit', ttl: '30m' } }
+      })
+    ).not.toThrow()
+    expect(() =>
+      validateProviderOptions('google', 'language', { threshold: 'BLOCK_NONE' })
+    ).not.toThrow()
+    expect(() => validateProviderOptions('google', 'language', { threshold: 'INVALID' })).toThrow(
+      /threshold/
+    )
     expect(() => validateProviderOptions('openai', 'language', { logprobs: 0 })).toThrow(/logprobs/)
     expect(() => validateProviderOptions('openai', 'language', { logprobs: 21 })).toThrow(
       /logprobs/

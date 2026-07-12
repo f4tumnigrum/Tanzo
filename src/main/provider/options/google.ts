@@ -37,6 +37,19 @@ export const googleOptionSchemas: ProviderOptionSchema[] = [
         ].map((value) => ({ value, label: value }))
       },
       { path: 'audioTimestamp', label: 'Audio timestamp', control: 'boolean' },
+      {
+        path: 'threshold',
+        label: 'Safety threshold',
+        control: 'select',
+        choices: [
+          'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+          'BLOCK_LOW_AND_ABOVE',
+          'BLOCK_MEDIUM_AND_ABOVE',
+          'BLOCK_ONLY_HIGH',
+          'BLOCK_NONE',
+          'OFF'
+        ].map((value) => ({ value, label: value }))
+      },
       { path: 'safetySettings', label: 'Safety settings', control: 'json' }
     ]
   }
