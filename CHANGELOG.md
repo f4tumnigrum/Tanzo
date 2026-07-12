@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.8] - 2026-07-13
+
+### Fixed
+
+- OpenAI: preserve GPT-5.6 `max` reasoning effort in provider options instead
+  of dropping it when translating standard efforts to the AI SDK top-level
+  reasoning setting.
+
 ## [0.4.7] - 2026-07-12
 
 ### Added

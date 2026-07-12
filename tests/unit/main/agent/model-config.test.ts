@@ -28,6 +28,22 @@ describe('agent/runtime/model-config', () => {
     expect(config.providerOptions).toEqual({ xai: { store: false } })
   })
 
+  it('keeps OpenAI max effort in provider options', () => {
+    const stored = resolve('openai', {
+      openai: { reasoningEffort: 'max', reasoningMode: 'pro' }
+    })
+    expect(stored.reasoning).toBeUndefined()
+    expect(stored.providerOptions).toEqual({
+      openai: { reasoningEffort: 'max', reasoningMode: 'pro' }
+    })
+
+    const overridden = resolve('openai-chat', { openai: { store: false } }, 'max')
+    expect(overridden.reasoning).toBeUndefined()
+    expect(overridden.providerOptions).toEqual({
+      openai: { store: false, reasoningEffort: 'max' }
+    })
+  })
+
   it('lets AI SDK map Google and Anthropic reasoning by model', () => {
     const google = resolve('google', {
       google: { thinkingConfig: { thinkingLevel: 'high', includeThoughts: true } }

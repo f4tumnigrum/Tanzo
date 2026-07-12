@@ -128,7 +128,13 @@ export function resolveLanguageModelConfig(
   } else {
     const stored = takeProviderReasoning(providerOptions, providerId)
     providerOptions = stored.providerOptions
-    reasoning = standardReasoning(override ?? validEffort(providerId, stored.effort))
+    const effort = override ?? validEffort(providerId, stored.effort)
+    if ((providerId === 'openai' || providerId === 'openai-chat') && effort === 'max') {
+      const overlay = reasoningEffortOverlay(providerId, effort)
+      if (overlay) providerOptions = mergeProviderOptionsInto(providerOptions, overlay)
+    } else {
+      reasoning = standardReasoning(effort)
+    }
   }
 
   return {
