@@ -104,6 +104,82 @@ describe('main/agent/context/tool-transcript', () => {
     expect(resultIdsOf(out).has('c1')).toBe(false)
   })
 
+  it('keeps provider-executed tool parts that are returned in the assistant message', () => {
+    const message = {
+      role: 'assistant',
+      content: [
+        {
+          type: 'tool-call',
+          toolCallId: 'provider-call',
+          toolName: 'web_search',
+          input: { query: 'Tanzo' },
+          providerExecuted: true
+        },
+        {
+          type: 'tool-result',
+          toolCallId: 'provider-call',
+          toolName: 'web_search',
+          output: { type: 'text', value: 'result' }
+        }
+      ]
+    } as ModelMessage
+
+    const out = canonicalizeToolTranscript([
+      message,
+      { role: 'user', content: 'continue' } as ModelMessage
+    ])
+
+    expect(out[0]).toEqual(message)
+  })
+
+  it('keeps a provider-executed call without a host tool-result', () => {
+    const out = canonicalizeToolTranscript([
+      {
+        role: 'assistant',
+        content: [
+          {
+            type: 'tool-call',
+            toolCallId: 'provider-call',
+            toolName: 'web_search',
+            input: { query: 'Tanzo' },
+            providerExecuted: true
+          }
+        ]
+      } as ModelMessage,
+      { role: 'user', content: 'continue' } as ModelMessage
+    ])
+
+    expect(callIdsOf(out)).toEqual(new Set(['provider-call']))
+  })
+
+  it('pairs and orders results across consecutive tool messages as one block', () => {
+    const assistant = {
+      role: 'assistant',
+      content: [
+        { type: 'tool-call', toolCallId: 'c1', toolName: 'shell', input: {} },
+        { type: 'tool-call', toolCallId: 'c2', toolName: 'shell', input: {} }
+      ]
+    } as ModelMessage
+    const out = canonicalizeToolTranscript([
+      assistant,
+      toolResult('c2'),
+      toolResult('c1'),
+      { role: 'assistant', content: [{ type: 'text', text: 'done' }] } as ModelMessage
+    ])
+
+    expect(callIdsOf(out)).toEqual(new Set(['c1', 'c2']))
+    expect(resultIdsOf(out)).toEqual(new Set(['c1', 'c2']))
+    expect(
+      out.flatMap((message) =>
+        message.role === 'tool' && Array.isArray(message.content)
+          ? message.content
+              .filter((part) => (part as { type?: string }).type === 'tool-result')
+              .map((part) => (part as { toolCallId: string }).toolCallId)
+          : []
+      )
+    ).toEqual(['c1', 'c2'])
+  })
+
   it('keeps a final approved unresolved tool-call so the SDK can resume it', () => {
     const out = canonicalizeToolTranscript([approvalRequest('c1', 'a1'), approvalResponse('a1')])
 

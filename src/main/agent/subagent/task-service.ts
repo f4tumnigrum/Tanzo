@@ -114,6 +114,7 @@ export function createTaskService(
   const noteWaiters = new Map<string, Set<() => void>>()
   const approvalWaiters = new Map<string, () => void>()
   const approvalChains = new Map<string, Promise<void>>()
+  const driverControlChains = new Map<string, Promise<unknown>>()
 
   const waiterKey = (rootChatId: string, taskId: string): string => `${rootChatId}:${taskId}`
 
@@ -488,17 +489,29 @@ export function createTaskService(
       }
 
       if (finalState?.inlineCompaction) {
+        const reconcileEpoch = callbacks.currentRunEpoch(chatId)
+        if (callbacks.hasAdvancedSince(chatId, observedEpoch)) {
+          throw new TaskInterrupted(chatId, 'superseded')
+        }
+        let reconcileError: unknown
         try {
-          const compacted = await collaborators.compaction.reconcileInline(
-            chatId,
-            def,
-            finalState.inlineCompaction,
-            { signal }
-          )
-          if (compacted) observedEpoch = callbacks.currentRunEpoch(chatId)
+          await collaborators.compaction.reconcileInline(chatId, def, finalState.inlineCompaction, {
+            signal
+          })
         } catch (error) {
           if (signal.aborted) throw new TaskInterrupted(chatId, 'cancelled')
-          deps.logger?.warn('subagent task inline compaction reconcile failed', { chatId, error })
+          reconcileError = error
+        }
+        const reconciledEpoch = callbacks.currentRunEpoch(chatId)
+        if (reconciledEpoch !== reconcileEpoch && reconciledEpoch !== reconcileEpoch + 1) {
+          throw new TaskInterrupted(chatId, 'superseded')
+        }
+        observedEpoch = reconciledEpoch
+        if (reconcileError) {
+          deps.logger?.warn('subagent task inline compaction reconcile failed', {
+            chatId,
+            error: reconcileError
+          })
         }
       }
 
@@ -768,6 +781,24 @@ export function createTaskService(
     return null
   }
 
+  function enqueueDriverControl<T>(chatId: string, fn: () => Promise<T>): Promise<T> {
+    const previous = driverControlChains.get(chatId) ?? Promise.resolve()
+    const next = previous.catch(() => undefined).then(fn)
+    const tracked = next.finally(() => {
+      if (driverControlChains.get(chatId) === tracked) driverControlChains.delete(chatId)
+    })
+    driverControlChains.set(chatId, tracked)
+    return tracked
+  }
+
+  async function stopDriver(chatId: string): Promise<void> {
+    const oldDone = driverDone.get(chatId)
+    controllers.get(chatId)?.abort()
+    callbacks.abortRun(chatId)
+    callbacks.clearTransientChatState(chatId)
+    await oldDone
+  }
+
   async function instruct(
     rootChatId: string,
     taskId: string,
@@ -776,18 +807,40 @@ export function createTaskService(
     const task = deps.store.tasks.get(rootChatId, taskId)
     const rejected = steerGuard(task)
     if (rejected) return rejected
-    const oldDone = driverDone.get(task!.chatId)
-    controllers.get(task!.chatId)?.abort()
-    callbacks.abortRun(task!.chatId)
-    await oldDone
-    const history = await deps.store.load(task!.chatId)
-    deps.store.save(task!.chatId, [
-      ...history,
-      { id: randomUUID(), role: 'user', parts: [{ type: 'text', text: instruction }] }
-    ])
-    const resumed = dispatch(rootChatId, taskId, { kind: 'resume', now: Date.now() })
-    if (resumed?.status === 'running') startDriver(resumed)
-    return { ok: true }
+    return enqueueDriverControl(task!.chatId, async () => {
+      const current = deps.store.tasks.get(rootChatId, taskId)
+      const currentRejected = steerGuard(current)
+      if (currentRejected) return currentRejected
+      const interruptedApprovals =
+        current!.block?.kind === 'approval'
+          ? current!.block.approvals.map((approval) => approval.approvalId)
+          : []
+
+      await stopDriver(current!.chatId)
+      let history = await deps.store.load(current!.chatId)
+      for (const approvalId of interruptedApprovals) {
+        history = applyApprovalResponse(
+          history,
+          approvalId,
+          false,
+          'Superseded by a new instruction.'
+        ).messages
+      }
+      const stopped = deps.store.tasks.get(rootChatId, taskId)
+      const stoppedRejected = steerGuard(stopped)
+      if (stoppedRejected) return stoppedRejected
+
+      const resumed = deps.store.transaction(() => {
+        deps.store.save(stopped!.chatId, [
+          ...history,
+          { id: randomUUID(), role: 'user', parts: [{ type: 'text', text: instruction }] }
+        ])
+        return dispatch(rootChatId, taskId, { kind: 'resume', now: Date.now() })
+      })
+      if (resumed?.status !== 'running') return { ok: false, reason: 'terminal' }
+      startDriver(resumed)
+      return { ok: true }
+    })
   }
 
   async function redefine(
@@ -798,27 +851,43 @@ export function createTaskService(
     const task = deps.store.tasks.get(rootChatId, taskId)
     const rejected = steerGuard(task)
     if (rejected) return rejected
-    const oldDone = driverDone.get(task!.chatId)
-    controllers.get(task!.chatId)?.abort()
-    callbacks.abortRun(task!.chatId)
-    await oldDone
-    writeObjective(task!.chatId, objective)
-    const restarted = dispatch(rootChatId, taskId, { kind: 'redefine', objective, now: Date.now() })
-    if (restarted?.status === 'running') startDriver(restarted)
-    return { ok: true }
+    return enqueueDriverControl(task!.chatId, async () => {
+      const current = deps.store.tasks.get(rootChatId, taskId)
+      const currentRejected = steerGuard(current)
+      if (currentRejected) return currentRejected
+
+      await stopDriver(current!.chatId)
+      const stopped = deps.store.tasks.get(rootChatId, taskId)
+      const stoppedRejected = steerGuard(stopped)
+      if (stoppedRejected) return stoppedRejected
+
+      const restarted = deps.store.transaction(() => {
+        deps.store.clearMessages(stopped!.chatId)
+        writeObjective(stopped!.chatId, objective)
+        return dispatch(rootChatId, taskId, {
+          kind: 'redefine',
+          objective,
+          now: Date.now()
+        })
+      })
+      if (restarted?.status !== 'running') return { ok: false, reason: 'terminal' }
+      startDriver(restarted)
+      return { ok: true }
+    })
   }
 
   async function resumeByChat(chatId: string): Promise<void> {
     const task = deps.store.tasks.getByChat(chatId)
     if (!task || isTerminal(task.status)) return
-
-    const oldDone = driverDone.get(task.chatId)
-    controllers.get(task.chatId)?.abort()
-    callbacks.abortRun(task.chatId)
-    await oldDone
-    const resumed = dispatch(task.rootChatId, task.id, { kind: 'resume', now: Date.now() })
-
-    if (resumed?.status === 'running') startDriver(resumed)
+    await enqueueDriverControl(task.chatId, async () => {
+      const current = deps.store.tasks.getByChat(chatId)
+      if (!current || isTerminal(current.status)) return
+      await stopDriver(chatId)
+      const stopped = deps.store.tasks.getByChat(chatId)
+      if (!stopped || isTerminal(stopped.status)) return
+      const resumed = dispatch(stopped.rootChatId, stopped.id, { kind: 'resume', now: Date.now() })
+      if (resumed?.status === 'running') startDriver(resumed)
+    })
   }
 
   function retry(rootChatId: string, taskId: string): void {

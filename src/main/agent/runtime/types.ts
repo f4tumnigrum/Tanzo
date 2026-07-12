@@ -46,6 +46,8 @@ export interface BuildToolsContext {
 export type BuildTools = (context: BuildToolsContext) => Promise<ToolSet>
 
 export interface HookLifecycle {
+  takePendingContext?(chatId: string): string[]
+  clearPendingContext?(chatId: string): void
   runUserPromptSubmit(input: {
     chatId: string
     prompt: string

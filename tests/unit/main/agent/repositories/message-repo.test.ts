@@ -34,6 +34,30 @@ function summaryMessage(summaryId: string): TanzoUIMessage {
   } as TanzoUIMessage
 }
 
+function detailedSummaryMessage(summaryId: string): TanzoUIMessage {
+  return {
+    id: summaryId,
+    role: 'assistant',
+    parts: [
+      { type: 'text', text: 'summary' },
+      {
+        type: 'data-compaction',
+        data: {
+          stage: 'complete',
+          summary: 'summary',
+          summaryId,
+          auto: true,
+          beforeTokens: 1000,
+          afterTokens: 100,
+          reducedTokens: 900,
+          omittedMessages: 4,
+          degraded: 'prune'
+        }
+      }
+    ]
+  } as TanzoUIMessage
+}
+
 function insertRawMessage(db: RealDb, chatId: string, message: TanzoUIMessage, seq: number): void {
   db.prepare(
     `INSERT INTO messages (conversation_id, id, seq, role, message_json, created_at)
@@ -174,6 +198,91 @@ describe('message-repo (real sqlite engine)', () => {
     expect((await repo.loadFullHistory('c1')).map((m) => m.id)).toEqual(['m1', 'm2'])
   })
 
+  it('clears compaction overlays with the message log', async () => {
+    const repo = createMessageRepo(db, logger)
+    repo.writeActive('c1', [userMessage('m1', 'one'), userMessage('m2', 'two')])
+    repo.finalizeCompaction('c1', ['m1'], 'sum', [summaryMessage('sum'), userMessage('m2', 'two')])
+
+    repo.deleteAll('c1')
+    expect(await repo.load('c1')).toEqual([])
+
+    repo.writeActive('c1', [userMessage('m3', 'new')])
+    expect((await repo.load('c1')).map((message) => message.id)).toEqual(['m3'])
+    expect(
+      db
+        .prepare('SELECT COUNT(*) AS n FROM compaction_overlays WHERE conversation_id = ?')
+        .get(['c1'])
+    ).toEqual({ n: 0 })
+  })
+
+  it('round-trips the complete compaction payload', async () => {
+    const repo = createMessageRepo(db, logger)
+    repo.writeActive('c1', [userMessage('m1', 'one'), userMessage('m2', 'two')])
+    repo.finalizeCompaction('c1', ['m1'], 'sum', [
+      detailedSummaryMessage('sum'),
+      userMessage('m2', 'two')
+    ])
+
+    const part = (await repo.load('c1'))[0].parts.find(
+      (candidate) => candidate.type === 'data-compaction'
+    )
+    expect(part).toEqual(detailedSummaryMessage('sum').parts[1])
+  })
+
+  it('invalidates retained usage anchors measured before the compaction prefix', async () => {
+    const repo = createMessageRepo(db, logger)
+    const retained = {
+      ...assistantMessage('a2', 'recent'),
+      metadata: {
+        steps: [{ stepNumber: 1, usage: { inputTokens: 100_000, outputTokens: 20 } }]
+      }
+    } as TanzoUIMessage
+    repo.writeActive('c1', [userMessage('m1', 'old'), retained])
+    repo.finalizeCompaction('c1', ['m1'], 'sum', [summaryMessage('sum'), retained])
+
+    const projected = await repo.load('c1')
+    expect(projected[1].metadata?.steps?.[0]?.usage).toBeNull()
+    const display = await repo.loadDisplay('c1')
+    expect(display.find((message) => message.id === 'a2')?.metadata?.steps?.[0]?.usage).toEqual({
+      inputTokens: 100_000,
+      outputTokens: 20
+    })
+  })
+
+  it('rejects a compaction when active message content changed under the same ids', async () => {
+    const repo = createMessageRepo(db, logger)
+    repo.writeActive('c1', [userMessage('m1', 'old'), userMessage('m2', 'tail')])
+    const expected = await repo.load('c1')
+    repo.writeActive('c1', [userMessage('m1', 'edited'), userMessage('m2', 'tail')])
+
+    expect(() =>
+      repo.finalizeCompaction(
+        'c1',
+        ['m1'],
+        'sum',
+        [summaryMessage('sum'), userMessage('m2', 'tail')],
+        expected
+      )
+    ).toThrow(/changed while compaction was running/)
+  })
+
+  it('persists the order of a new message inserted before an existing message', async () => {
+    const repo = createMessageRepo(db, logger)
+    repo.writeActive('c1', [userMessage('u1', 'go'), assistantMessage('a1', 'waiting')])
+
+    repo.writeActive('c1', [
+      userMessage('u1', 'go'),
+      userMessage('steer', 'redirect'),
+      assistantMessage('a1', 'continued')
+    ])
+
+    expect((await repo.loadFullHistory('c1')).map((message) => message.id)).toEqual([
+      'u1',
+      'steer',
+      'a1'
+    ])
+  })
+
   it('uses prior overlay coverage when compacting a previous summary', async () => {
     const repo = createMessageRepo(db, logger)
     repo.writeActive('c1', [userMessage('m1', 'one'), userMessage('m2', 'two')])
@@ -210,12 +319,19 @@ describe('message-repo (real sqlite engine)', () => {
 
     // A mid-message (partial) split archives the original assistant message and
     // emits a fresh tail fragment that belongs immediately after the summary.
-    repo.finalizeCompaction('c1', ['u1', 'a2'], 'sum', [
-      summaryMessage('sum'),
-      assistantMessage('frag', 'late part of a2'),
-      userMessage('u3', 'three'),
-      assistantMessage('a3', 'reply three')
-    ])
+    repo.finalizeCompaction(
+      'c1',
+      ['u1', 'a2'],
+      'sum',
+      [
+        summaryMessage('sum'),
+        assistantMessage('frag', 'late part of a2'),
+        userMessage('u3', 'three'),
+        assistantMessage('a3', 'reply three')
+      ],
+      undefined,
+      [userMessage('u1', 'one'), assistantMessage('a2', 'early part of a2')]
+    )
 
     expect((await repo.load('c1')).map((m) => m.id)).toEqual(['sum', 'frag', 'u3', 'a3'])
     expect((await repo.loadDisplay('c1')).map((m) => m.id)).toEqual([
@@ -234,6 +350,11 @@ describe('message-repo (real sqlite engine)', () => {
       'a3'
     ])
     expect((await repo.loadArchived('c1', 'sum')).map((m) => m.id)).toEqual(['u1', 'a2'])
+    expect(
+      (await repo.loadDisplay('c1'))
+        .flatMap((message) => message.parts)
+        .filter((part) => part.type === 'text' && part.text === 'late part of a2')
+    ).toHaveLength(1)
   })
 
   it('loadFullHistory returns the raw message log after compaction', async () => {
@@ -346,6 +467,39 @@ describe('message-repo (real sqlite engine)', () => {
       .prepare('SELECT id FROM quarantined_messages WHERE conversation_id = ?')
       .all(['c1']) as Array<{ id: string }>
     expect(quarantined.map((row) => row.id)).toEqual(['a1'])
+  })
+
+  it('falls back to the latest valid revision instead of deleting the message', async () => {
+    const repo = createMessageRepo(db, logger)
+    repo.writeActive('c1', [assistantMessage('a1', 'draft')])
+    repo.writeActive('c1', [assistantMessage('a1', 'complete')])
+    const broken = {
+      id: 'a1',
+      role: 'assistant',
+      parts: [
+        {
+          type: 'tool-fileRead',
+          toolCallId: 'call-1',
+          state: 'input-available',
+          input: { path: 123 }
+        }
+      ]
+    }
+    db.prepare(
+      `INSERT INTO message_revisions (
+        conversation_id, message_id, revision, message_json, created_at
+      ) VALUES (?, ?, ?, ?, ?)`
+    ).run(['c1', 'a1', 3, JSON.stringify({ v: 1, message: broken }), Date.now()])
+
+    const loaded = await repo.load('c1')
+
+    expect(loaded).toEqual([assistantMessage('a1', 'complete')])
+    expect(
+      db.prepare('SELECT id FROM quarantined_messages WHERE conversation_id = ?').all(['c1'])
+    ).toEqual([])
+    expect(
+      db.prepare('SELECT id FROM messages WHERE conversation_id = ? AND id = ?').get(['c1', 'a1'])
+    ).toEqual({ id: 'a1' })
   })
 
   it('hydrates the write mirror once and skips the full-log SELECT on later writes', async () => {

@@ -100,7 +100,16 @@ describe.skipIf(isWindows)('main/agent/hooks/service (e2e via real subprocess)',
     })
     const service = makeService(cwd)
     await service.runSessionStart({ chatId: 'chat-1', source: 'startup' })
-    expect(service.pendingContext.drain('chat-1')).toEqual(['remember: be careful'])
+    expect(service.takePendingContext('chat-1')).toEqual(['remember: be careful'])
+  })
+
+  it('clears pending hook context when transient chat state is discarded', () => {
+    const service = makeService(projectWithHooks({ hooks: {} }))
+    service.pendingContext.push('chat-1', 'stale hook output')
+
+    service.clearPendingContext('chat-1')
+
+    expect(service.takePendingContext('chat-1')).toEqual([])
   })
 
   it('does not run an untrusted hook', async () => {

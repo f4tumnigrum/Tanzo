@@ -37,6 +37,19 @@ describe('compact/cut — UI domain (persisted transcript)', () => {
     expect(findCut([user('u1', 'small')], 1_000)).toBeNull()
   })
 
+  it('ignores renderer-only data parts just like the model ledger', () => {
+    const message = {
+      id: 'u1',
+      role: 'user',
+      parts: [
+        { type: 'text', text: 'small' },
+        { type: 'data-status', data: { payload: 'x'.repeat(100_000) } }
+      ]
+    } as TanzoUIMessage
+
+    expect(findCut([message, user('u2', 'also small')], 100)).toBeNull()
+  })
+
   it('cuts at a round boundary preferentially', () => {
     const messages = [
       user('u1', 'a'.repeat(400)),
@@ -207,14 +220,13 @@ describe('compact/degrade — mechanical L3/L4', () => {
     expect(out!.messages.at(-1)).toMatchObject({ content: 'recent question' })
   })
 
-  it('never drops the final message even under an impossible ceiling', () => {
+  it('returns null rather than claiming success under an impossible ceiling', () => {
     const messages: ModelMessage[] = [
       { role: 'user', content: 'a'.repeat(100_000) },
       { role: 'user', content: 'b'.repeat(100_000) }
     ]
     const out = degradeTranscript(messages, 1)
-    expect(out).not.toBeNull()
-    expect(out!.messages.length).toBeGreaterThanOrEqual(1)
+    expect(out).toBeNull()
   })
 
   it('never returns a transcript opening with a tool message', () => {

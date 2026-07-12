@@ -20,10 +20,15 @@ export function createCapabilities(resolve: ModelMetadataResolver) {
     const raw = resolve(modelRef)
     const contextWindow =
       raw?.contextWindow && raw.contextWindow > 0 ? raw.contextWindow : DEFAULT_CONTEXT_WINDOW
+    const maxReservableOutput = contextWindow > 1 ? contextWindow - 1 : contextWindow
+    const defaultMaxOutput = Math.min(
+      DEFAULT_MAX_OUTPUT,
+      Math.max(1, Math.floor(contextWindow * 0.25))
+    )
     const maxOutputTokens =
       raw?.maxOutput && raw.maxOutput > 0
-        ? Math.min(raw.maxOutput, contextWindow)
-        : DEFAULT_MAX_OUTPUT
+        ? Math.min(raw.maxOutput, maxReservableOutput)
+        : defaultMaxOutput
     return {
       contextWindow,
       maxOutputTokens,

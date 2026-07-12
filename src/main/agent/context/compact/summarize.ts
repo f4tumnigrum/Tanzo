@@ -51,6 +51,12 @@ const SUMMARIZER_SYSTEM =
 
 const FORK_BUDGET_FRACTION = 0.8
 const CHUNK_FRACTION = 0.6
+const ROLLING_RESERVE_FRACTION = 0.2
+const PAYLOAD_TOKEN_MARGIN = 8
+
+const CONTINUE_SUMMARY_PROMPT =
+  'Update the summary to cover everything above. Preserve exact identifiers, file paths, and user intent. Output only the updated summary.'
+const PAYLOAD_SEPARATOR = '\n\n---\n\n'
 
 const RESPONSE_BODY_PREVIEW_CHARS = 500
 const SUMMARY_UPDATE_MIN_INTERVAL_MS = 80
@@ -167,6 +173,41 @@ export function renderTranscriptText(messages: ModelMessage[]): string {
   return lines.join('\n\n')
 }
 
+function splitTextToBudget(text: string, budgetTokens: number): string[] {
+  const chunks: string[] = []
+  let offset = 0
+  while (offset < text.length) {
+    let low = offset + 1
+    let high = Math.min(text.length, offset + Math.max(budgetTokens * 4, 1))
+    let end = offset
+    while (low <= high) {
+      const mid = Math.floor((low + high) / 2)
+      if (estimateTextTokens(text.slice(offset, mid)) <= budgetTokens) {
+        end = mid
+        low = mid + 1
+      } else {
+        high = mid - 1
+      }
+    }
+    if (end === offset) end = offset + 1
+    chunks.push(text.slice(offset, end))
+    offset = end
+  }
+  return chunks
+}
+
+function truncateTextToBudget(text: string, budgetTokens: number): string {
+  if (budgetTokens <= 0) return ''
+  if (estimateTextTokens(text) <= budgetTokens) return text
+
+  const marker = '\n...[rolling summary truncated to fit the summarizer context]...'
+  const contentBudget = budgetTokens - estimateTextTokens(marker) - 1
+  if (contentBudget <= 0) return splitTextToBudget(text, budgetTokens)[0] ?? ''
+  const prefix = splitTextToBudget(text, contentBudget)[0] ?? ''
+  const truncated = `${prefix}${marker}`
+  return estimateTextTokens(truncated) <= budgetTokens ? truncated : prefix
+}
+
 function chunkTranscript(messages: ModelMessage[], chunkBudgetTokens: number): string[] {
   const chunks: string[] = []
   let current: string[] = []
@@ -174,15 +215,19 @@ function chunkTranscript(messages: ModelMessage[], chunkBudgetTokens: number): s
   for (const message of messages) {
     const text = contentToText(message.content).trim()
     if (!text) continue
-    const block = `## ${message.role}\n${text}`
-    const tokens = estimateTextTokens(block)
-    if (currentTokens + tokens > chunkBudgetTokens && current.length > 0) {
-      chunks.push(current.join('\n\n'))
-      current = []
-      currentTokens = 0
+    const header = `## ${message.role}\n`
+    const bodyBudget = Math.max(chunkBudgetTokens - estimateTextTokens(header), 1)
+    for (const piece of splitTextToBudget(text, bodyBudget)) {
+      const block = `${header}${piece}`
+      const tokens = estimateTextTokens(block)
+      if (currentTokens + tokens > chunkBudgetTokens && current.length > 0) {
+        chunks.push(current.join('\n\n'))
+        current = []
+        currentTokens = 0
+      }
+      current.push(block)
+      currentTokens += tokens
     }
-    current.push(block)
-    currentTokens += tokens
   }
   if (current.length > 0) chunks.push(current.join('\n\n'))
   return chunks
@@ -352,7 +397,29 @@ export async function runSummarizeFork(
     })
   }
 
-  const chunkBudget = Math.floor(forkBudget * CHUNK_FRACTION)
+  const payloadBudget =
+    forkBudget - estimateModelMessagesTokens(summarizerInstructions as ModelMessage[])
+  if (payloadBudget <= 0) {
+    throw new Error('Summarizer instructions exceed the compaction context budget')
+  }
+  const maxInstructionTokens = Math.max(
+    estimateTextTokens(input.prompt),
+    estimateTextTokens(CONTINUE_SUMMARY_PROMPT)
+  )
+  const framingTokens =
+    estimateTextTokens('Summary of the conversation so far:\n') +
+    estimateTextTokens('Transcript continues:\n') +
+    estimateTextTokens(PAYLOAD_SEPARATOR) * 2 +
+    PAYLOAD_TOKEN_MARGIN
+  const rollingReserve = Math.floor(payloadBudget * ROLLING_RESERVE_FRACTION)
+  const availableForChunk = payloadBudget - maxInstructionTokens - framingTokens - rollingReserve
+  if (availableForChunk <= 0) {
+    throw new Error('Compaction instructions exceed the summarizer context budget')
+  }
+  const chunkBudget = Math.max(
+    1,
+    Math.min(Math.floor(payloadBudget * CHUNK_FRACTION), availableForChunk)
+  )
   const chunks = chunkTranscript(input.head, chunkBudget)
   let rolling = ''
   let aggregateInput = 0
@@ -360,20 +427,37 @@ export async function runSummarizeFork(
   for (let i = 0; i < chunks.length; i += 1) {
     if (input.abortSignal?.aborted) throw new Error('Compaction aborted')
     const isFinal = i === chunks.length - 1
+    const instruction = isFinal ? input.prompt : CONTINUE_SUMMARY_PROMPT
+    const fixedParts = [`Transcript continues:\n${chunks[i]}`, instruction]
+    const fixedPayload = fixedParts.join(PAYLOAD_SEPARATOR)
+    if (estimateTextTokens(fixedPayload) > payloadBudget) {
+      throw new Error('A compaction transcript chunk exceeds the summarizer context budget')
+    }
+
     const parts: string[] = []
     if (rolling) {
-      parts.push(`Summary of the conversation so far:\n${rolling}`)
+      const rollingFrameTokens =
+        estimateTextTokens('Summary of the conversation so far:\n') +
+        estimateTextTokens(PAYLOAD_SEPARATOR) +
+        PAYLOAD_TOKEN_MARGIN
+      const rollingBudget = Math.max(
+        payloadBudget - estimateTextTokens(fixedPayload) - rollingFrameTokens,
+        0
+      )
+      const fittedRolling = truncateTextToBudget(rolling, rollingBudget)
+      if (fittedRolling) {
+        parts.push(`Summary of the conversation so far:\n${fittedRolling}`)
+      }
     }
-    parts.push(`Transcript continues:\n${chunks[i]}`)
-    parts.push(
-      isFinal
-        ? input.prompt
-        : 'Update the summary to cover everything above. Preserve exact identifiers, file paths, and user intent. Output only the updated summary.'
-    )
+    parts.push(...fixedParts)
+    const payload = parts.join(PAYLOAD_SEPARATOR)
+    if (estimateTextTokens(payload) > payloadBudget) {
+      throw new Error('Rolling compaction summary exceeds the summarizer context budget')
+    }
     const result = await streamSummary({
       model: modelConfig,
       instructions: summarizerInstructions,
-      messages: [{ role: 'user', content: parts.join('\n\n---\n\n') }],
+      messages: [{ role: 'user', content: payload }],
       ...(input.telemetry ? { telemetry: input.telemetry } : {}),
       ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
       ...(isFinal && input.onSummary ? { onSummary: input.onSummary } : {})

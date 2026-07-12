@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto'
+import { isDeepStrictEqual } from 'node:util'
 import {
   convertToModelMessages,
   createUIMessageStream,
@@ -22,7 +23,8 @@ import type { AgentDefinition } from '../agents/types'
 import type { ContextEngine } from '../context'
 import { getContextProvenance } from '../context/section'
 import { canonicalizeToolTranscript } from '../context/tool-transcript'
-import { compactModelTranscript } from '../context/compact/inline'
+import { compactModelTranscript, ContextHardCeilingError } from '../context/compact/inline'
+import { estimateModelMessagesTokens } from '../context/ledger'
 import type { ChatKeyedQueue } from './chat-keyed-queue'
 import type { InlineCompactionRecord } from './compaction-coordinator'
 import { compactionPrompt } from './compaction-coordinator'
@@ -241,6 +243,45 @@ function isWorkToolCall(tools: ToolSet, toolName: string): boolean {
   return meta.kind === 'edit' || meta.kind === 'exec'
 }
 
+async function coveredBaseMessageIds(input: {
+  messages: TanzoUIMessage[]
+  initialMessages: ModelMessage[]
+  coveredModelMessageCount: number
+  tools: ToolSet
+}): Promise<string[]> {
+  const modelLimit = Math.min(input.coveredModelMessageCount, input.initialMessages.length)
+  if (modelLimit >= input.initialMessages.length) {
+    return input.messages.map((message) => message.id)
+  }
+
+  const cache = new Map<number, ModelMessage[]>()
+  const projectsWithinCoveredPrefix = async (end: number): Promise<boolean> => {
+    let projected = cache.get(end)
+    if (!projected) {
+      projected = canonicalizeToolTranscript(
+        await convertToModelMessages(resolvePastedTextPointers(input.messages.slice(0, end)), {
+          tools: input.tools,
+          ignoreIncompleteToolCalls: true
+        })
+      )
+      cache.set(end, projected)
+    }
+    if (projected.length > modelLimit) return false
+    return projected.every((message, index) =>
+      isDeepStrictEqual(message, input.initialMessages[index])
+    )
+  }
+
+  let low = 0
+  let high = input.messages.length
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2)
+    if (await projectsWithinCoveredPrefix(mid)) low = mid
+    else high = mid - 1
+  }
+  return input.messages.slice(0, low).map((message) => message.id)
+}
+
 export function startAgentStream(
   deps: AgentStreamRunnerDeps,
   opts: StartAgentStreamInput
@@ -338,10 +379,12 @@ export function startAgentStream(
       let rebasedBase: ModelMessage[] | null = null
       let responseCountAtRebase = 0
       let lastStepInputTokens = 0
+      let lastStepOutputTokens = 0
+      let lastPreparedTranscriptTokens = estimateModelMessagesTokens(initialMessages)
 
-      const shouldCompactInline = (): boolean => {
+      const shouldCompactInline = (projectedTokens: number): boolean => {
         if (!compactionPolicy || !deps.contextEngine) return false
-        return lastStepInputTokens > compactionPolicy.compactionTriggerTokens
+        return projectedTokens > compactionPolicy.compactionTriggerTokens
       }
 
       const result = streamText<ToolSet>({
@@ -393,7 +436,58 @@ export function startAgentStream(
             responseCountAtRebase = (responseMessages as ModelMessage[]).length
           }
 
-          if (deps.contextEngine && compactionPolicy && shouldCompactInline()) {
+          const hookContext = deps.hooks?.takePendingContext?.(opts.chatId) ?? []
+          if (hookContext.length > 0) {
+            const text = ['<hook-context>', hookContext.join('\n\n'), '</hook-context>'].join('\n')
+            opts.recordConsumedSteering?.(
+              [
+                {
+                  id: randomUUID(),
+                  role: 'user',
+                  parts: [
+                    { type: 'text', text },
+                    { type: 'data-contextInjection', data: { sections: ['hooks'] } }
+                  ]
+                }
+              ],
+              stepNumber
+            )
+            transcript = [...transcript, { role: 'user', content: text }]
+            rebasedBase = transcript
+            responseCountAtRebase = (responseMessages as ModelMessage[]).length
+          }
+
+          const transcriptTokens = estimateModelMessagesTokens(transcript)
+          const transcriptGrowth = Math.max(transcriptTokens - lastPreparedTranscriptTokens, 0)
+          const projectedTokens =
+            lastStepInputTokens > 0
+              ? lastStepInputTokens + Math.max(lastStepOutputTokens, transcriptGrowth)
+              : transcriptTokens
+
+          if (
+            deps.contextEngine &&
+            compactionPolicy &&
+            shouldCompactInline(projectedTokens) &&
+            inlineCompaction
+          ) {
+            if (projectedTokens > compactionPolicy.hardCeilingTokens) {
+              throw new ContextHardCeilingError(projectedTokens, compactionPolicy.hardCeilingTokens)
+            }
+          } else if (
+            deps.contextEngine &&
+            compactionPolicy &&
+            shouldCompactInline(projectedTokens)
+          ) {
+            const nonTranscriptTokens = Math.max(projectedTokens - transcriptTokens, 0)
+            const transcriptCeiling = Math.max(
+              compactionPolicy.hardCeilingTokens - nonTranscriptTokens,
+              0
+            )
+            const effectivePolicy = {
+              ...compactionPolicy,
+              retainBudgetTokens: Math.min(compactionPolicy.retainBudgetTokens, transcriptCeiling),
+              hardCeilingTokens: transcriptCeiling
+            }
             try {
               const compacted = await compactModelTranscript(
                 {
@@ -408,7 +502,7 @@ export function startAgentStream(
                   runId: opts.runId,
                   transcript,
                   prompt: compactionPrompt(opts.def),
-                  policy: compactionPolicy,
+                  policy: effectivePolicy,
                   tools,
                   abortSignal: opts.signal,
                   onSummary: (summary) => {
@@ -432,9 +526,24 @@ export function startAgentStream(
                 responseCountAtRebase = (responseMessages as ModelMessage[]).length
 
                 lastStepInputTokens = 0
+                lastStepOutputTokens = 0
+                let baseMessageIds: string[] = []
+                try {
+                  baseMessageIds = await coveredBaseMessageIds({
+                    messages: opts.messages,
+                    initialMessages,
+                    coveredModelMessageCount: compacted.coveredModelMessageCount,
+                    tools
+                  })
+                } catch (error) {
+                  deps.logger?.warn('inline compaction coverage projection failed', {
+                    chatId: opts.chatId,
+                    error
+                  })
+                }
                 inlineCompaction = {
                   summaryText: compacted.summaryText,
-                  baseMessageIds: opts.messages.map((message) => message.id),
+                  baseMessageIds,
                   ...(compacted.usage ? { usage: compacted.usage } : {}),
                   ...(compacted.degraded ? { degraded: compacted.degraded } : {})
                 }
@@ -457,14 +566,28 @@ export function startAgentStream(
                   )
                 }
               }
+              if (!compacted && projectedTokens > compactionPolicy.hardCeilingTokens) {
+                throw new ContextHardCeilingError(
+                  projectedTokens,
+                  compactionPolicy.hardCeilingTokens
+                )
+              }
             } catch (error) {
               if (opts.signal.aborted) throw error
+              if (
+                error instanceof ContextHardCeilingError ||
+                projectedTokens > compactionPolicy.hardCeilingTokens
+              ) {
+                throw error
+              }
               deps.logger?.warn('in-stream compaction failed; continuing uncompacted', {
                 chatId: opts.chatId,
                 error
               })
             }
           }
+
+          lastPreparedTranscriptTokens = estimateModelMessagesTokens(transcript)
 
           const built = await deps.contextEngine?.build(
             opts.def,
@@ -501,6 +624,7 @@ export function startAgentStream(
         onStepEnd: async (step) => {
           latestUsage = step.usage
           lastStepInputTokens = step.usage?.inputTokens ?? 0
+          lastStepOutputTokens = step.usage?.outputTokens ?? 0
           lastFinishReason = step.finishReason
           stepCounter += 1
           deps.contextEngine?.observeStep(opts.chatId, step.usage)

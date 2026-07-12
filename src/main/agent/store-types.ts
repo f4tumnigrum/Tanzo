@@ -63,7 +63,8 @@ export interface AgentStore {
     archivedIds: string[],
     summaryId: string,
     next: TanzoUIMessage[],
-    expectedActiveIds?: string[]
+    expectedActive?: string[] | TanzoUIMessage[],
+    archivedMessages?: TanzoUIMessage[]
   ): void
   load(chatId: string): Promise<TanzoUIMessage[]>
   loadFullHistory(chatId: string): Promise<TanzoUIMessage[]>

@@ -5,6 +5,7 @@ interface ToolCallPart {
   toolCallId: string
   toolName: string
   input?: unknown
+  providerExecuted?: boolean
 }
 
 interface ToolResultPart {
@@ -48,6 +49,20 @@ function toolCallIds(message: ModelMessage): Set<string> {
   if (message.role !== 'assistant' || !Array.isArray(message.content)) return ids
   for (const part of message.content) {
     if ((part as { type?: string }).type === 'tool-call') {
+      ids.add((part as ToolCallPart).toolCallId)
+    }
+  }
+  return ids
+}
+
+function providerExecutedCallIds(message: ModelMessage): Set<string> {
+  const ids = new Set<string>()
+  if (message.role !== 'assistant' || !Array.isArray(message.content)) return ids
+  for (const part of message.content) {
+    if (
+      (part as { type?: string }).type === 'tool-call' &&
+      (part as ToolCallPart).providerExecuted === true
+    ) {
       ids.add((part as ToolCallPart).toolCallId)
     }
   }
@@ -127,11 +142,12 @@ function filterToolContent(
 
 function resolvedCallIdsForBlock(
   calls: Set<string>,
+  providerExecutedCalls: Set<string>,
   resultCallIds: Set<string>,
   respondedCallIds: Set<string>,
   isFinalToolBlock: boolean
 ): Set<string> {
-  const valid = new Set<string>()
+  const valid = new Set(providerExecutedCalls)
   for (const callId of calls) {
     if (resultCallIds.has(callId) || (isFinalToolBlock && respondedCallIds.has(callId))) {
       valid.add(callId)
@@ -159,6 +175,7 @@ function ensureToolPairing(messages: ModelMessage[]): ModelMessage[] {
       )
       const validCallIds = resolvedCallIdsForBlock(
         calls,
+        providerExecutedCallIds(message),
         resultCallIds,
         respondedCallIds,
         blockEnd === messages.length
@@ -225,20 +242,34 @@ function toolPartOrder(
 
 function canonicalizeToolContent(messages: ModelMessage[]): ModelMessage[] {
   const order = collectToolOrder(messages)
-  return messages.map((message) => {
-    if (message.role !== 'tool' || !Array.isArray(message.content)) return message
-    const content = message.content
+  const out: ModelMessage[] = []
+  for (let i = 0; i < messages.length; i += 1) {
+    const message = messages[i]
+    if (message.role !== 'tool' || !Array.isArray(message.content)) {
+      out.push(message)
+      continue
+    }
+
+    const end = toolBlockEnd(messages, i)
+    const parts: unknown[] = []
+    for (let j = i; j < end; j += 1) {
+      const tool = messages[j]
+      if (tool.role === 'tool' && Array.isArray(tool.content)) parts.push(...tool.content)
+    }
+    const content = parts
       .map((part, index) => ({ part, order: toolPartOrder(part, order, index) }))
       .sort((a, b) => {
-        for (let i = 0; i < a.order.length; i += 1) {
-          const diff = a.order[i] - b.order[i]
+        for (let j = 0; j < a.order.length; j += 1) {
+          const diff = a.order[j] - b.order[j]
           if (diff !== 0) return diff
         }
         return 0
       })
       .map(({ part }) => part)
-    return { ...message, content } as ModelMessage
-  })
+    out.push({ ...message, content } as ModelMessage)
+    i = end - 1
+  }
+  return out
 }
 
 export function canonicalizeToolTranscript(messages: ModelMessage[]): ModelMessage[] {

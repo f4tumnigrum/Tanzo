@@ -10,7 +10,12 @@ import {
 } from './capabilities'
 import { assembleContext, renderSections, type RenderedSection } from './compile'
 import { renderContextInjection, renderedSectionIds } from './injection'
-import { measureTranscript, type TranscriptMeasure } from './ledger'
+import {
+  estimateModelMessagesTokens,
+  estimateTextTokens,
+  measureTranscript,
+  type TranscriptMeasure
+} from './ledger'
 import { projectHistory } from './project'
 import { createSectionRegistry, type SectionDeps } from './registry'
 import { computeCompactionPolicy, type CompactionPolicy } from './compact/policy'
@@ -162,13 +167,24 @@ export function createContextEngine(deps: ContextEngineDeps): ContextEngine {
   }
 
   function measure(
-    _def: AgentDefinition,
-    _chatId: string,
+    def: AgentDefinition,
+    chatId: string,
     messages: TanzoUIMessage[]
   ): TranscriptMeasure {
-    void _def
-    void _chatId
-    return measureTranscript(messages)
+    const transcript = measureTranscript(messages)
+    if (transcript.source === 'reported') return transcript
+
+    const cached = sectionSnapshots.get(chatId)
+    const fixedPromptTokens = cached
+      ? (() => {
+          const plan = assembleContext(cached.rendered, [])
+          return estimateModelMessagesTokens([...plan.system, ...plan.leadingUser])
+        })()
+      : estimateTextTokens(def.systemPrompt)
+    return {
+      totalTokens: transcript.totalTokens + fixedPromptTokens,
+      source: 'estimated'
+    }
   }
 
   function compactionPolicy(def: AgentDefinition): CompactionPolicy {

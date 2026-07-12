@@ -3,7 +3,7 @@ import type { TanzoUsageMetadata } from '@shared/agent-message'
 import type { AgentDefinition } from '../../agents/types'
 import type { ContextEngine } from '../index'
 import type { AgentRuntimeDeps, Logger } from '../../runtime/types'
-import { estimateModelMessagesTokens, estimateTextTokens } from '../ledger'
+import { estimateModelMessagesTokens } from '../ledger'
 import { splitModelTranscript } from './cut'
 import { degradeTranscript } from './degrade'
 import { runSummarizeFork } from './summarize'
@@ -33,12 +33,39 @@ export interface InlineCompactionResult {
   transcript: ModelMessage[]
   summaryText: string
   afterTokensEstimate: number
+  coveredModelMessageCount: number
   usage?: TanzoUsageMetadata
   degraded?: 'prune' | 'drop-oldest'
 }
 
+export class ContextHardCeilingError extends Error {
+  constructor(actualTokens: number, hardCeilingTokens: number) {
+    super(
+      `Compaction could not fit the live transcript within the context ceiling ` +
+        `(${actualTokens} > ${hardCeilingTokens} estimated tokens).`
+    )
+    this.name = 'ContextHardCeilingError'
+  }
+}
+
 function summaryModelMessage(text: string): ModelMessage {
   return { role: 'assistant', content: [{ type: 'text', text }] }
+}
+
+function requireFit(messages: ModelMessage[], hardCeilingTokens: number): number {
+  const tokens = estimateModelMessagesTokens(messages)
+  if (tokens > hardCeilingTokens) {
+    throw new ContextHardCeilingError(tokens, hardCeilingTokens)
+  }
+  return tokens
+}
+
+function degradedSummary(summaryText: string): string {
+  return (
+    `${summaryText}\n\n` +
+    'Additional older conversation content was mechanically elided to fit the context window. ' +
+    'Re-read files and re-run searches to recover details you still need.'
+  )
 }
 
 export async function compactModelTranscript(
@@ -69,12 +96,27 @@ export async function compactModelTranscript(
       )
       const summaryText = stripAnalysis(fork.text)
       if (summaryText) {
-        const transcript = [summaryModelMessage(summaryText), ...split.tail]
+        let transcript = [summaryModelMessage(summaryText), ...split.tail]
+        let degraded: InlineCompactionResult['degraded']
+        if (estimateModelMessagesTokens(transcript) > input.policy.hardCeilingTokens) {
+          const fallbackText = degradedSummary(summaryText)
+          const fallback = degradeTranscript(
+            [summaryModelMessage(fallbackText), ...split.tail],
+            input.policy.hardCeilingTokens
+          )
+          if (!fallback) {
+            requireFit(transcript, input.policy.hardCeilingTokens)
+          }
+          transcript = fallback!.messages
+          degraded = fallback!.level
+        }
+        const afterTokensEstimate = requireFit(transcript, input.policy.hardCeilingTokens)
         return {
           transcript,
-          summaryText,
-          afterTokensEstimate:
-            estimateTextTokens(summaryText) + estimateModelMessagesTokens(split.tail),
+          summaryText: degraded ? degradedSummary(summaryText) : summaryText,
+          afterTokensEstimate,
+          coveredModelMessageCount: degraded ? 0 : split.head.length,
+          ...(degraded ? { degraded } : {}),
           ...(fork.usage ? { usage: fork.usage } : {})
         }
       }
@@ -90,16 +132,24 @@ export async function compactModelTranscript(
     }
   }
 
-  const degraded = degradeTranscript(input.transcript, input.policy.hardCeilingTokens)
-  if (!degraded) return null
   const summaryText =
     'Older conversation content was mechanically elided to fit the context window. ' +
     'Re-read files and re-run searches to recover details you still need.'
-  const transcript = [summaryModelMessage(summaryText), ...degraded.messages]
+  const degraded = degradeTranscript(
+    [summaryModelMessage(summaryText), ...input.transcript],
+    input.policy.hardCeilingTokens
+  )
+  if (!degraded) {
+    const tokens = estimateModelMessagesTokens(input.transcript)
+    if (tokens <= input.policy.hardCeilingTokens) return null
+    throw new ContextHardCeilingError(tokens, input.policy.hardCeilingTokens)
+  }
+  const transcript = degraded.messages
   return {
     transcript,
     summaryText,
-    afterTokensEstimate: estimateModelMessagesTokens(transcript),
+    afterTokensEstimate: requireFit(transcript, input.policy.hardCeilingTokens),
+    coveredModelMessageCount: 0,
     degraded: degraded.level
   }
 }

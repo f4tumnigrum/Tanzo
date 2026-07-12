@@ -32,7 +32,13 @@ describe('agent/subagent/task-service', () => {
       startChatRun?: ReturnType<typeof vi.fn>
       load?: ReturnType<typeof vi.fn>
       save?: ReturnType<typeof vi.fn>
+      clearMessages?: ReturnType<typeof vi.fn>
       hasAdvancedSince?: ReturnType<typeof vi.fn>
+      currentRunEpoch?: ReturnType<typeof vi.fn>
+      compaction?: {
+        prepareMessages: ReturnType<typeof vi.fn>
+        reconcileInline?: ReturnType<typeof vi.fn>
+      }
       limits?: { global?: number; perRoot?: number }
     } = {}
   ): {
@@ -54,7 +60,7 @@ describe('agent/subagent/task-service', () => {
     const callbacks = {
       abortRun: vi.fn(),
       clearTransientChatState: vi.fn(),
-      currentRunEpoch: vi.fn(() => 0),
+      currentRunEpoch: overrides.currentRunEpoch ?? vi.fn(() => 0),
       hasAdvancedSince: overrides.hasAdvancedSince ?? vi.fn(() => false),
       isInflight: vi.fn(() => false),
       // Hang forever: the task stays 'running' until cancelled.
@@ -68,6 +74,7 @@ describe('agent/subagent/task-service', () => {
           getConversation: vi.fn(() => ({ id: 'root-chat' })),
           createConversation: vi.fn(() => ({ id: `child-${++childSeq}` })),
           save: overrides.save ?? vi.fn(),
+          clearMessages: overrides.clearMessages ?? vi.fn(),
           load: overrides.load ?? vi.fn(async () => []),
           depthOf: vi.fn(() => 1),
           resolveAgentDefinition: vi.fn(async () => ({
@@ -104,7 +111,9 @@ describe('agent/subagent/task-service', () => {
         policy: {}
       } as never,
       {
-        compaction: { prepareMessages: vi.fn(async () => []) } as never,
+        compaction:
+          overrides.compaction ??
+          ({ prepareMessages: vi.fn(async (_chatId, _def, messages) => messages) } as never),
         policy: { remember: policyRemember } as never
       },
       callbacks,
@@ -338,6 +347,310 @@ describe('agent/subagent/task-service', () => {
       expect(tasks.get(spawned.id)?.status).toBe('done')
     })
     expect(tasks.get(spawned.id)?.result?.summary).toBe('verified: all green')
+  })
+
+  it('keeps driving after a no-op inline reconcile advances the internal run epoch', async () => {
+    const approvalMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'objective' }] },
+      {
+        id: 'a1',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-shell',
+            toolCallId: 'call-1',
+            state: 'approval-requested',
+            input: { cmd: 'pnpm test' },
+            approval: { id: 'approval-1' }
+          }
+        ]
+      }
+    ]
+    let transcript: unknown[] = []
+    let epoch = 0
+    let streamPasses = 0
+    const load = vi.fn(async () => transcript)
+    const save = vi.fn((_chatId: string, messages: unknown[]) => {
+      transcript = messages
+    })
+    const startChatRun = vi.fn(async (opts: { onStart?: (token: { epoch: number }) => void }) => {
+      epoch += 1
+      opts.onStart?.({ epoch })
+      streamPasses += 1
+      transcript =
+        streamPasses === 1
+          ? approvalMessages
+          : [
+              approvalMessages[0],
+              { id: 'a2', role: 'assistant', parts: [{ type: 'text', text: 'finished' }] }
+            ]
+      return streamPasses === 1
+        ? {
+            aborted: false,
+            streamFailed: false,
+            inlineCompaction: { summaryText: 'summary', baseMessageIds: ['u1'] }
+          }
+        : { aborted: false, streamFailed: false }
+    })
+    const reconcileInline = vi.fn(async () => {
+      // The real compaction lifecycle owns one run epoch even when planning
+      // decides there is nothing to persist.
+      epoch += 1
+      return false
+    })
+    const { service, tasks } = createHarness({
+      startChatRun,
+      load,
+      save,
+      currentRunEpoch: vi.fn(() => epoch),
+      hasAdvancedSince: vi.fn((_chatId: string, observed: number) => epoch !== observed),
+      compaction: {
+        prepareMessages: vi.fn(async (_chatId, _def, messages) => messages),
+        reconcileInline
+      }
+    })
+
+    const spawned = service.spawn({
+      parentChatId: 'root-chat',
+      objective: 'verify the change',
+      agentType: 'explore'
+    })
+    await vi.waitFor(() => expect(tasks.get(spawned.id)?.status).toBe('blocked'))
+
+    await service.respondApproval('root-chat', {
+      approvalId: 'approval-1',
+      approved: true
+    })
+
+    await vi.waitFor(() => expect(tasks.get(spawned.id)?.status).toBe('done'))
+    expect(reconcileInline).toHaveBeenCalledTimes(1)
+    expect(streamPasses).toBe(2)
+  })
+
+  it('persists an instruction, clears stale transient state, and restarts one active driver', async () => {
+    const transcript: Array<{ id: string; role: string; parts: unknown[] }> = []
+    const save = vi.fn((_chatId: string, messages: typeof transcript) => {
+      for (const message of messages) {
+        const index = transcript.findIndex((candidate) => candidate.id === message.id)
+        if (index === -1) transcript.push(message)
+        else transcript[index] = message
+      }
+    })
+    const load = vi.fn(async () => transcript)
+    let streamPasses = 0
+    const startChatRun = vi.fn((opts: { signal: AbortSignal; messages: typeof transcript }) => {
+      streamPasses += 1
+      if (streamPasses === 1) {
+        return new Promise<{ aborted: boolean; streamFailed: boolean }>((resolve) => {
+          opts.signal.addEventListener(
+            'abort',
+            () => resolve({ aborted: true, streamFailed: false }),
+            { once: true }
+          )
+        })
+      }
+      expect(
+        opts.messages.some(
+          (message) =>
+            message.role === 'user' &&
+            (message.parts[0] as { text?: string } | undefined)?.text === 'also inspect retries'
+        )
+      ).toBe(true)
+      transcript.push({
+        id: 'answer',
+        role: 'assistant',
+        parts: [{ type: 'text', text: 'redirected result' }]
+      })
+      return Promise.resolve({ aborted: false, streamFailed: false })
+    })
+    const { service, tasks, callbacks } = createHarness({ startChatRun, load, save })
+    const spawned = service.spawn({
+      parentChatId: 'root-chat',
+      objective: 'inspect',
+      agentType: 'explore'
+    })
+    await vi.waitFor(() => expect(startChatRun).toHaveBeenCalledTimes(1))
+
+    await expect(
+      service.instruct('root-chat', spawned.id, 'also inspect retries')
+    ).resolves.toEqual({ ok: true })
+
+    await vi.waitFor(() => expect(tasks.get(spawned.id)?.status).toBe('done'))
+    expect(startChatRun).toHaveBeenCalledTimes(2)
+    expect(callbacks.clearTransientChatState).toHaveBeenCalledWith(spawned.chatId)
+    expect(tasks.get(spawned.id)?.result?.summary).toBe('redirected result')
+  })
+
+  it('redirects an approval-blocked task without leaving its old waiter or driver behind', async () => {
+    let transcript: unknown[] = []
+    const load = vi.fn(async () => transcript)
+    const save = vi.fn((_chatId: string, messages: unknown[]) => {
+      transcript = messages
+    })
+    let streamPasses = 0
+    const startChatRun = vi.fn(async (opts: { messages: unknown[] }) => {
+      streamPasses += 1
+      if (streamPasses === 1) {
+        transcript = [
+          { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'objective' }] },
+          {
+            id: 'a1',
+            role: 'assistant',
+            parts: [
+              {
+                type: 'tool-shell',
+                toolCallId: 'call-1',
+                state: 'approval-requested',
+                input: { cmd: 'pnpm test' },
+                approval: { id: 'approval-old' }
+              }
+            ]
+          }
+        ]
+        return { aborted: false, streamFailed: false }
+      }
+      expect(JSON.stringify(opts.messages)).toContain('use read-only checks instead')
+      transcript = [
+        ...transcript,
+        { id: 'a2', role: 'assistant', parts: [{ type: 'text', text: 'redirected safely' }] }
+      ]
+      return { aborted: false, streamFailed: false }
+    })
+    const { service, tasks } = createHarness({ startChatRun, load, save })
+    const spawned = service.spawn({
+      parentChatId: 'root-chat',
+      objective: 'inspect',
+      agentType: 'explore'
+    })
+    await vi.waitFor(() => expect(tasks.get(spawned.id)?.status).toBe('blocked'))
+
+    await expect(
+      service.instruct('root-chat', spawned.id, 'use read-only checks instead')
+    ).resolves.toEqual({ ok: true })
+
+    await vi.waitFor(() => expect(tasks.get(spawned.id)?.status).toBe('done'))
+    expect(service.listApprovals('root-chat')).toEqual([])
+    expect(
+      (transcript[1] as { parts: Array<{ state?: string; approval?: { approved?: boolean } }> })
+        .parts[0].approval
+    ).toMatchObject({ approved: false })
+    await expect(
+      service.respondApproval('root-chat', { approvalId: 'approval-old', approved: true })
+    ).resolves.toBeUndefined()
+    expect(streamPasses).toBe(2)
+  })
+
+  it('serializes concurrent redirects so only one replacement driver owns the task', async () => {
+    const transcript: Array<{ id: string; role: string; parts: unknown[] }> = []
+    const save = vi.fn((_chatId: string, messages: typeof transcript) => {
+      for (const message of messages) {
+        const index = transcript.findIndex((candidate) => candidate.id === message.id)
+        if (index === -1) transcript.push(message)
+        else transcript[index] = message
+      }
+    })
+    const load = vi.fn(async () => transcript)
+    let activeStreams = 0
+    let peakStreams = 0
+    const finalResolvers: Array<() => void> = []
+    const startChatRun = vi.fn((opts: { signal: AbortSignal; messages: typeof transcript }) => {
+      activeStreams += 1
+      peakStreams = Math.max(peakStreams, activeStreams)
+      const text = JSON.stringify(opts.messages)
+      const hasBoth = text.includes('first redirect') && text.includes('second redirect')
+      return new Promise<{ aborted: boolean; streamFailed: boolean }>((resolve) => {
+        const finish = (aborted: boolean): void => {
+          activeStreams -= 1
+          if (!aborted) {
+            transcript.push({
+              id: 'answer',
+              role: 'assistant',
+              parts: [{ type: 'text', text: 'both redirects applied' }]
+            })
+          }
+          resolve({ aborted, streamFailed: false })
+        }
+        if (opts.signal.aborted) finish(true)
+        else if (hasBoth) finalResolvers.push(() => finish(false))
+        else opts.signal.addEventListener('abort', () => finish(true), { once: true })
+      })
+    })
+    const { service, tasks } = createHarness({ startChatRun, load, save })
+    const spawned = service.spawn({
+      parentChatId: 'root-chat',
+      objective: 'inspect',
+      agentType: 'explore'
+    })
+    await vi.waitFor(() => expect(startChatRun).toHaveBeenCalledTimes(1))
+
+    const outcomes = await Promise.all([
+      service.instruct('root-chat', spawned.id, 'first redirect'),
+      service.instruct('root-chat', spawned.id, 'second redirect')
+    ])
+
+    await vi.waitFor(() => expect(finalResolvers).toHaveLength(1))
+    expect(outcomes).toEqual([{ ok: true }, { ok: true }])
+    expect(peakStreams).toBe(1)
+    finalResolvers[0]()
+    await vi.waitFor(() => expect(tasks.get(spawned.id)?.status).toBe('done'))
+    expect(tasks.get(spawned.id)?.result?.summary).toBe('both redirects applied')
+  })
+
+  it('redefine clears persisted executor history before restarting from the new objective', async () => {
+    let transcript: Array<{ id: string; role: string; parts: unknown[] }> = []
+    const save = vi.fn((_chatId: string, messages: typeof transcript) => {
+      for (const message of messages) {
+        const index = transcript.findIndex((candidate) => candidate.id === message.id)
+        if (index === -1) transcript.push(message)
+        else transcript[index] = message
+      }
+    })
+    const clearMessages = vi.fn(() => {
+      transcript = []
+    })
+    const load = vi.fn(async () => transcript)
+    let streamPasses = 0
+    const startChatRun = vi.fn((opts: { signal: AbortSignal; messages: typeof transcript }) => {
+      streamPasses += 1
+      if (streamPasses === 1) {
+        return new Promise<{ aborted: boolean; streamFailed: boolean }>((resolve) => {
+          opts.signal.addEventListener(
+            'abort',
+            () => resolve({ aborted: true, streamFailed: false }),
+            { once: true }
+          )
+        })
+      }
+      expect(opts.messages).toHaveLength(1)
+      expect((opts.messages[0].parts[0] as { text?: string }).text).toBe('replacement objective')
+      transcript.push({
+        id: 'answer',
+        role: 'assistant',
+        parts: [{ type: 'text', text: 'replacement result' }]
+      })
+      return Promise.resolve({ aborted: false, streamFailed: false })
+    })
+    const { service, tasks } = createHarness({
+      startChatRun,
+      load,
+      save,
+      clearMessages
+    })
+    const spawned = service.spawn({
+      parentChatId: 'root-chat',
+      objective: 'obsolete objective',
+      agentType: 'explore'
+    })
+    await vi.waitFor(() => expect(startChatRun).toHaveBeenCalledTimes(1))
+
+    await expect(
+      service.redefine('root-chat', spawned.id, 'replacement objective')
+    ).resolves.toEqual({ ok: true })
+
+    await vi.waitFor(() => expect(tasks.get(spawned.id)?.status).toBe('done'))
+    expect(clearMessages).toHaveBeenCalledWith(spawned.chatId)
+    expect(tasks.get(spawned.id)?.objective).toBe('replacement objective')
+    expect(tasks.get(spawned.id)?.result?.summary).toBe('replacement result')
   })
 
   it('respects the per-root concurrency cap and starts queued work as slots free up', async () => {

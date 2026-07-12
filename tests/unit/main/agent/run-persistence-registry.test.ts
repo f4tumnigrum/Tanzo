@@ -58,6 +58,57 @@ describe('agent/runtime/run-persistence-registry', () => {
     expect(saved.at(-1)).toEqual([storeUser, assistant])
   })
 
+  it('publishes snapshots from the active view instead of archived store history', async () => {
+    const archived: TanzoUIMessage = {
+      id: 'archived-1',
+      role: 'user',
+      parts: [{ type: 'text', text: 'archived detail' }]
+    }
+    const summary: TanzoUIMessage = {
+      id: 'summary-1',
+      role: 'assistant',
+      parts: [{ type: 'text', text: 'compact summary' }]
+    }
+    const tail: TanzoUIMessage = {
+      id: 'user-2',
+      role: 'user',
+      parts: [{ type: 'text', text: 'active request' }]
+    }
+    const assistant: TanzoUIMessage = {
+      id: 'assistant-1',
+      role: 'assistant',
+      parts: [{ type: 'text', text: 'answer' }]
+    }
+    let stored = [archived, tail]
+    const contextEngine = {
+      snapshot: vi.fn(() => ({ usedTokens: 1 }))
+    }
+    const registry = createChatRunPersistenceRegistry()
+
+    registry.start('chat-1', 'run-1', [summary, tail], {
+      def: {} as never,
+      broadcast: true,
+      canPersist: () => true,
+      store: {
+        loadUnvalidated: () => structuredClone(stored),
+        save: (_chatId, messages) => {
+          stored = structuredClone(messages)
+        }
+      },
+      send: vi.fn(),
+      contextEngine
+    })
+
+    await registry.persistStepMessages('chat-1', 'run-1', [summary, tail, assistant])
+
+    expect(contextEngine.snapshot).toHaveBeenCalledWith(expect.anything(), 'chat-1', [
+      summary,
+      tail,
+      assistant
+    ])
+    expect(contextEngine.snapshot.mock.calls[0]?.[2]).not.toContainEqual(archived)
+  })
+
   it('persists continuation updates to the trailing assistant message after approval', async () => {
     const approvedAssistant: TanzoUIMessage = {
       id: 'assistant-1',

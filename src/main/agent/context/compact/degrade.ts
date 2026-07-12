@@ -38,5 +38,7 @@ export function degradeTranscript(
   while (tail.length > 1 && estimateModelMessagesTokens([...head, ...tail]) > hardCeilingTokens) {
     tail = stripLeadingTool(tail.slice(1))
   }
-  return { messages: [...head, ...tail], level: 'drop-oldest' }
+  const degraded = [...head, ...tail]
+  if (estimateModelMessagesTokens(degraded) > hardCeilingTokens) return null
+  return { messages: degraded, level: 'drop-oldest' }
 }

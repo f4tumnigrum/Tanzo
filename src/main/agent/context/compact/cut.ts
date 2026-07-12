@@ -27,7 +27,7 @@ interface Unit {
 
 function partTokens(part: Part): number {
   const type = (part as { type?: string }).type
-  if (type === 'step-start') return 0
+  if (type === 'step-start' || type?.startsWith('data-')) return 0
   const text = (part as { text?: unknown }).text
   if (typeof text === 'string') return estimateTextTokens(text)
   try {

@@ -13,6 +13,7 @@ interface StoredMessageRow {
   seq: number
   message_json: string
   created_at: number
+  projected_at: number
 }
 
 interface ChatMirrorState {
@@ -40,8 +41,11 @@ interface CompactionOverlayRow {
   covers_to_seq: number
   summary_text: string
   usage_json: string | null
+  data_json: string | null
   created_at: number
 }
+
+type ExpectedActiveContext = string[] | TanzoUIMessage[]
 
 export interface MessageRepo {
   deleteAll(chatId: string): void
@@ -53,7 +57,8 @@ export interface MessageRepo {
     archivedIds: string[],
     summaryId: string,
     next: TanzoUIMessage[],
-    expectedActiveIds?: string[]
+    expectedActive?: ExpectedActiveContext,
+    archivedMessages?: TanzoUIMessage[]
   ): void
 
   load(chatId: string): Promise<TanzoUIMessage[]>
@@ -69,13 +74,15 @@ export interface MessageRepo {
 
 export function createMessageRepo(db: SqlDatabase, logger: Logger): MessageRepo {
   const deleteMessages = db.prepare('DELETE FROM messages WHERE conversation_id = ?')
+  const deleteOverlays = db.prepare('DELETE FROM compaction_overlays WHERE conversation_id = ?')
   const deleteMessageById = db.prepare('DELETE FROM messages WHERE conversation_id = ? AND id = ?')
   const logProjectionSql = `
     SELECT
       m.id,
       m.seq,
       COALESCE(r.message_json, m.message_json) AS message_json,
-      m.created_at
+      m.created_at,
+      COALESCE(r.created_at, m.created_at) AS projected_at
     FROM messages m
     LEFT JOIN message_revisions r
       ON r.conversation_id = m.conversation_id
@@ -97,26 +104,32 @@ export function createMessageRepo(db: SqlDatabase, logger: Logger): MessageRepo 
     'SELECT id, seq FROM messages WHERE conversation_id = ? AND id IN (SELECT value FROM json_each(?))'
   )
   const selectOverlays = db.prepare(
-    'SELECT id, generation, covers_from_seq, covers_to_seq, summary_text, usage_json, created_at FROM compaction_overlays WHERE conversation_id = ? ORDER BY covers_to_seq, generation'
+    'SELECT id, generation, covers_from_seq, covers_to_seq, summary_text, usage_json, data_json, created_at FROM compaction_overlays WHERE conversation_id = ? ORDER BY covers_to_seq, generation'
   )
   const selectLatestOverlay = db.prepare(
-    'SELECT id, generation, covers_from_seq, covers_to_seq, summary_text, usage_json, created_at FROM compaction_overlays WHERE conversation_id = ? ORDER BY generation DESC LIMIT 1'
+    'SELECT id, generation, covers_from_seq, covers_to_seq, summary_text, usage_json, data_json, created_at FROM compaction_overlays WHERE conversation_id = ? ORDER BY generation DESC LIMIT 1'
   )
   const selectOverlayById = db.prepare(
-    'SELECT id, generation, covers_from_seq, covers_to_seq, summary_text, usage_json, created_at FROM compaction_overlays WHERE conversation_id = ? AND id = ?'
+    'SELECT id, generation, covers_from_seq, covers_to_seq, summary_text, usage_json, data_json, created_at FROM compaction_overlays WHERE conversation_id = ? AND id = ?'
   )
   const selectMaxGeneration = db.prepare(
     'SELECT COALESCE(MAX(generation), 0) AS generation FROM compaction_overlays WHERE conversation_id = ?'
   )
   const insertOverlay = db.prepare(`
     INSERT INTO compaction_overlays (
-      conversation_id, id, generation, covers_from_seq, covers_to_seq, summary_text, usage_json, created_at
+      conversation_id, id, generation, covers_from_seq, covers_to_seq, summary_text, usage_json, data_json, created_at
     ) VALUES (
-      @conversation_id, @id, @generation, @covers_from_seq, @covers_to_seq, @summary_text, @usage_json, @created_at
+      @conversation_id, @id, @generation, @covers_from_seq, @covers_to_seq, @summary_text, @usage_json, @data_json, @created_at
     )
   `)
   const selectMaxSeq = db.prepare(
     'SELECT COALESCE(MAX(seq), -1) AS seq FROM messages WHERE conversation_id = ?'
+  )
+  const selectRevisionHistory = db.prepare(
+    'SELECT message_json, created_at FROM message_revisions WHERE conversation_id = ? AND message_id = ? ORDER BY revision DESC'
+  )
+  const selectBaseMessage = db.prepare(
+    'SELECT message_json, created_at FROM messages WHERE conversation_id = ? AND id = ?'
   )
   const selectIdSeqs = db.prepare(
     'SELECT id, seq FROM messages WHERE conversation_id = ? ORDER BY seq'
@@ -125,6 +138,10 @@ export function createMessageRepo(db: SqlDatabase, logger: Logger): MessageRepo 
   const chatMirror = new Map<string, ChatMirrorState>()
 
   const validationCache = new Map<string, TanzoUIMessage>()
+  const revisionFallbackCache = new Map<string, { message: TanzoUIMessage; projectedAt: number }>()
+
+  const fallbackCacheKey = (chatId: string, row: StoredMessageRow): string =>
+    `${chatId}\u0000${row.id}\u0000${row.message_json}`
 
   function getOrHydrateMirror(chatId: string): ChatMirrorState {
     const cached = chatMirror.get(chatId)
@@ -229,6 +246,7 @@ export function createMessageRepo(db: SqlDatabase, logger: Logger): MessageRepo 
         reason: reason.slice(0, QUARANTINE_REASON_LIMIT),
         quarantined_at: Date.now()
       })
+      deleteOverlays.run([chatId])
       deleteMessageById.run([chatId, row.id])
     })
 
@@ -262,10 +280,36 @@ export function createMessageRepo(db: SqlDatabase, logger: Logger): MessageRepo 
     return validateOne({ ...(message as object), parts: keptParts })
   }
 
+  async function recoverPriorRevision(
+    chatId: string,
+    row: StoredMessageRow
+  ): Promise<{ message: TanzoUIMessage; projectedAt: number } | null> {
+    const revisions = selectRevisionHistory.all([chatId, row.id]) as Array<{
+      message_json: string
+      created_at: number
+    }>
+    const base = selectBaseMessage.get([chatId, row.id]) as
+      { message_json: string; created_at: number } | undefined
+    const candidates = base ? [...revisions, base] : revisions
+    for (const candidate of candidates) {
+      if (candidate.message_json === row.message_json) continue
+      const decoded = decodeMessage(candidate.message_json)
+      const message = (await validateOne(decoded)) ?? (await salvageMessage(decoded))
+      if (message) return { message, projectedAt: candidate.created_at }
+    }
+    return null
+  }
+
   async function validateRows(chatId: string, rows: StoredMessageRow[]): Promise<TanzoUIMessage[]> {
     const resolved = new Map<number, TanzoUIMessage>()
     const uncached: number[] = []
     for (let i = 0; i < rows.length; i += 1) {
+      const fallback = revisionFallbackCache.get(fallbackCacheKey(chatId, rows[i]))
+      if (fallback) {
+        rows[i].projected_at = fallback.projectedAt
+        resolved.set(i, fallback.message)
+        continue
+      }
       const hit = validationCache.get(rows[i].message_json)
       if (hit) resolved.set(i, hit)
       else uncached.push(i)
@@ -311,7 +355,15 @@ export function createMessageRepo(db: SqlDatabase, logger: Logger): MessageRepo 
         validationCache.set(row.message_json, salvaged)
         resolved.set(uncached[k], salvaged)
       } else {
-        quarantine(chatId, row, all.error)
+        const fallback = await recoverPriorRevision(chatId, row)
+        if (fallback) {
+          logger.warn('restored previous valid message revision', { chatId, id: row.id })
+          row.projected_at = fallback.projectedAt
+          revisionFallbackCache.set(fallbackCacheKey(chatId, row), fallback)
+          resolved.set(uncached[k], fallback.message)
+        } else {
+          quarantine(chatId, row, all.error)
+        }
       }
     }
 
@@ -334,14 +386,18 @@ export function createMessageRepo(db: SqlDatabase, logger: Logger): MessageRepo 
   }
 
   function summaryMessageFromOverlay(overlay: CompactionOverlayRow): TanzoUIMessage {
-    const usage = overlay.usage_json
+    const persisted = overlay.data_json
+      ? (JSON.parse(overlay.data_json) as TanzoDataParts['compaction'])
+      : undefined
+    const legacyUsage = overlay.usage_json
       ? (JSON.parse(overlay.usage_json) as TanzoDataParts['compaction']['usage'])
       : undefined
     const data: TanzoDataParts['compaction'] = {
+      ...(persisted ?? {}),
       stage: 'complete',
       summary: overlay.summary_text,
       summaryId: overlay.id,
-      ...(usage ? { usage } : {})
+      ...(!persisted?.usage && legacyUsage ? { usage: legacyUsage } : {})
     }
     return {
       id: overlay.id,
@@ -353,26 +409,95 @@ export function createMessageRepo(db: SqlDatabase, logger: Logger): MessageRepo 
     } as TanzoUIMessage
   }
 
-  function currentContextIds(chatId: string): string[] {
-    const overlay = selectLatestOverlay.get([chatId]) as CompactionOverlayRow | undefined
-    if (!overlay) return (selectLog.all([chatId]) as StoredMessageRow[]).map((row) => row.id)
-    const tail = selectRowsAfterSeq.all([chatId, overlay.covers_to_seq]) as StoredMessageRow[]
-    return [overlay.id, ...tail.map((row) => row.id)]
+  function withoutStaleUsageAnchor(message: TanzoUIMessage): TanzoUIMessage {
+    const steps = message.metadata?.steps
+    if (!steps?.some((step) => step.usage)) return message
+    return {
+      ...message,
+      metadata: {
+        ...message.metadata,
+        steps: steps.map((step) => ({ ...step, usage: null }))
+      }
+    }
   }
 
-  function assertExpectedContext(chatId: string, expectedActiveIds?: string[]): void {
-    if (!expectedActiveIds) return
-    const currentIds = currentContextIds(chatId)
-    const matches =
-      currentIds.length === expectedActiveIds.length &&
-      currentIds.every((id, index) => id === expectedActiveIds[index])
+  function projectedMessage(row: StoredMessageRow, overlay: CompactionOverlayRow): TanzoUIMessage {
+    const message = decodeMessage(row.message_json) as TanzoUIMessage
+    return row.projected_at <= overlay.created_at ? withoutStaleUsageAnchor(message) : message
+  }
+
+  function currentContextMessages(chatId: string): TanzoUIMessage[] {
+    const overlay = selectLatestOverlay.get([chatId]) as CompactionOverlayRow | undefined
+    if (!overlay) {
+      return (selectLog.all([chatId]) as StoredMessageRow[]).map(
+        (row) => decodeMessage(row.message_json) as TanzoUIMessage
+      )
+    }
+    const tail = selectRowsAfterSeq.all([chatId, overlay.covers_to_seq]) as StoredMessageRow[]
+    return [
+      summaryMessageFromOverlay(overlay),
+      ...tail.map((row) => projectedMessage(row, overlay))
+    ]
+  }
+
+  function assertExpectedContext(chatId: string, expectedActive?: ExpectedActiveContext): void {
+    if (!expectedActive) return
+    const current = currentContextMessages(chatId)
+    const expectsIds = expectedActive.length === 0 || typeof expectedActive[0] === 'string'
+    const expectedMessages = expectsIds ? null : (expectedActive as TanzoUIMessage[])
+    const expectedIds = expectsIds
+      ? (expectedActive as string[])
+      : (expectedActive as TanzoUIMessage[]).map((message) => message.id)
+    const currentIds = current.map((message) => message.id)
+    const idsMatch =
+      currentIds.length === expectedIds.length &&
+      currentIds.every((id, index) => id === expectedIds[index])
+    const contentMatches =
+      expectedMessages === null ||
+      (current.length === expectedMessages.length &&
+        current.every(
+          (message, index) => encodeMessage(message) === encodeMessage(expectedMessages[index])
+        ))
+    const matches = idsMatch && contentMatches
     if (!matches) {
       throw new TanzoOperationError(
         'CHAT_COMPACTION_STALE',
         `Conversation "${chatId}" changed while compaction was running.`,
-        { recoverable: true, details: { chatId, expectedActiveIds, currentIds } }
+        { recoverable: true, details: { chatId, expectedIds, currentIds } }
       )
     }
+  }
+
+  function reorderActiveMessages(
+    chatId: string,
+    messages: TanzoUIMessage[],
+    mirror: ChatMirrorState
+  ): void {
+    if (messages.length < 2) return
+    const rows = selectIdSeqs.all([chatId]) as Array<IdRow & SeqRow>
+    const seqById = new Map(rows.map((row) => [row.id, row.seq]))
+    const overlay = selectLatestOverlay.get([chatId]) as CompactionOverlayRow | undefined
+    const desiredIds = messages
+      .map((message) => message.id)
+      .filter((id) => {
+        const seq = seqById.get(id)
+        return seq !== undefined && (!overlay || seq > overlay.covers_to_seq)
+      })
+    const desiredSet = new Set(desiredIds)
+    const actualIds = rows.filter((row) => desiredSet.has(row.id)).map((row) => row.id)
+    if (
+      actualIds.length === desiredIds.length &&
+      actualIds.every((id, index) => id === desiredIds[index])
+    ) {
+      return
+    }
+
+    let nextSeq = ((selectMaxSeq.get([chatId]) as SeqRow).seq ?? -1) + 1
+    for (const id of desiredIds) {
+      updateMessageSeq.run({ conversation_id: chatId, id, seq: nextSeq })
+      nextSeq += 1
+    }
+    mirror.nextSeq = nextSeq
   }
 
   function coverageFor(chatId: string, archivedIds: string[]): { from: number; to: number } | null {
@@ -393,6 +518,7 @@ export function createMessageRepo(db: SqlDatabase, logger: Logger): MessageRepo 
 
   return {
     deleteAll(chatId) {
+      deleteOverlays.run([chatId])
       deleteMessages.run([chatId])
       chatMirror.delete(chatId)
     },
@@ -423,6 +549,7 @@ export function createMessageRepo(db: SqlDatabase, logger: Logger): MessageRepo 
           covers_to_seq: Math.max(...(targetSeqs as number[])),
           summary_text: overlay.summary_text,
           usage_json: overlay.usage_json,
+          data_json: overlay.data_json,
           created_at: overlay.created_at
         })
       }
@@ -449,15 +576,16 @@ export function createMessageRepo(db: SqlDatabase, logger: Logger): MessageRepo 
               mirror.nextSeq += 1
             }
           }
+          reorderActiveMessages(chatId, next, mirror)
         })
       } catch (error) {
         chatMirror.delete(chatId)
         throw error
       }
     },
-    finalizeCompaction(chatId, archivedIds, summaryId, next, expectedActiveIds) {
+    finalizeCompaction(chatId, archivedIds, summaryId, next, expectedActive, archivedMessages) {
       db.transaction(() => {
-        assertExpectedContext(chatId, expectedActiveIds)
+        assertExpectedContext(chatId, expectedActive)
         const coverage = coverageFor(chatId, archivedIds)
         if (!coverage) return
         const summary = next.find((message) => message.id === summaryId)
@@ -472,20 +600,37 @@ export function createMessageRepo(db: SqlDatabase, logger: Logger): MessageRepo 
           summary_text:
             data?.summary ?? summary?.parts.find((part) => part.type === 'text')?.text ?? '',
           usage_json: data?.usage ? JSON.stringify(data.usage) : null,
+          data_json: data ? JSON.stringify(data) : null,
           created_at: Date.now()
         })
 
-        const existing = new Set(
-          (selectLog.all([chatId]) as StoredMessageRow[]).map((row) => row.id)
+        const existing = new Map(
+          (selectLog.all([chatId]) as StoredMessageRow[]).map((row) => [row.id, row.message_json])
         )
+        for (const message of archivedMessages ?? []) {
+          const stored = existing.get(message.id)
+          if (stored === undefined) continue
+          const json = encodeMessage(message)
+          if (stored === json) continue
+          recordRevision(chatId, message, json)
+          existing.set(message.id, json)
+        }
+
         let nextSeq = ((selectMaxSeq.get([chatId]) as SeqRow).seq ?? -1) + 1
         for (const message of validLogMessages(next)) {
-          if (existing.has(message.id)) {
+          const stored = existing.get(message.id)
+          if (stored !== undefined) {
+            const json = encodeMessage(message)
+            if (stored !== json) {
+              recordRevision(chatId, message, json)
+              existing.set(message.id, json)
+            }
             updateMessageSeq.run({ conversation_id: chatId, id: message.id, seq: nextSeq })
           } else {
             const json = encodeMessage(message)
             insertMessage.run(messageParams(chatId, message, nextSeq))
             recordRevision(chatId, message, json)
+            existing.set(message.id, json)
           }
           nextSeq += 1
         }
@@ -501,7 +646,15 @@ export function createMessageRepo(db: SqlDatabase, logger: Logger): MessageRepo 
       }
       const tailRows = selectRowsAfterSeq.all([chatId, overlay.covers_to_seq]) as StoredMessageRow[]
       const tail = tailRows.length > 0 ? await validateRows(chatId, tailRows) : []
-      return [summaryMessageFromOverlay(overlay), ...tail]
+      const rowById = new Map(tailRows.map((row) => [row.id, row]))
+      return [
+        summaryMessageFromOverlay(overlay),
+        ...tail.map((message) =>
+          (rowById.get(message.id)?.projected_at ?? Number.POSITIVE_INFINITY) <= overlay.created_at
+            ? withoutStaleUsageAnchor(message)
+            : message
+        )
+      ]
     },
     loadUnvalidated(chatId) {
       const rows = selectLog.all([chatId]) as StoredMessageRow[]

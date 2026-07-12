@@ -99,7 +99,7 @@ describe('runtime/compaction-coordinator reconcileInline', () => {
 
     const compacted = await coordinator.reconcileInline('chat-1', DEF, {
       summaryText: 'covers u1/a1 only',
-      baseMessageIds: base.map((message) => message.id)
+      baseMessageIds: ['u1', 'a1']
     })
 
     expect(compacted).toBe(true)
@@ -116,21 +116,72 @@ describe('runtime/compaction-coordinator reconcileInline', () => {
     const nextIds = next.map((message) => message.id)
     expect(nextIds).toContain('a2')
     expect(nextIds).toContain('u3')
+    expect(nextIds).toContain('u2')
     // Summary leads the next transcript.
     expect(next[0].parts.some((part) => part.type === 'data-compaction')).toBe(true)
+    expect(finalizeCompaction).toHaveBeenCalledWith(
+      'chat-1',
+      ['u1', 'a1'],
+      expect.any(String),
+      expect.any(Array),
+      [...base, ...grownAfterRun],
+      base.slice(0, 2)
+    )
   })
 
-  it('reconciles nothing when the base prefix already fits the retain budget', async () => {
+  it('reconciles nothing when inline compaction covered no complete UI message', async () => {
     const base = [user('u1', 'small')]
     const { deps, finalizeCompaction } = makeDeps([...base, assistant('a2', 'grown')])
     const coordinator = createCompactionCoordinator(deps as never)
 
     const compacted = await coordinator.reconcileInline('chat-1', DEF, {
       summaryText: 'sum',
-      baseMessageIds: ['u1']
+      baseMessageIds: []
     })
 
     expect(compacted).toBe(false)
     expect(finalizeCompaction).not.toHaveBeenCalled()
+  })
+
+  it('rejects coverage ids that are not the exact persisted prefix', async () => {
+    const base = [user('u1', 'old'), user('u2', 'recent'), assistant('a1', 'done')]
+    const { deps, finalizeCompaction } = makeDeps(base)
+    const coordinator = createCompactionCoordinator(deps as never)
+
+    const compacted = await coordinator.reconcileInline('chat-1', DEF, {
+      summaryText: 'sum',
+      baseMessageIds: ['u2']
+    })
+
+    expect(compacted).toBe(false)
+    expect(finalizeCompaction).not.toHaveBeenCalled()
+  })
+
+  it('measures the compacted transcript without stale pre-compaction usage anchors', async () => {
+    const recent = {
+      ...assistant('a1', 'recent'),
+      metadata: {
+        steps: [
+          {
+            stepNumber: 1,
+            usage: { inputTokens: 10_000, outputTokens: 100 },
+            finishReason: 'stop',
+            providerMetadata: null
+          }
+        ]
+      }
+    } as TanzoUIMessage
+    const { deps } = makeDeps([user('u1', 'old'), recent])
+    const coordinator = createCompactionCoordinator(deps as never)
+
+    await coordinator.reconcileInline('chat-1', DEF, {
+      summaryText: 'sum',
+      baseMessageIds: ['u1']
+    })
+
+    const measured = (deps.contextEngine.measure as ReturnType<typeof vi.fn>).mock.calls[0][2] as
+      TanzoUIMessage[] | undefined
+    expect(measured?.[1].metadata?.steps?.[0]?.usage).toBeNull()
+    expect(recent.metadata?.steps?.[0]?.usage).toEqual({ inputTokens: 10_000, outputTokens: 100 })
   })
 })

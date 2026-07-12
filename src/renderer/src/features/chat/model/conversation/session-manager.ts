@@ -183,6 +183,7 @@ function createChatSession(chatId: string): ChatSession & {
   let unsubscribeChanges: () => void = () => {}
   let runActive = false
   let settleRefreshRevision = 0
+  let messageLoadRevision = 0
   let refCount = 0
   let releasedAt = Date.now()
   let opened = false
@@ -296,10 +297,14 @@ function createChatSession(chatId: string): ChatSession & {
   const refresh = async (options?: {
     ifSettleRefreshRevision?: number
   }): Promise<TanzoUIMessage[]> => {
+    const revision = ++messageLoadRevision
     try {
-      const messages = await chatClient.listMessages(chatId)
-      const conversation = await chatClient.getConversation(chatId)
+      const [messages, conversation] = await Promise.all([
+        chatClient.listMessages(chatId),
+        chatClient.getConversation(chatId)
+      ])
       if (disposed) return messages
+      if (revision !== messageLoadRevision) return messages
       if (
         options?.ifSettleRefreshRevision !== undefined &&
         settleRefreshRevision !== options.ifSettleRefreshRevision
@@ -310,8 +315,11 @@ function createChatSession(chatId: string): ChatSession & {
         patchConversationSummary(list, conversation)
       )
       cacheMessages(messages)
-      setTranscript(messages)
-      runState.setState({ recentCompaction: latestCompaction(messages) })
+      const displayMessages = runActive
+        ? mergeRunBaseMessages(messages, transcript.getMessages())
+        : messages
+      setTranscript(displayMessages)
+      runState.setState({ recentCompaction: latestCompaction(displayMessages) })
       return messages
     } catch {
       return [...transcript.getMessages()]
@@ -393,13 +401,14 @@ function createChatSession(chatId: string): ChatSession & {
   }
 
   const loadHistory = async (): Promise<void> => {
+    const revision = ++messageLoadRevision
     try {
       const messages = await chatClient.listMessages(chatId)
-      if (!disposed) cacheMessages(messages)
-      if (!disposed && !runActive) {
+      if (!disposed && revision === messageLoadRevision) cacheMessages(messages)
+      if (!disposed && revision === messageLoadRevision && !runActive) {
         setTranscript(messages)
         runState.setState({ recentCompaction: latestCompaction(messages) })
-      } else if (!disposed) {
+      } else if (!disposed && revision === messageLoadRevision) {
         const displayMessages = mergeRunBaseMessages(messages, transcript.getMessages())
         setTranscript(displayMessages)
         runState.setState({ recentCompaction: latestCompaction(displayMessages) })

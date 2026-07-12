@@ -29,6 +29,7 @@ interface RunPersistenceSession {
   context: ChatRunPersistenceContext
 
   persistedView: TanzoUIMessage[] | null
+  activeView: TanzoUIMessage[]
 }
 
 export interface ChatRunPersistenceRegistry {
@@ -184,9 +185,11 @@ async function persistRunMessages(
 
   const current = session.persistedView ?? context.store.loadUnvalidated(session.chatId)
   const persisted = mergeGeneratedMessages(session, current, incoming)
+  const active = mergeGeneratedMessages(session, session.activeView, incoming)
   context.store.save(session.chatId, persisted)
   session.persistedView = persisted
-  if (options.publishContext) await publishContextSnapshot(session, persisted)
+  session.activeView = active
+  if (options.publishContext) await publishContextSnapshot(session, active)
   return true
 }
 
@@ -207,7 +210,8 @@ export function createChatRunPersistenceRegistry(): ChatRunPersistenceRegistry {
         baseMessages: clone(baseMessages),
         consumedSteers: [],
         context,
-        persistedView: null
+        persistedView: null,
+        activeView: clone(baseMessages)
       })
     },
 

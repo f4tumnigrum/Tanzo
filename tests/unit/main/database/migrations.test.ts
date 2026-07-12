@@ -13,9 +13,9 @@ describe('database/migrations on real sqlite', () => {
           .all(['tanzo']) as Array<{ version: number }>
       ).map((row) => row.version)
 
-    expect(versions()).toEqual([1, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31])
+    expect(versions()).toEqual([1, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32])
     expect(() => runMigrations(db, [tanzoMigrations])).not.toThrow()
-    expect(versions()).toEqual([1, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31])
+    expect(versions()).toEqual([1, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32])
   })
 
   it('adds reasoning_effort to conversations created by the initial schema (v24)', () => {
@@ -469,6 +469,28 @@ describe('database/migrations on real sqlite', () => {
         )
         .run(['openai', 'language', 'gpt-5', 3])
     ).toThrow()
+    db.close()
+  })
+
+  it('adds full compaction overlay payload storage after v31', () => {
+    const db = createRealDb({ migrate: false })
+    runMigrations(db, [
+      { moduleName: 'tanzo', files: tanzoMigrations.files.filter((file) => file.version < 32) }
+    ])
+
+    expect(
+      (db.prepare('PRAGMA table_info(compaction_overlays)').all() as Array<{ name: string }>).some(
+        (column) => column.name === 'data_json'
+      )
+    ).toBe(false)
+
+    runMigrations(db, [tanzoMigrations])
+
+    expect(
+      (db.prepare('PRAGMA table_info(compaction_overlays)').all() as Array<{ name: string }>).some(
+        (column) => column.name === 'data_json'
+      )
+    ).toBe(true)
     db.close()
   })
 

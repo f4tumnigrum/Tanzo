@@ -28,6 +28,7 @@ export type CompactionRunLifecycle = <T>(
 export interface InlineCompactionRecord {
   summaryText: string
 
+  /** Ordered, contiguous UI-message prefix fully covered by the inline summary. */
   baseMessageIds: string[]
   usage?: TanzoUsageMetadata
   degraded?: 'prune' | 'drop-oldest'
@@ -60,6 +61,19 @@ export function compactionPrompt(def: AgentDefinition, instructions?: string): s
   if (userInstructions)
     parts.push(`Additional user instructions for this compaction:\n${userInstructions}`)
   return parts.join('\n\n')
+}
+
+function withoutStepUsageAnchors(messages: TanzoUIMessage[]): TanzoUIMessage[] {
+  return messages.map((message) => {
+    if (!message.metadata?.steps?.some((step) => step.usage)) return message
+    return {
+      ...message,
+      metadata: {
+        ...message.metadata,
+        steps: message.metadata.steps.map((step) => ({ ...step, usage: null }))
+      }
+    }
+  })
 }
 
 export function createCompactionCoordinator(
@@ -134,7 +148,7 @@ export function createCompactionCoordinator(
     plan: CompactionPlan
     summary: TanzoUIMessage
     next: TanzoUIMessage[]
-    expectedActiveIds: string[]
+    expectedActiveMessages: TanzoUIMessage[]
     auto: boolean
     summaryId: string
     runId: string
@@ -153,7 +167,8 @@ export function createCompactionCoordinator(
         input.plan.archivedIds,
         input.summary.id,
         input.next,
-        input.expectedActiveIds
+        input.expectedActiveMessages,
+        input.plan.head
       )
     } catch (error) {
       if (error instanceof TanzoError && error.code === 'CHAT_COMPACTION_STALE') {
@@ -207,12 +222,10 @@ export function createCompactionCoordinator(
     if (!engine) return { outcome: 'not-needed', next: null }
 
     const incoming = await deps.store.load(chatId)
-    const expectedActiveIds = incoming
-      .filter((message) => message.parts.length > 0)
-      .map((message) => message.id)
     const policy = engine.compactionPolicy(def)
-    const plan = await planCompaction(incoming, policy.retainBudgetTokens)
-    if (!plan) return { outcome: 'not-needed', next: null }
+    const preplanned = auto ? await planCompaction(incoming, policy.retainBudgetTokens) : undefined
+    if (auto && !preplanned) return { outcome: 'not-needed', next: null }
+    if (options.signal?.aborted) return { outcome: 'aborted', next: null }
 
     const summaryId = randomUUID()
     const runId = options.runId ?? randomUUID()
@@ -221,6 +234,10 @@ export function createCompactionCoordinator(
     const execute = async (
       signal: AbortSignal
     ): Promise<{ outcome: CompactionOutcome; next: TanzoUIMessage[] | null }> => {
+      const plan = preplanned ?? (await planCompaction(incoming, policy.retainBudgetTokens))
+      if (signal.aborted) return { outcome: 'aborted', next: null }
+      if (!plan) return { outcome: 'not-needed', next: null }
+
       const telemetry = createAgentTelemetry({
         runId: compactionRunId,
         chatId,
@@ -284,11 +301,25 @@ export function createCompactionCoordinator(
         next = [summary, ...plan.tail]
       }
 
+      const nextTokens = engine.measure(def, chatId, withoutStepUsageAnchors(next)).totalTokens
+      if (nextTokens > policy.hardCeilingTokens) {
+        const message =
+          `Compaction could not fit the conversation within the context ceiling ` +
+          `(${nextTokens} > ${policy.hardCeilingTokens} estimated tokens).`
+        publishCompactionStatus(
+          chatId,
+          runId,
+          { stage: 'failed', auto, summaryId, summary: message },
+          compactionRunId
+        )
+        throw new Error(message)
+      }
+
       return finalize(chatId, def, engine, {
         plan,
         summary,
         next,
-        expectedActiveIds,
+        expectedActiveMessages: incoming,
         auto,
         summaryId,
         runId,
@@ -308,6 +339,7 @@ export function createCompactionCoordinator(
       'Summarization was unavailable; older conversation content was archived mechanically.',
       `Archived ${plan.head.length} message(s). Key user messages from the archived range:`
     ]
+    let remainingChars = 2_000
     for (const message of plan.head) {
       if (message.role !== 'user') continue
       const text = message.parts
@@ -315,7 +347,10 @@ export function createCompactionCoordinator(
         .map((part) => part.text)
         .join('\n')
         .trim()
-      if (text) lines.push(`- ${text.slice(0, 400)}`)
+      if (!text || remainingChars <= 0) continue
+      const excerpt = text.slice(0, Math.min(400, remainingChars))
+      lines.push(`- ${excerpt}`)
+      remainingChars -= excerpt.length
     }
     lines.push('Re-read files and re-run searches to recover any details you still need.')
     return buildSummaryMessage({
@@ -344,47 +379,58 @@ export function createCompactionCoordinator(
       if (!engine) return false
       if (options?.signal?.aborted) return false
       if (!deps.store.getConversation(chatId)) return false
+      if (inline.baseMessageIds.length === 0) return false
+
+      const incoming = await deps.store.load(chatId)
+      if (options?.signal?.aborted) return false
+      if (inline.baseMessageIds.length >= incoming.length) return false
+      for (let i = 0; i < inline.baseMessageIds.length; i += 1) {
+        if (incoming[i]?.id !== inline.baseMessageIds[i]) return false
+      }
+
+      const head = incoming.slice(0, inline.baseMessageIds.length)
+      const tail = incoming.slice(inline.baseMessageIds.length)
+      const plan: CompactionPlan = {
+        head,
+        tail,
+        archivedIds: [...inline.baseMessageIds],
+        sourceMessages: []
+      }
+      const summary = buildSummaryMessage({
+        summaryText: inline.summaryText,
+        auto: true,
+        omittedMessages: head.length,
+        ...(inline.usage ? { usage: inline.usage } : {}),
+        ...(inline.usage?.inputTokens !== undefined
+          ? { beforeTokens: inline.usage.inputTokens }
+          : {}),
+        ...(inline.degraded ? { degraded: inline.degraded } : {})
+      })
+      const next = [summary, ...tail]
+      const policy = engine.compactionPolicy(def)
+      const nextTokens = engine.measure(def, chatId, withoutStepUsageAnchors(next)).totalTokens
+      if (nextTokens > policy.hardCeilingTokens) {
+        deps.logger?.warn('inline compaction reconciliation exceeds context ceiling', {
+          chatId,
+          nextTokens,
+          hardCeilingTokens: policy.hardCeilingTokens
+        })
+        return false
+      }
 
       const runId = randomUUID()
-      const executor = async (signal: AbortSignal): Promise<boolean> => {
-        if (signal.aborted) return false
-        const incoming = await deps.store.load(chatId)
-        const expectedActiveIds = incoming
-          .filter((message) => message.parts.length > 0)
-          .map((message) => message.id)
-        const policy = engine.compactionPolicy(def)
-
-        const baseIds = new Set(inline.baseMessageIds)
-        let baseEnd = 0
-        while (baseEnd < incoming.length && baseIds.has(incoming[baseEnd].id)) baseEnd += 1
-        const basePrefix = incoming.slice(0, baseEnd)
-        const grown = incoming.slice(baseEnd)
-
-        const plan = await planCompaction(basePrefix, policy.retainBudgetTokens)
-        if (!plan) return false
-
-        const summary = buildSummaryMessage({
-          summaryText: inline.summaryText,
-          auto: true,
-          omittedMessages: plan.head.length,
-          ...(inline.usage ? { usage: inline.usage } : {}),
-          ...(inline.usage?.inputTokens !== undefined
-            ? { beforeTokens: inline.usage.inputTokens }
-            : {}),
-          ...(inline.degraded ? { degraded: inline.degraded } : {})
-        })
-        const result = await finalize(chatId, def, engine, {
-          plan: { ...plan, tail: [...plan.tail, ...grown] },
-          summary,
-          next: [summary, ...plan.tail, ...grown],
-          expectedActiveIds,
-          auto: true,
-          summaryId: summary.id,
-          runId
-        })
-        return result.outcome === 'compacted'
-      }
-      return lifecycle(chatId, `${runId}:compaction:inline`, [], executor, options?.signal)
+      const signal = options?.signal ?? new AbortController().signal
+      if (signal.aborted) return false
+      const result = await finalize(chatId, def, engine, {
+        plan,
+        summary,
+        next,
+        expectedActiveMessages: incoming,
+        auto: true,
+        summaryId: summary.id,
+        runId
+      })
+      return result.outcome === 'compacted'
     },
 
     async compact(chatId, options) {

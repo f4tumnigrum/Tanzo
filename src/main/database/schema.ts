@@ -907,6 +907,23 @@ export const tanzoMigrations: ModuleMigrations = {
       version: 31,
       name: 'global_provider_default_models',
       up: (db) => db.exec(PROVIDER_DEFAULTS_V31)
+    },
+    {
+      version: 32,
+      name: 'compaction_overlay_data',
+      up: (db) => {
+        const table = db
+          .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+          .get(['compaction_overlays']) as { name: string } | undefined
+        if (!table) return
+        const columns = db.prepare('PRAGMA table_info(compaction_overlays)').all() as Array<{
+          name: string
+        }>
+        if (columns.some((column) => column.name === 'data_json')) return
+        db.exec(
+          'ALTER TABLE compaction_overlays ADD COLUMN data_json TEXT CHECK (data_json IS NULL OR json_valid(data_json))'
+        )
+      }
     }
   ]
 }

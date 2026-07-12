@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.6] - 2026-07-12
+
+### Changed
+
+- Context: compaction now accounts for fixed prompt and approval metadata, rolls
+  oversized transcripts through bounded summaries, enforces the hard context
+  ceiling, and persists lossless overlays for reliable history reconstruction.
+- Providers: updated the AI SDK integrations, adopted the official xAI adapter,
+  and aligned model discovery, capabilities, options, reasoning, selection, and
+  cache behavior.
+
+### Fixed
+
+- Agent runtime: made compaction persistence and inline reconciliation resilient
+  to stale writes and invalid message revisions, preserved approval metadata,
+  and serialized sub-agent steering and restart operations.
+- Chat: prevented stale asynchronous history loads from overwriting a newer or
+  actively streaming transcript.
+
 ## [0.4.5] - 2026-07-09
 
 ### Added

@@ -5,6 +5,7 @@ import { ERROR_CODES } from '@shared/errors'
 import type { SubagentTraceEntry, TanzoUIMessage } from '@shared/agent-message'
 import type { AgentDefinition } from '../agents/types'
 import type { ContextEngine } from '../context'
+import { isContextInjectionMessage } from '../context/injection'
 import type { ChangeSetService } from '../git/change-set-service'
 import type { ChatKeyedQueue } from './chat-keyed-queue'
 import type { CompactionCoordinator } from './compaction-coordinator'
@@ -385,7 +386,10 @@ export function createTurnLoop(
             const injection = await deps.contextEngine.renderInjection(def, chatId, cwd, {
               isFirstTurn
             })
-            if (injection) messages = [...messages, injection]
+            const withoutStaleInjections = messages.filter(
+              (message) => !isContextInjectionMessage(message)
+            )
+            messages = injection ? [...withoutStaleInjections, injection] : withoutStaleInjections
           } catch (error) {
             deps.logger?.warn('context injection failed', { chatId, error })
           }

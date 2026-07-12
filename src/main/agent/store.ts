@@ -380,9 +380,23 @@ export function createAgentStore(
       requireConversation(chatId, 'CHAT_CONVERSATION_NOT_FOUND')
       db.transaction(() => writeActiveMessages(chatId, nextMessages))
     },
-    finalizeCompaction(chatId, archivedIds, summaryId, nextMessages, expectedActiveIds) {
+    finalizeCompaction(
+      chatId,
+      archivedIds,
+      summaryId,
+      nextMessages,
+      expectedActive,
+      archivedMessages
+    ) {
       db.transaction(() => {
-        messages.finalizeCompaction(chatId, archivedIds, summaryId, nextMessages, expectedActiveIds)
+        messages.finalizeCompaction(
+          chatId,
+          archivedIds,
+          summaryId,
+          nextMessages,
+          expectedActive,
+          archivedMessages
+        )
         touch(chatId)
       })
     },

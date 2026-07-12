@@ -45,6 +45,8 @@ export interface HookServiceDeps {
 
 export interface HookService {
   readonly pendingContext: PendingHookContext
+  takePendingContext(chatId: string): string[]
+  clearPendingContext(chatId: string): void
   runPreToolUse(input: {
     chatId: string
     toolName: string
@@ -161,6 +163,8 @@ export function createHookService(deps: HookServiceDeps): HookService {
 
   return {
     pendingContext,
+    takePendingContext: (chatId) => pendingContext.drain(chatId),
+    clearPendingContext: (chatId) => pendingContext.clear(chatId),
 
     async runPreToolUse(input) {
       const meta = deps.sessionMeta(input.chatId)

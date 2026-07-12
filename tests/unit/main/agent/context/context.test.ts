@@ -6,6 +6,7 @@ import { createCapabilities } from '@main/agent/context/capabilities'
 import { compileSections } from '@main/agent/context/compile'
 import { createContextEngine } from '@main/agent/context/index'
 import {
+  estimateModelMessageTokens,
   estimateTextTokens,
   estimateUIMessageTokens,
   measureTranscript
@@ -446,6 +447,33 @@ describe('main/agent/context ledger', () => {
     expect(estimateUIMessageTokens(message)).toBe(10)
   })
 
+  it('uses a fixed conservative estimate for inline image and file data URLs', () => {
+    const largePayload = 'A'.repeat(400_000)
+    const smallImage = {
+      role: 'user',
+      content: [{ type: 'image', image: 'data:image/png;base64,AAAA' }]
+    } as ModelMessage
+    const largeImage = {
+      role: 'user',
+      content: [{ type: 'image', image: `data:image/png;base64,${largePayload}` }]
+    } as ModelMessage
+    const largeFile = {
+      id: 'file-1',
+      role: 'user',
+      parts: [
+        {
+          type: 'file',
+          mediaType: 'application/pdf',
+          url: `data:application/pdf;base64,${largePayload}`
+        }
+      ]
+    } as TanzoUIMessage
+
+    expect(estimateModelMessageTokens(smallImage)).toBe(2_048)
+    expect(estimateModelMessageTokens(largeImage)).toBe(2_048)
+    expect(estimateUIMessageTokens(largeFile)).toBe(2_048)
+  })
+
   it('anchors on the newest reported step usage and estimates only the increment', () => {
     const messages: TanzoUIMessage[] = [
       { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'x'.repeat(40_000) }] },
@@ -456,6 +484,87 @@ describe('main/agent/context ledger', () => {
     expect(measure.source).toBe('reported')
     // anchor input (50k) + anchor output (1k) + increment estimate (100)
     expect(measure.totalTokens).toBe(51_100)
+  })
+
+  it('adds tool output produced after the anchor provider step', () => {
+    const messages = [
+      {
+        id: 'a1',
+        role: 'assistant',
+        parts: [
+          { type: 'step-start' },
+          { type: 'text', text: 'Running the command.' },
+          {
+            type: 'tool-shell',
+            toolCallId: 'call-1',
+            state: 'output-available',
+            input: { command: 'large-output' },
+            output: { stdout: 'x'.repeat(400_000), stderr: '', exitCode: 0 }
+          }
+        ],
+        metadata: {
+          steps: [{ stepNumber: 1, usage: { inputTokens: 100, outputTokens: 20 } }]
+        }
+      }
+    ] as TanzoUIMessage[]
+
+    const measure = measureTranscript(messages)
+
+    expect(measure.source).toBe('reported')
+    expect(measure.totalTokens).toBeGreaterThan(100_000)
+  })
+
+  it('adds an approval response produced after the anchor provider step', () => {
+    const messages = [
+      {
+        id: 'a1',
+        role: 'assistant',
+        parts: [
+          { type: 'step-start' },
+          {
+            type: 'tool-shell',
+            toolCallId: 'call-1',
+            state: 'approval-responded',
+            input: { command: 'rm temp.txt' },
+            approval: { id: 'approval-1', approved: false, reason: 'r'.repeat(400) }
+          }
+        ],
+        metadata: {
+          steps: [{ stepNumber: 1, usage: { inputTokens: 100, outputTokens: 20 } }]
+        }
+      }
+    ] as TanzoUIMessage[]
+
+    expect(measureTranscript(messages).totalTokens).toBeGreaterThan(200)
+  })
+
+  it('does not recount tool output already included in a later step input', () => {
+    const messages = [
+      {
+        id: 'a1',
+        role: 'assistant',
+        parts: [
+          { type: 'step-start' },
+          {
+            type: 'tool-shell',
+            toolCallId: 'call-1',
+            state: 'output-available',
+            input: { command: 'large-output' },
+            output: { stdout: 'x'.repeat(400_000), stderr: '', exitCode: 0 }
+          },
+          { type: 'step-start' },
+          { type: 'text', text: 'Finished.' }
+        ],
+        metadata: {
+          steps: [
+            { stepNumber: 1, usage: { inputTokens: 100, outputTokens: 20 } },
+            { stepNumber: 2, usage: { inputTokens: 100_500, outputTokens: 10 } }
+          ]
+        }
+      }
+    ] as TanzoUIMessage[]
+
+    expect(measureTranscript(messages).totalTokens).toBe(100_510)
   })
 
   it('ignores anchors that predate the latest compaction summary', () => {
@@ -499,7 +608,11 @@ describe('main/agent/context compaction policy', () => {
 
   it('fills model capabilities from metadata or defaults', () => {
     const capabilitiesFor = createCapabilities((modelRef) =>
-      modelRef === 'known' ? { contextWindow: 123, maxOutput: 45, vision: true } : undefined
+      modelRef === 'known'
+        ? { contextWindow: 123, maxOutput: 45, vision: true }
+        : modelRef === 'short'
+          ? { contextWindow: 4_096 }
+          : undefined
     )
 
     expect(capabilitiesFor('known')).toEqual({
@@ -507,11 +620,29 @@ describe('main/agent/context compaction policy', () => {
       maxOutputTokens: 45,
       supportsImages: true
     })
+    expect(capabilitiesFor('short').maxOutputTokens).toBe(1_024)
+    expect(computeCompactionPolicy(capabilitiesFor('short')).hardCeilingTokens).toBe(3_072)
     expect(capabilitiesFor('unknown').supportsImages).toBe(false)
   })
 })
 
 describe('main/agent/context engine', () => {
+  it('includes fixed prompt overhead when no provider usage anchor exists', () => {
+    const engine = createContextEngine(
+      engineDeps({ resolveModelMetadata: () => ({ contextWindow: 1_000, maxOutput: 100 }) })
+    )
+    const def = { ...DEF, systemPrompt: 'x'.repeat(4_000) }
+    const messages: TanzoUIMessage[] = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'short' }] }
+    ]
+
+    expect(engine.measure(def, 'chat-no-anchor', messages)).toEqual({
+      totalTokens: 1_002,
+      source: 'estimated'
+    })
+    expect(engine.shouldCompact(def, 'chat-no-anchor', messages)).toBe(true)
+  })
+
   it('measures persisted transcripts through the ledger for compaction decisions', () => {
     const engine = createContextEngine(engineDeps())
     const messages: TanzoUIMessage[] = [

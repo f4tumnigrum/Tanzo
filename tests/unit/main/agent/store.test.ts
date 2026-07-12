@@ -147,6 +147,24 @@ describe('main/agent/store', () => {
     await expect(store.load(conversation.id)).resolves.toEqual([])
   })
 
+  it('clearMessages removes a compaction projection before accepting new messages', async () => {
+    const db = createRealDb()
+    const store = createAgentStore(db, identity(), logger(), root)
+    const conversation = store.createConversation({})
+    const first = textMessage('m1', 'Old')
+    const tail = textMessage('m2', 'Tail')
+    const summary = summaryMessage('sum')
+    store.save(conversation.id, [first, tail])
+    store.finalizeCompaction(conversation.id, [first.id], summary.id, [summary, tail])
+
+    store.clearMessages(conversation.id)
+    const fresh = textMessage('m3', 'Fresh')
+    store.save(conversation.id, [fresh])
+
+    await expect(store.load(conversation.id)).resolves.toEqual([fresh])
+    expect(countRows(db, 'compaction_overlays', 'conversation_id = ?', [conversation.id])).toBe(0)
+  })
+
   it('updateConversationCwd switches the workspace and registers it', async () => {
     const db = createRealDb()
     const store = createAgentStore(db, identity(), logger(), root)
@@ -509,15 +527,29 @@ describe('main/agent/store', () => {
 
     store.save(conversation.id, [user, loop])
 
-    store.finalizeCompaction(conversation.id, ['u1', 'a1'], 'summary', [summary, tailFragment])
+    const headFragment = {
+      ...loop,
+      parts: [{ type: 'step-start' }, { type: 'text', text: 'early step' }]
+    } as TanzoUIMessage
+    store.finalizeCompaction(
+      conversation.id,
+      ['u1', 'a1'],
+      'summary',
+      [summary, tailFragment],
+      undefined,
+      [user, headFragment]
+    )
 
     await expect(store.load(conversation.id)).resolves.toEqual([summary, tailFragment])
     await expect(store.loadFullHistory(conversation.id)).resolves.toEqual([
       user,
-      loop,
+      headFragment,
       tailFragment
     ])
-    await expect(store.loadArchived(conversation.id, 'summary')).resolves.toEqual([user, loop])
+    await expect(store.loadArchived(conversation.id, 'summary')).resolves.toEqual([
+      user,
+      headFragment
+    ])
   })
 
   it('keeps historical messages in the log after saving a context projection', async () => {

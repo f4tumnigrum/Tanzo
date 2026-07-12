@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ModelMessage } from 'ai'
 import { runSummarizeFork } from '@main/agent/context/compact/summarize'
-import { compactModelTranscript } from '@main/agent/context/compact/inline'
+import { compactModelTranscript, ContextHardCeilingError } from '@main/agent/context/compact/inline'
+import { estimateModelMessagesTokens } from '@main/agent/context/ledger'
 
 const aiMocks = vi.hoisted(() => ({
   streamText: vi.fn(),
@@ -38,7 +39,7 @@ function makeDeps(contextWindow = 128_000) {
     contextEngine: {
       capabilitiesFor: vi.fn(() => ({
         contextWindow,
-        maxOutputTokens: 8_192,
+        maxOutputTokens: Math.min(8_192, Math.floor(contextWindow / 2)),
         supportsImages: false
       })),
       build: vi.fn(async (_def: unknown, _chat: unknown, _cwd: unknown, head: ModelMessage[]) => ({
@@ -222,6 +223,53 @@ describe('compact/summarize — fork paths', () => {
     expect(lastContent).toContain('FINAL INSTRUCTION')
   })
 
+  it('splits one oversized transcript message into bounded summarize calls', async () => {
+    mockStream('rolling')
+    const deps = makeDeps(1_000)
+
+    await runSummarizeFork(deps, {
+      chatId: 'c1',
+      def: DEF,
+      cwd: '/tmp',
+      runId: 'r1',
+      head: [{ role: 'user', content: 'x'.repeat(20_000) }],
+      prompt: 'FINAL INSTRUCTION'
+    })
+
+    expect(aiMocks.calls.length).toBeGreaterThan(1)
+    for (const call of aiMocks.calls) {
+      const content = String((call.messages as ModelMessage[])[0]?.content ?? '')
+      expect(content.length).toBeLessThan(5_000)
+    }
+  })
+
+  it('bounds every rolling summarize request when the prior summary is oversized', async () => {
+    mockStream('r'.repeat(20_000))
+    const deps = makeDeps(1_000)
+
+    await runSummarizeFork(deps, {
+      chatId: 'c1',
+      def: DEF,
+      cwd: '/tmp',
+      runId: 'r1',
+      head: [{ role: 'user', content: 'x'.repeat(20_000) }],
+      prompt: 'FINAL INSTRUCTION'
+    })
+
+    expect(aiMocks.calls.length).toBeGreaterThan(1)
+    for (const call of aiMocks.calls) {
+      expect(
+        estimateModelMessagesTokens([
+          ...((call.instructions as ModelMessage[] | undefined) ?? []),
+          ...(call.messages as ModelMessage[])
+        ])
+      ).toBeLessThanOrEqual(400)
+    }
+    expect(String((aiMocks.calls[1].messages as ModelMessage[])[0].content)).toContain(
+      'rolling summary truncated'
+    )
+  })
+
   it('surfaces the underlying stream error, not the generic NoOutputGenerated', async () => {
     aiMocks.streamText.mockImplementation((options: Record<string, unknown>) => {
       const onError = options.onError as ((event: { error: unknown }) => void) | undefined
@@ -287,6 +335,7 @@ describe('compact/inline — in-stream compaction with degradation', () => {
 
     expect(result).not.toBeNull()
     expect(result!.summaryText).toBe('the summary of old work')
+    expect(result!.coveredModelMessageCount).toBeGreaterThan(0)
     expect(result!.degraded).toBeUndefined()
     expect(result!.transcript[0]).toMatchObject({ role: 'assistant' })
     expect(JSON.stringify(result!.transcript[0].content)).toContain('the summary of old work')
@@ -313,7 +362,11 @@ describe('compact/inline — in-stream compaction with degradation', () => {
 
     expect(result).not.toBeNull()
     expect(result!.degraded).toBeDefined()
+    expect(result!.coveredModelMessageCount).toBe(0)
     expect(result!.transcript.length).toBeGreaterThan(0)
+    expect(estimateModelMessagesTokens(result!.transcript)).toBeLessThanOrEqual(
+      POLICY.hardCeilingTokens
+    )
   })
 
   it('returns null when the fork fails but the transcript is still under the ceiling', async () => {
@@ -339,5 +392,21 @@ describe('compact/inline — in-stream compaction with degradation', () => {
     })
 
     expect(result).toBeNull()
+  })
+
+  it('fails explicitly when even the newest message cannot fit the hard ceiling', async () => {
+    const deps = makeDeps()
+
+    await expect(
+      compactModelTranscript(deps, {
+        chatId: 'c1',
+        def: DEF,
+        cwd: '/tmp',
+        runId: 'r1',
+        transcript: [{ role: 'user', content: 'x'.repeat(20_000) }],
+        prompt: 'SUMMARIZE',
+        policy: { ...POLICY, hardCeilingTokens: 100 }
+      })
+    ).rejects.toBeInstanceOf(ContextHardCeilingError)
   })
 })

@@ -136,6 +136,29 @@ describe('renderer/session-manager', () => {
     expect(session.runState.getState().isStreaming).toBe(false)
   })
 
+  it('does not let an older refresh overwrite a newer transcript snapshot', async () => {
+    const { chatId, session } = openSession([userMessage('initial', 'initial')])
+    await drain(session)
+    let resolveSlow!: (messages: TanzoUIMessage[]) => void
+    mocks.chatClient.listMessages
+      .mockImplementationOnce(
+        () =>
+          new Promise<TanzoUIMessage[]>((resolve) => {
+            resolveSlow = resolve
+          })
+      )
+      .mockResolvedValueOnce([userMessage('fresh', 'fresh')])
+
+    const older = session.refresh()
+    const newer = session.refresh()
+    await newer
+    resolveSlow([userMessage('stale', 'stale')])
+    await older
+
+    expect(messageIds(session)).toEqual(['fresh'])
+    expect(mocks.chatClient.getConversation).toHaveBeenCalledWith(chatId)
+  })
+
   it('hydrates the context-usage indicator from a recomputed snapshot on open', async () => {
     mocks.chatClient.contextSnapshot.mockResolvedValueOnce({
       source: 'reported',
@@ -199,6 +222,37 @@ describe('renderer/session-manager', () => {
     expect(session.runState.getState().isStreaming).toBe(false)
     expect(messages(session)).toEqual(settled)
     expect(mocks.queryClient.setQueryData).toHaveBeenCalled()
+  })
+
+  it('does not let a refresh started before a run overwrite the live run base', async () => {
+    const history = [userMessage('m1', 'hello')]
+    const { chatId, session } = openSession(history)
+    await drain(session)
+    let resolveSlow!: (messages: TanzoUIMessage[]) => void
+    mocks.chatClient.listMessages.mockImplementationOnce(
+      () =>
+        new Promise<TanzoUIMessage[]>((resolve) => {
+          resolveSlow = resolve
+        })
+    )
+    const refreshing = session.refresh()
+    const runBase = [...history, userMessage('m2', 'new run')]
+    mocks.chatClient.runSnapshot.mockResolvedValue({
+      chatId,
+      runId: 'run-race',
+      runKind: 'chat',
+      status: 'running',
+      baseMessages: runBase,
+      notifications: [],
+      frames: []
+    } as never)
+
+    emitState(chatId, 'run-race', 'running')
+    await drain(session)
+    resolveSlow([userMessage('m1', 'stale hello'), userMessage('m2', 'stale run')])
+    await refreshing
+
+    expect(messages(session)).toEqual(runBase)
   })
 
   it('accepts tick-batched frames from the main process', async () => {

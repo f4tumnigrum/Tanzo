@@ -578,6 +578,55 @@ describe('agent/service', () => {
     })
   })
 
+  it('injects PostToolUse context into the next model step and persists its marker', async () => {
+    const deps = createDeps()
+    const pending: string[] = []
+    const seenTranscripts: unknown[][] = []
+    deps.contextEngine.build.mockImplementation(
+      async (_def: unknown, _chatId: unknown, _cwd: unknown, transcript: unknown[]) => {
+        seenTranscripts.push(structuredClone(transcript))
+        return {
+          instructions: 'prepared system',
+          messages: [{ role: 'user', content: 'prepared' }],
+          providerOptions: { cache: true }
+        }
+      }
+    )
+    ;(deps as typeof deps & { hooks: unknown }).hooks = {
+      takePendingContext: vi.fn(() => pending.splice(0)),
+      clearPendingContext: vi.fn(() => pending.splice(0)),
+      runUserPromptSubmit: vi.fn(async () => ({ denied: false })),
+      runSessionStart: vi.fn(async () => undefined),
+      runPostToolUse: vi.fn(async () => {
+        pending.push('Inspect the command output before continuing.')
+        return { stopped: false }
+      }),
+      runStop: vi.fn(async () => ({ stopped: false, feedback: [] }))
+    }
+    const service = createAgentService(deps as never)
+
+    await service.run('chat-1', [userMessage])
+
+    expect(seenTranscripts).toHaveLength(2)
+    expect(seenTranscripts[1]).toContainEqual({
+      role: 'user',
+      content: '<hook-context>\nInspect the command output before continuing.\n</hook-context>'
+    })
+    const persisted = deps.store.save.mock.calls.flatMap((call) => call[1] as TanzoUIMessage[])
+    expect(persisted).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          parts: expect.arrayContaining([
+            expect.objectContaining({
+              type: 'data-contextInjection',
+              data: { sections: ['hooks'] }
+            })
+          ])
+        })
+      ])
+    )
+  })
+
   it('rebuilds each turn from a clean transcript without accumulating injected context', async () => {
     const deps = createDeps()
     const seenTranscripts: unknown[] = []
@@ -604,6 +653,35 @@ describe('agent/service', () => {
       expect(leaked).toBe(false)
     }
   })
+
+  it('replaces stale persisted context injections before starting a new turn', async () => {
+    const deps = createDeps()
+    const oldInjection: TanzoUIMessage = {
+      id: 'context-old',
+      role: 'user',
+      parts: [
+        { type: 'text', text: '<datetime>old</datetime>' },
+        { type: 'data-contextInjection', data: { sections: ['datetime'] } }
+      ]
+    }
+    const currentInjection: TanzoUIMessage = {
+      id: 'context-current',
+      role: 'user',
+      parts: [
+        { type: 'text', text: '<datetime>current</datetime>' },
+        { type: 'data-contextInjection', data: { sections: ['datetime'] } }
+      ]
+    }
+    deps.contextEngine.renderInjection.mockResolvedValue(currentInjection)
+    const service = createAgentService(deps as never)
+
+    await service.run('chat-1', [userMessage, oldInjection])
+
+    expect(deps.buildTools).toHaveBeenCalledWith(
+      expect.objectContaining({ messages: [userMessage, currentInjection] })
+    )
+  })
+
   it('continues once when a Stop hook requests more work', async () => {
     const deps = createDeps()
     const runStop = vi
@@ -773,7 +851,12 @@ describe('agent/service', () => {
       ['old-1'],
       streamedSummaryId,
       [userMessage],
-      ['user-1', 'step-save', 'finish-save']
+      [
+        userMessage,
+        { id: 'step-save', role: 'assistant', parts: [{ type: 'text', text: 'step' }] },
+        { id: 'finish-save', role: 'assistant', parts: [{ type: 'text', text: 'done' }] }
+      ],
+      [{ id: 'old-1', role: 'user', parts: [] }]
     )
     expect(deps.send).toHaveBeenCalledWith(
       'chat-1',
@@ -840,6 +923,7 @@ describe('agent/service', () => {
       'chat-1',
       ['old-1'],
       expect.any(String),
+      expect.any(Array),
       expect.any(Array),
       expect.any(Array)
     )
@@ -1205,8 +1289,51 @@ describe('agent/service', () => {
       ['old-1'],
       'summary',
       [userMessage],
+      expect.any(Array),
       expect.any(Array)
     )
+  })
+
+  it('includes the completed step output when deciding inline compaction', async () => {
+    const deps = createDeps()
+    deps.contextEngine.compactionPolicy.mockReturnValue({
+      compactionTriggerTokens: 90,
+      retainBudgetTokens: 0,
+      hardCeilingTokens: 200
+    })
+    mocks.stepInputTokens = 85
+    const service = createAgentService(deps as never)
+
+    await service.run('chat-1', [userMessage])
+
+    expect(mocks.runCompactionFork).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ chatId: 'chat-1', head: expect.any(Array) })
+    )
+    expect(deps.send).toHaveBeenCalledWith(
+      'chat-1',
+      expect.objectContaining({
+        type: 'data-compaction',
+        data: expect.objectContaining({ stage: 'complete', auto: true })
+      }),
+      expect.objectContaining({ runId: expect.any(String) })
+    )
+  })
+
+  it('does not run inline compaction more than once in the same model run', async () => {
+    const deps = createDeps()
+    deps.contextEngine.compactionPolicy.mockReturnValue({
+      compactionTriggerTokens: 90,
+      retainBudgetTokens: 0,
+      hardCeilingTokens: 200
+    })
+    mocks.stepInputTokens = 85
+    mocks.maxTurns = 2
+    const service = createAgentService(deps as never)
+
+    await service.run('chat-1', [userMessage])
+
+    expect(mocks.runCompactionFork).toHaveBeenCalledTimes(1)
   })
 
   it('does not persist an empty response message when the provider stream fails', async () => {
@@ -1669,6 +1796,7 @@ describe('agent/service', () => {
 
   it('runs compaction through the run lifecycle so it is visible in listRunning and abortable', async () => {
     const deps = createDeps()
+    const finishRun = vi.spyOn(deps.streams, 'finish')
     mocks.planCompaction.mockResolvedValue({
       head: [{ id: 'old-1', role: 'user', parts: [] }],
       tail: [userMessage],
@@ -1699,6 +1827,7 @@ describe('agent/service', () => {
     const abortedOutcome = await compacting
 
     expect(abortedOutcome).toBe('aborted')
+    expect(finishRun).toHaveBeenCalledWith('chat-1', expect.any(String), 'aborted', undefined)
     expect(deps.store.finalizeCompaction).not.toHaveBeenCalled()
   })
 

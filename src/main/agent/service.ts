@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
 import type { ContextEngine } from './context'
 import type { QueuedMessage, TanzoDataParts } from '@shared/agent-message'
-import type { ForkConversationInput, ForkConversationResult } from '@shared/chat'
+import type { CompactionOutcome, ForkConversationInput, ForkConversationResult } from '@shared/chat'
 import { createCompactionCoordinator } from './runtime/compaction-coordinator'
 import { createRunEngine } from './runtime/run-engine'
 import { createChatInbox } from './runtime/chat-inbox'
@@ -66,6 +66,7 @@ export function createAgentService(deps: AgentServiceDeps): AgentService {
   function clearTransientChatState(chatId: string): void {
     steerQueue.clear(chatId)
     questionBroker.clearForChat(chatId)
+    deps.hooks?.clearPendingContext?.(chatId)
   }
 
   const compaction = createCompactionCoordinator({
@@ -77,7 +78,13 @@ export function createAgentService(deps: AgentServiceDeps): AgentService {
           runId,
           kind: 'compaction',
           baseMessages,
-          ...(parentSignal ? { parentSignal } : {})
+          ...(parentSignal ? { parentSignal } : {}),
+          resolveTerminal: (result) => ({
+            status:
+              (result as { outcome?: CompactionOutcome } | null)?.outcome === 'aborted'
+                ? 'aborted'
+                : 'finished'
+          })
         },
         (handle) => executor(handle.signal)
       )
@@ -159,6 +166,7 @@ export function createAgentService(deps: AgentServiceDeps): AgentService {
 
     tasks.cancelTree(chatId)
     messageQueue.clear(chatId)
+    deps.contextEngine?.clear(chatId)
     deps.store.deleteConversation(chatId)
   }
 
@@ -166,6 +174,7 @@ export function createAgentService(deps: AgentServiceDeps): AgentService {
     cancel(chatId)
     tasks.cancelTree(chatId)
     messageQueue.clear(chatId)
+    deps.contextEngine?.clear(chatId)
     deps.store.clearMessages(chatId)
   }
 
@@ -192,6 +201,7 @@ export function createAgentService(deps: AgentServiceDeps): AgentService {
     for (const chatId of chatIds) {
       cancel(chatId)
       messageQueue.clear(chatId)
+      deps.contextEngine?.clear(chatId)
     }
     deps.store.deleteWorkspace(workspaceId)
   }
