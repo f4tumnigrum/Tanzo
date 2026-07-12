@@ -58,9 +58,25 @@ const mocks = vi.hoisted(() => {
       })
     )
 
-    toolsFromDefinitions = vi.fn(async (definitions: unknown) => ({
-      converted: definitions
-    }))
+    callTool = vi.fn(
+      async ({ name, arguments: args }: { name: string; arguments?: Record<string, unknown> }) => {
+        if (this.closed) throw new Error('Attempted to send a request from a closed client')
+        return { content: [{ type: 'text', text: JSON.stringify({ name, args }) }] }
+      }
+    )
+
+    toolsFromDefinitions = vi.fn(
+      (definitions: { tools: Array<{ name: string; inputSchema: unknown }> }) =>
+        Object.fromEntries(
+          definitions.tools.map(({ name, inputSchema }) => [
+            name,
+            {
+              inputSchema,
+              execute: (args: Record<string, unknown>) => this.callTool({ name, arguments: args })
+            }
+          ])
+        )
+    )
 
     close = vi.fn(async () => {
       this.closed = true
@@ -157,7 +173,6 @@ describe('mcp/client', () => {
         transport: mocks.transports[0],
         clientName: 'Tanzo Test',
         version: '2.0.0',
-        maxRetries: expect.any(Number),
         capabilities: { elicitation: {} },
         onUncaughtError: expect.any(Function)
       })
@@ -198,13 +213,10 @@ describe('mcp/client', () => {
       description: 'Prompt summarize',
       messages: [{ role: 'user', content: { type: 'text', text: 'coverage' } }]
     })
-    await expect(client.toolsForServer('local')).resolves.toEqual({
-      converted: {
-        tools: [
-          { name: 'tool-a', inputSchema: { type: 'object' } },
-          { name: 'tool-b', inputSchema: { type: 'object' } }
-        ]
-      }
+    const tools = await client.toolsForServer('local')
+    expect(Object.keys(tools)).toEqual(['tool-a', 'tool-b'])
+    await expect(tools['tool-a']?.execute?.({ value: 1 }, {} as never)).resolves.toEqual({
+      content: [{ type: 'text', text: JSON.stringify({ name: 'tool-a', args: { value: 1 } }) }]
     })
 
     await expect(
@@ -341,7 +353,65 @@ describe('mcp/client', () => {
     await client.dispose()
   })
 
-  it('does not reconnect-retry stale errors for stdio transports', async () => {
+  it('reconnects once for concurrent tools when their stdio client has closed', async () => {
+    const client = new McpClient({ enableReconnect: true })
+    await client.syncServers([enabledServer])
+    const tools = await client.toolsForServer('local')
+    const firstSdk = mocks.clients[0]
+    firstSdk.closed = true
+
+    await expect(
+      Promise.all([
+        tools['tool-a']?.execute?.({ value: 1 }, {} as never),
+        tools['tool-b']?.execute?.({ value: 2 }, {} as never)
+      ])
+    ).resolves.toEqual([
+      {
+        content: [{ type: 'text', text: JSON.stringify({ name: 'tool-a', args: { value: 1 } }) }]
+      },
+      {
+        content: [{ type: 'text', text: JSON.stringify({ name: 'tool-b', args: { value: 2 } }) }]
+      }
+    ])
+
+    expect(mocks.createMCPClient).toHaveBeenCalledTimes(2)
+    expect(firstSdk.close).toHaveBeenCalled()
+    expect(mocks.clients[1].callTool).toHaveBeenCalledTimes(2)
+    expect(mocks.clients[1].callTool).toHaveBeenCalledWith({
+      name: 'tool-a',
+      arguments: { value: 1 }
+    })
+    expect(mocks.clients[1].callTool).toHaveBeenCalledWith({
+      name: 'tool-b',
+      arguments: { value: 2 }
+    })
+    await client.dispose()
+  })
+
+  it('shares a failed reconnect across concurrent closed-client tools', async () => {
+    const client = new McpClient({ enableReconnect: true })
+    await client.syncServers([enabledServer])
+    const tools = await client.toolsForServer('local')
+    mocks.clients[0].closed = true
+    mocks.createMCPClient.mockRejectedValueOnce(new Error('replacement failed'))
+
+    const results = await Promise.allSettled([
+      tools['tool-a']?.execute?.({ value: 1 }, {} as never),
+      tools['tool-b']?.execute?.({ value: 2 }, {} as never)
+    ])
+
+    expect(mocks.createMCPClient).toHaveBeenCalledTimes(2)
+    expect(results).toEqual([
+      expect.objectContaining({ status: 'rejected', reason: expect.any(Error) }),
+      expect.objectContaining({ status: 'rejected', reason: expect.any(Error) })
+    ])
+    expect(
+      results.map((result) => (result.status === 'rejected' ? result.reason.message : null))
+    ).toEqual(['replacement failed', 'replacement failed'])
+    await client.dispose()
+  })
+
+  it('does not reconnect-retry stale management requests for stdio transports', async () => {
     const client = new McpClient({ enableReconnect: false })
     await client.syncServers([enabledServer])
     const sdk = mocks.clients[0]
