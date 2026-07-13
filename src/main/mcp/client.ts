@@ -33,7 +33,6 @@ interface McpClientOptions {
   connectTimeoutMs?: number
   requestTimeoutMs?: number
   enableReconnect?: boolean
-  maxToolRetries?: number
   handleElicitationRequest?: (input: {
     serverName: string
     message: string
@@ -43,7 +42,6 @@ interface McpClientOptions {
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 120_000
 const DEFAULT_REQUEST_TIMEOUT_MS = 60_000
-const DEFAULT_MAX_TOOL_RETRIES = 2
 const MAX_RECONNECT_ATTEMPTS = 5
 const INITIAL_RECONNECT_DELAY_MS = 1_000
 const MAX_RECONNECT_DELAY_MS = 30_000
@@ -79,11 +77,15 @@ function disabled(serverName: string): Error {
   })
 }
 
+function isClosedClientError(error: unknown): boolean {
+  return error instanceof Error && error.message.toLowerCase().includes('closed client')
+}
+
 function isStaleConnectionError(error: unknown): boolean {
   if (!(error instanceof Error)) return false
   const message = error.message.toLowerCase()
   return (
-    message.includes('closed client') ||
+    isClosedClientError(error) ||
     message.includes('session') ||
     message.includes('econnreset') ||
     message.includes('socket hang up')
@@ -187,6 +189,7 @@ export class McpClient {
   readonly #connections = new Map<string, ManagedConnection>()
   readonly #states = new Map<string, McpConnectionState>()
   readonly #operations = new Map<string, Promise<void>>()
+  readonly #staleReconnects = new WeakMap<MCPClient, Promise<void>>()
   readonly #reconnectTimers = new Map<string, ReturnType<typeof setTimeout>>()
   readonly #reconnectAttempts = new Map<string, number>()
   #disposed = false
@@ -195,7 +198,6 @@ export class McpClient {
   readonly #connectTimeoutMs: number
   readonly #requestTimeoutMs: number
   readonly #enableReconnect: boolean
-  readonly #maxToolRetries: number
   readonly #handleElicitationRequest: NonNullable<McpClientOptions['handleElicitationRequest']>
 
   constructor(options: McpClientOptions = {}) {
@@ -204,7 +206,6 @@ export class McpClient {
     this.#connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS
     this.#requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
     this.#enableReconnect = options.enableReconnect ?? true
-    this.#maxToolRetries = options.maxToolRetries ?? DEFAULT_MAX_TOOL_RETRIES
     this.#handleElicitationRequest =
       options.handleElicitationRequest ?? (async () => ({ action: 'cancel' }))
   }
@@ -279,9 +280,7 @@ export class McpClient {
         status: 'connected',
         toolCount: result.tools.length,
         serverInfo: toImplementationInfo(connection.client.serverInfo),
-        ...(connection.client.instructions
-          ? { instructions: connection.client.instructions }
-          : {})
+        ...(connection.client.instructions ? { instructions: connection.client.instructions } : {})
       })
       return result as McpListToolsResult
     })
@@ -354,9 +353,38 @@ export class McpClient {
   async toolsForServer(serverName: string): Promise<Awaited<ReturnType<MCPClient['tools']>>> {
     return this.#withConnection(serverName, async (connection) => {
       const definitions = await this.#listAllTools(connection.client, serverName)
-      return connection.client.toolsFromDefinitions(
+      const tools = connection.client.toolsFromDefinitions(
         definitions as Parameters<MCPClient['toolsFromDefinitions']>[0]
       )
+
+      for (const [toolName, tool] of Object.entries(tools)) {
+        const execute = tool.execute
+        if (!execute) continue
+        const reconnectingExecute = async (...args: Parameters<typeof execute>) =>
+          this.#withConnection(
+            serverName,
+            async (current) => {
+              const currentTool = current.client.toolsFromDefinitions(
+                definitions as Parameters<MCPClient['toolsFromDefinitions']>[0]
+              )[toolName]
+              if (!currentTool?.execute) {
+                throw new TanzoIntegrationError(
+                  'MCP_TOOL_NOT_AVAILABLE',
+                  `MCP tool "${toolName}" is no longer available on "${serverName}".`,
+                  { details: { serverName, toolName }, recoverable: true }
+                )
+              }
+              return currentTool.execute(...args)
+            },
+            { retryClosedClient: true }
+          )
+        tools[toolName] = {
+          ...tool,
+          execute: reconnectingExecute as typeof execute
+        }
+      }
+
+      return tools
     })
   }
 
@@ -525,7 +553,8 @@ export class McpClient {
 
   async #withConnection<T>(
     serverName: string,
-    operation: (connection: ManagedConnection) => Promise<T>
+    operation: (connection: ManagedConnection) => Promise<T>,
+    options?: { retryClosedClient?: boolean }
   ): Promise<T> {
     const connection = await this.#ensureConnected(serverName)
     try {
@@ -533,15 +562,33 @@ export class McpClient {
     } catch (error) {
       if (this.#disposed || !isStaleConnectionError(error)) throw error
       const config = this.#configs.get(serverName)
-      if (!config || !config.enabled || !isRemoteTransport(config)) throw error
+      const canRetry =
+        config?.enabled &&
+        (options?.retryClosedClient ? isClosedClientError(error) : isRemoteTransport(config))
+      if (!config || !canRetry) throw error
       log.warn('mcp request hit stale connection; reconnecting once', { serverName })
-      await this.#withServerOperation(serverName, async () => {
-        this.#clearReconnect(serverName)
-        await this.#connect(config)
-      })
+      await this.#reconnectStaleConnection(serverName, connection.client, config)
       const retried = await this.#ensureConnected(serverName)
       return operation(retried)
     }
+  }
+
+  #reconnectStaleConnection(
+    serverName: string,
+    staleClient: MCPClient,
+    config: McpServerConfig
+  ): Promise<void> {
+    const existing = this.#staleReconnects.get(staleClient)
+    if (existing) return existing
+
+    const reconnect = this.#withServerOperation(serverName, async () => {
+      const current = this.#connections.get(serverName)
+      if (current && current.client !== staleClient) return
+      this.#clearReconnect(serverName)
+      await this.#connect(config, { throwOnFailure: true })
+    })
+    this.#staleReconnects.set(staleClient, reconnect)
+    return reconnect
   }
 
   async #connect(config: McpServerConfig, options?: { throwOnFailure?: boolean }): Promise<void> {
@@ -570,7 +617,6 @@ export class McpClient {
           transport,
           clientName: this.#appName,
           version: this.#appVersion,
-          maxRetries: this.#maxToolRetries,
           capabilities: { elicitation: {} },
           onUncaughtError: (error) => {
             const connection = this.#connections.get(config.name)
